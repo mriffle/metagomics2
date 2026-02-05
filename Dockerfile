@@ -1,7 +1,11 @@
 FROM python:3.11-slim
 
+# Version argument - can be overridden at build time
+ARG VERSION=0.1.0
+
 LABEL maintainer="Metagomics Team"
 LABEL description="Metagomics 2 - Metaproteomics annotation and aggregation tool"
+LABEL version="${VERSION}"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,6 +54,7 @@ RUN mkdir -p /data/jobs /data/databases /data/reference
 # Set environment variables
 ENV METAGOMICS_DATA_DIR=/data
 ENV PYTHONUNBUFFERED=1
+ENV METAGOMICS_VERSION=${VERSION}
 
 # Expose API port
 EXPOSE 8000

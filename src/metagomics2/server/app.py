@@ -53,6 +53,12 @@ async def health_check():
     return {"status": "healthy", "version": __version__}
 
 
+@app.get("/api/version")
+async def get_version():
+    """Get application version."""
+    return {"version": __version__}
+
+
 @app.post("/api/jobs", response_model=JobCreateResponse)
 async def create_job(
     fasta: Annotated[UploadFile, File(description="Background proteome FASTA file")],

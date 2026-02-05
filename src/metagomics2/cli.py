@@ -59,6 +59,9 @@ def parse_filter_params(args: argparse.Namespace) -> FilterPolicy:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' command."""
+    # Display version
+    print(f"Metagomics 2 v{__version__}", file=sys.stderr)
+    
     # Validate inputs
     fasta_path = Path(args.fasta)
     if not fasta_path.exists():
