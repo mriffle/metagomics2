@@ -1,0 +1,9 @@
+{
+  "subjects": {
+    "U1": {"tax_id": 70, "go_terms": ["GO:0000004"]},
+    "U2": {"tax_id": 71, "go_terms": ["GO:0000005"]},
+    "U3": {"tax_id": 72, "go_terms": ["GO:0000006"]},
+    "U4": {"tax_id": 73, "go_terms": ["GO:0000007"]},
+    "U5": {"tax_id": 70, "go_terms": []}
+  }
+}

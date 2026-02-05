@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  metagomics2:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - metagomics_data:/data
+    environment:
+      - METAGOMICS_DATA_DIR=/data
+      - METAGOMICS_WORKERS=1
+    restart: unless-stopped
+
+volumes:
+  metagomics_data:

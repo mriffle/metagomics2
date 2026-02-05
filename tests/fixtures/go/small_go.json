@@ -1,0 +1,25 @@
+{
+  "terms": {
+    "GO:0000001": {"name": "root_BP", "namespace": "biological_process"},
+    "GO:0000002": {"name": "A", "namespace": "biological_process"},
+    "GO:0000003": {"name": "B", "namespace": "biological_process"},
+    "GO:0000004": {"name": "C", "namespace": "biological_process"},
+    "GO:0000005": {"name": "D", "namespace": "biological_process"},
+    "GO:0000006": {"name": "E", "namespace": "biological_process"},
+    "GO:0000007": {"name": "F", "namespace": "biological_process"}
+  },
+  "edges": {
+    "is_a": [
+      ["GO:0000002", "GO:0000001"],
+      ["GO:0000003", "GO:0000001"],
+      ["GO:0000004", "GO:0000002"],
+      ["GO:0000004", "GO:0000003"],
+      ["GO:0000005", "GO:0000002"],
+      ["GO:0000006", "GO:0000003"],
+      ["GO:0000007", "GO:0000004"]
+    ],
+    "part_of": [
+      ["GO:0000005", "GO:0000003"]
+    ]
+  }
+}

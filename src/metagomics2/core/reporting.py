@@ -1,0 +1,372 @@
+"""Report generation: CSV outputs and manifest."""
+
+import csv
+import hashlib
+import json
+import platform
+import subprocess
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from metagomics2.core.aggregation import AggregationResult, CoverageStats
+from metagomics2.core.go import GODAG
+from metagomics2.core.taxonomy import TaxonomyTree
+
+
+@dataclass
+class ManifestInfo:
+    """Information for the run manifest."""
+
+    metagomics2_version: str = ""
+    git_sha: str | None = None
+    python_version: str = ""
+    search_tool: str = ""
+    search_tool_version: str = ""
+    search_tool_command: str = ""
+    annotated_db_choice: str = ""
+    annotated_db_version: str = ""
+    annotated_db_hash: str = ""
+    input_fasta_hash: str = ""
+    input_fasta_path: str = ""
+    peptide_list_hash: str = ""
+    peptide_list_path: str = ""
+    go_snapshot_files: dict[str, str] = field(default_factory=dict)  # filename -> hash
+    taxonomy_snapshot_files: dict[str, str] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    timestamp_utc: str = ""
+
+
+def write_taxonomy_nodes_csv(
+    result: AggregationResult,
+    taxonomy_tree: TaxonomyTree,
+    output_path: Path,
+) -> None:
+    """Write taxonomy_nodes.csv.
+
+    Columns: tax_id, name, rank, parent_tax_id, quantity, ratio_total, ratio_annotated, n_peptides
+
+    Args:
+        result: Aggregation result
+        taxonomy_tree: Taxonomy tree for node metadata
+        output_path: Path to write CSV
+    """
+    # Sort by quantity descending, then by tax_id for determinism
+    sorted_nodes = sorted(
+        result.taxonomy_nodes.items(),
+        key=lambda x: (-x[1].quantity, x[0]),
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "tax_id",
+            "name",
+            "rank",
+            "parent_tax_id",
+            "quantity",
+            "ratio_total",
+            "ratio_annotated",
+            "n_peptides",
+        ])
+
+        for tax_id, node in sorted_nodes:
+            tax_node = taxonomy_tree.nodes.get(tax_id)
+            name = tax_node.name if tax_node else ""
+            rank = tax_node.rank if tax_node else ""
+            parent_tax_id = tax_node.parent_tax_id if tax_node else None
+
+            ratio_annotated_str = (
+                f"{node.ratio_annotated:.10f}"
+                if node.ratio_annotated is not None
+                else ""
+            )
+
+            writer.writerow([
+                tax_id,
+                name,
+                rank,
+                parent_tax_id if parent_tax_id is not None else "",
+                f"{node.quantity:.10f}",
+                f"{node.ratio_total:.10f}",
+                ratio_annotated_str,
+                node.n_peptides,
+            ])
+
+
+def write_go_terms_csv(
+    result: AggregationResult,
+    go_dag: GODAG,
+    output_path: Path,
+    parent_delimiter: str = ";",
+) -> None:
+    """Write go_terms.csv.
+
+    Columns: go_id, name, namespace, parent_go_ids, quantity, ratio_total, ratio_annotated, n_peptides
+
+    Args:
+        result: Aggregation result
+        go_dag: GO DAG for term metadata
+        output_path: Path to write CSV
+        parent_delimiter: Delimiter for parent IDs (default: ";")
+    """
+    # Sort by quantity descending, then by go_id for determinism
+    sorted_terms = sorted(
+        result.go_terms.items(),
+        key=lambda x: (-x[1].quantity, x[0]),
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "go_id",
+            "name",
+            "namespace",
+            "parent_go_ids",
+            "quantity",
+            "ratio_total",
+            "ratio_annotated",
+            "n_peptides",
+        ])
+
+        for go_id, node in sorted_terms:
+            go_term = go_dag.terms.get(go_id)
+            name = go_term.name if go_term else ""
+            namespace = go_term.namespace if go_term else ""
+
+            # Collect all parent IDs across all edge types
+            parent_ids: set[str] = set()
+            if go_term:
+                for parents in go_term.parents.values():
+                    parent_ids |= parents
+            parent_ids_str = parent_delimiter.join(sorted(parent_ids))
+
+            ratio_annotated_str = (
+                f"{node.ratio_annotated:.10f}"
+                if node.ratio_annotated is not None
+                else ""
+            )
+
+            writer.writerow([
+                go_id,
+                name,
+                namespace,
+                parent_ids_str,
+                f"{node.quantity:.10f}",
+                f"{node.ratio_total:.10f}",
+                ratio_annotated_str,
+                node.n_peptides,
+            ])
+
+
+def write_coverage_csv(
+    coverage: CoverageStats,
+    output_path: Path,
+) -> None:
+    """Write coverage.csv.
+
+    Single row with coverage statistics.
+
+    Args:
+        coverage: Coverage statistics
+        output_path: Path to write CSV
+    """
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "total_peptide_quantity",
+            "annotated_peptide_quantity",
+            "unannotated_peptide_quantity",
+            "annotation_coverage_ratio",
+            "n_peptides_total",
+            "n_peptides_annotated",
+            "n_peptides_unannotated",
+        ])
+        writer.writerow([
+            f"{coverage.total_peptide_quantity:.10f}",
+            f"{coverage.annotated_peptide_quantity:.10f}",
+            f"{coverage.unannotated_peptide_quantity:.10f}",
+            f"{coverage.annotation_coverage_ratio:.10f}",
+            coverage.n_peptides_total,
+            coverage.n_peptides_annotated,
+            coverage.n_peptides_unannotated,
+        ])
+
+
+def get_tool_version(tool: str) -> str:
+    """Get version string for a tool.
+
+    Args:
+        tool: Tool name (diamond, blastp, etc.)
+
+    Returns:
+        Version string or empty if not found
+    """
+    try:
+        if tool == "diamond":
+            result = subprocess.run(
+                ["diamond", "version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            # Output like "diamond version 2.1.8"
+            return result.stdout.strip()
+        elif tool in ("blastp", "blast"):
+            result = subprocess.run(
+                ["blastp", "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            # First line contains version
+            return result.stdout.strip().split("\n")[0]
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return ""
+
+
+def get_git_sha() -> str | None:
+    """Get current git SHA if in a git repository.
+
+    Returns:
+        Git SHA or None
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return None
+
+
+def compute_file_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of a file.
+
+    Args:
+        file_path: Path to file
+
+    Returns:
+        Hex-encoded SHA256 hash
+    """
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def write_manifest_json(
+    manifest: ManifestInfo,
+    output_path: Path,
+) -> None:
+    """Write run_manifest.json.
+
+    Args:
+        manifest: Manifest information
+        output_path: Path to write JSON
+    """
+    data = {
+        "metagomics2_version": manifest.metagomics2_version,
+        "git_sha": manifest.git_sha,
+        "python_version": manifest.python_version,
+        "search_tool": manifest.search_tool,
+        "search_tool_version": manifest.search_tool_version,
+        "search_tool_command": manifest.search_tool_command,
+        "annotated_db": {
+            "choice": manifest.annotated_db_choice,
+            "version": manifest.annotated_db_version,
+            "hash": manifest.annotated_db_hash,
+        },
+        "inputs": {
+            "fasta": {
+                "path": manifest.input_fasta_path,
+                "sha256": manifest.input_fasta_hash,
+            },
+            "peptide_list": {
+                "path": manifest.peptide_list_path,
+                "sha256": manifest.peptide_list_hash,
+            },
+        },
+        "reference_snapshots": {
+            "go_files": manifest.go_snapshot_files,
+            "taxonomy_files": manifest.taxonomy_snapshot_files,
+        },
+        "parameters": manifest.parameters,
+        "timestamp_utc": manifest.timestamp_utc,
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+
+
+def create_manifest(
+    metagomics2_version: str,
+    search_tool: str,
+    search_tool_command: str,
+    annotated_db_choice: str,
+    input_fasta_path: Path,
+    peptide_list_path: Path,
+    parameters: dict[str, Any],
+    go_snapshot_dir: Path | None = None,
+    taxonomy_snapshot_dir: Path | None = None,
+    annotated_db_path: Path | None = None,
+) -> ManifestInfo:
+    """Create a manifest with all provenance information.
+
+    Args:
+        metagomics2_version: Version of metagomics2
+        search_tool: Search tool used (diamond/blast)
+        search_tool_command: Full command line used
+        annotated_db_choice: Name/identifier of annotated database
+        input_fasta_path: Path to input FASTA
+        peptide_list_path: Path to peptide list
+        parameters: Dictionary of parameters used
+        go_snapshot_dir: Directory containing GO snapshot files
+        taxonomy_snapshot_dir: Directory containing taxonomy snapshot files
+        annotated_db_path: Path to annotated database file
+
+    Returns:
+        ManifestInfo object
+    """
+    manifest = ManifestInfo(
+        metagomics2_version=metagomics2_version,
+        git_sha=get_git_sha(),
+        python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        search_tool=search_tool,
+        search_tool_version=get_tool_version(search_tool),
+        search_tool_command=search_tool_command,
+        annotated_db_choice=annotated_db_choice,
+        input_fasta_path=str(input_fasta_path),
+        input_fasta_hash=compute_file_hash(input_fasta_path) if input_fasta_path.exists() else "",
+        peptide_list_path=str(peptide_list_path),
+        peptide_list_hash=compute_file_hash(peptide_list_path) if peptide_list_path.exists() else "",
+        parameters=parameters,
+        timestamp_utc=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # Hash GO snapshot files
+    if go_snapshot_dir and go_snapshot_dir.exists():
+        for file_path in sorted(go_snapshot_dir.iterdir()):
+            if file_path.is_file():
+                manifest.go_snapshot_files[file_path.name] = compute_file_hash(file_path)
+
+    # Hash taxonomy snapshot files
+    if taxonomy_snapshot_dir and taxonomy_snapshot_dir.exists():
+        for file_path in sorted(taxonomy_snapshot_dir.iterdir()):
+            if file_path.is_file():
+                manifest.taxonomy_snapshot_files[file_path.name] = compute_file_hash(file_path)
+
+    # Hash annotated database
+    if annotated_db_path and annotated_db_path.exists():
+        manifest.annotated_db_hash = compute_file_hash(annotated_db_path)
+
+    return manifest

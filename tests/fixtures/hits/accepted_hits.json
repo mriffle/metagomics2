@@ -1,0 +1,7 @@
+{
+  "background_to_subjects": {
+    "B1": ["U1", "U2"],
+    "B2": ["U3"],
+    "B3": []
+  }
+}

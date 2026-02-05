@@ -1,0 +1,24 @@
+{
+  "nodes": {
+    "1": {"name": "root", "rank": "no rank", "parent_tax_id": null},
+    "10": {"name": "KingdomA", "rank": "kingdom", "parent_tax_id": 1},
+    "20": {"name": "PhylumA", "rank": "phylum", "parent_tax_id": 10},
+    "30": {"name": "ClassA", "rank": "class", "parent_tax_id": 20},
+    "40": {"name": "OrderA", "rank": "order", "parent_tax_id": 30},
+    "50": {"name": "FamilyA", "rank": "family", "parent_tax_id": 40},
+    "60": {"name": "GenusA", "rank": "genus", "parent_tax_id": 50},
+    "70": {"name": "SpeciesA", "rank": "species", "parent_tax_id": 60},
+    "71": {"name": "SpeciesB", "rank": "species", "parent_tax_id": 60},
+    "41": {"name": "OrderB", "rank": "order", "parent_tax_id": 30},
+    "51": {"name": "FamilyB", "rank": "family", "parent_tax_id": 41},
+    "61": {"name": "GenusB", "rank": "genus", "parent_tax_id": 51},
+    "72": {"name": "SpeciesC", "rank": "species", "parent_tax_id": 61},
+    "11": {"name": "KingdomB", "rank": "kingdom", "parent_tax_id": 1},
+    "21": {"name": "PhylumB", "rank": "phylum", "parent_tax_id": 11},
+    "31": {"name": "ClassB", "rank": "class", "parent_tax_id": 21},
+    "42": {"name": "OrderC", "rank": "order", "parent_tax_id": 31},
+    "52": {"name": "FamilyC", "rank": "family", "parent_tax_id": 42},
+    "62": {"name": "GenusC", "rank": "genus", "parent_tax_id": 52},
+    "73": {"name": "SpeciesD", "rank": "species", "parent_tax_id": 62}
+  }
+}
