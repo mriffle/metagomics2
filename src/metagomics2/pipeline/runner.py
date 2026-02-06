@@ -6,9 +6,6 @@ the CLI and web server execution modes.
 
 import json
 import logging
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -25,10 +22,12 @@ from metagomics2.core.annotation import (
     annotate_peptide,
     load_subject_annotations_from_dict,
 )
-from metagomics2.core.fasta import build_protein_dict, compute_file_sha256, parse_fasta
+from metagomics2.core.diamond import DiamondError, run_diamond
+from metagomics2.core.subject_lookup import load_subject_annotations
+from metagomics2.core.fasta import build_protein_dict, compute_file_sha256, parse_fasta, write_subset_fasta
 from metagomics2.core.filtering import FilterPolicy, filter_all_hits, parse_blast_tabular
 from metagomics2.core.go import GODAG, load_go_from_dict, load_go_from_json
-from metagomics2.core.matching import match_peptides_to_proteins
+from metagomics2.core.matching import MatchResult, match_peptides_to_proteins
 from metagomics2.core.peptides import Peptide, parse_peptide_list
 from metagomics2.core.reference_loader import (
     create_reference_snapshot,
@@ -79,6 +78,9 @@ class PipelineConfig:
     # GO closure settings
     go_edge_types: set[str] = field(default_factory=lambda: {"is_a"})
     go_include_self: bool = True
+
+    # Annotations database path (companion SQLite for taxonomy/GO lookup)
+    annotations_db_path: Path | None = None
 
     # Mock mode for testing (bypasses actual homology search)
     mock_hits_path: Path | None = None
@@ -140,6 +142,16 @@ class PipelineRunner:
 
         # Shared across peptide lists
         self.protein_to_subjects: dict[str, set[str]] = {}
+
+        # Per-list parsed peptides and match results
+        self.parsed_peptide_lists: dict[str, list[Peptide]] = {}
+        self.per_list_match_results: dict[str, Any] = {}
+
+        # Union of all hit protein IDs across all peptide lists
+        self.all_hit_proteins: set[str] = set()
+
+        # Path to the subset FASTA written for DIAMOND input
+        self.subset_fasta_path: Path | None = None
         
         # Reference snapshot directory
         self.ref_snapshot_dir: Path | None = None
@@ -162,13 +174,37 @@ class PipelineRunner:
         peptide_list_results: list[PeptideListResult] = []
         
         try:
-            # Stage 0: Initialize
+            # Stage 0: Initialize (load FASTA, reference data)
             self._update_progress("Initializing")
             self._initialize()
 
-            # Stage 1-2: Process each peptide list
             self.progress.total_peptide_lists = len(self.config.peptide_list_paths)
 
+            # Stage 1: Parse all peptide lists
+            self._update_progress("Parsing peptide lists")
+            for i, peptide_list_path in enumerate(self.config.peptide_list_paths):
+                list_id = f"list_{i:03d}"
+                peptides = parse_peptide_list(peptide_list_path)
+                self.parsed_peptide_lists[list_id] = peptides
+                logger.info(f"Parsed {len(peptides)} peptides from {peptide_list_path.name}")
+
+            # Stage 2: Match all peptides against background proteome
+            self._update_progress("Matching peptides to background proteome")
+            self._match_all_peptides()
+
+            # Stage 3: Write subset FASTA of hit proteins (for future DIAMOND search)
+            self._update_progress("Writing subset FASTA")
+            self._write_subset_fasta()
+
+            # Stage 4: Homology search (placeholder for DIAMOND)
+            if not self.config.mock_hits_path:
+                self._run_homology_search()
+
+            # Stage 4b: Load subject annotations from companion DB
+            if not self.config.mock_subject_annotations_path:
+                self._load_subject_annotations()
+
+            # Stage 5+: Per-list annotation, aggregation, reporting
             for i, peptide_list_path in enumerate(self.config.peptide_list_paths):
                 list_id = f"list_{i:03d}"
                 result = self._process_peptide_list(peptide_list_path, list_id)
@@ -211,11 +247,9 @@ class PipelineRunner:
         # Load reference data
         self._load_reference_data()
 
-        # Run homology search if not in mock mode
+        # Load mock hits if in mock mode
         if self.config.mock_hits_path:
             self._load_mock_hits()
-        else:
-            self._run_homology_search()
 
     def _create_reference_snapshot(self) -> None:
         """Create per-job snapshot of reference data."""
@@ -288,6 +322,46 @@ class PipelineRunner:
             self.subject_annotations = load_subject_annotations_from_dict(data)
             logger.info(f"Loaded {len(self.subject_annotations)} subject annotations")
 
+    def _load_subject_annotations(self) -> None:
+        """Load subject annotations from the companion SQLite database.
+
+        Collects all unique subject IDs from the homology search results
+        and looks up their taxonomy IDs and GO terms.
+        """
+        if not self.config.annotations_db_path:
+            raise ValueError(
+                "No annotations database path configured. Each annotated database "
+                "must have a companion .annotations.db file. Build one with: "
+                "metagomics2-build-annotations"
+            )
+
+        if not self.config.annotations_db_path.exists():
+            raise FileNotFoundError(
+                f"Annotations database not found: {self.config.annotations_db_path}. "
+                f"Build it with: metagomics2-build-annotations"
+            )
+
+        if not self.protein_to_subjects:
+            logger.warning("No homology search results, skipping subject annotation lookup")
+            return
+
+        self._update_progress("Loading subject annotations")
+
+        # Collect all unique subject IDs across all background proteins
+        all_subject_ids: set[str] = set()
+        for subjects in self.protein_to_subjects.values():
+            all_subject_ids |= subjects
+
+        if not all_subject_ids:
+            logger.warning("No subject IDs found in homology results")
+            return
+
+        self.subject_annotations = load_subject_annotations(
+            self.config.annotations_db_path,
+            all_subject_ids,
+        )
+        logger.info(f"Loaded annotations for {len(self.subject_annotations)} subjects")
+
     def _load_mock_hits(self) -> None:
         """Load mock hits for testing."""
         logger.info(f"Loading mock hits: {self.config.mock_hits_path}")
@@ -300,42 +374,129 @@ class PipelineRunner:
         }
         logger.info(f"Loaded mock hits for {len(self.protein_to_subjects)} proteins")
 
-    def _run_homology_search(self) -> None:
-        """Run DIAMOND or BLAST homology search."""
-        if not self.config.annotated_db_path:
-            logger.warning("No annotated database specified, skipping homology search")
+    def _match_all_peptides(self) -> None:
+        """Match peptides from all lists against the background proteome.
+
+        Builds per-list match results and the union of all hit proteins.
+        """
+        all_peptide_sequences: set[str] = set()
+        per_list_sequences: dict[str, set[str]] = {}
+
+        for list_id, peptides in self.parsed_peptide_lists.items():
+            seqs = {p.sequence for p in peptides}
+            per_list_sequences[list_id] = seqs
+            all_peptide_sequences |= seqs
+
+        # Single Aho-Corasick pass over the background proteome
+        combined_result = match_peptides_to_proteins(all_peptide_sequences, self.proteins)
+
+        # Partition into per-list results
+        for list_id, seqs in per_list_sequences.items():
+            list_match = MatchResult(
+                peptide_to_proteins={
+                    pep: combined_result.peptide_to_proteins.get(pep, set())
+                    for pep in seqs
+                },
+                matched_peptides=combined_result.matched_peptides & seqs,
+                unmatched_peptides=combined_result.unmatched_peptides & seqs,
+                hit_proteins={
+                    pid
+                    for pep in seqs
+                    for pid in combined_result.peptide_to_proteins.get(pep, set())
+                },
+            )
+            self.per_list_match_results[list_id] = list_match
+            logger.info(
+                f"{list_id}: {list_match.n_matched} matched, "
+                f"{list_match.n_unmatched} unmatched"
+            )
+
+        self.all_hit_proteins = combined_result.hit_proteins
+        logger.info(
+            f"Total unique hit proteins across all lists: {len(self.all_hit_proteins)}"
+        )
+
+    def _write_subset_fasta(self) -> None:
+        """Write a FASTA file containing only proteins hit by at least one peptide.
+
+        This subset FASTA is the input for the DIAMOND homology search against
+        an annotated database (e.g. UniProt).
+        """
+        if not self.all_hit_proteins:
+            logger.warning("No proteins matched any peptides, skipping subset FASTA")
             return
 
-        # Get union of all hit proteins across all peptide lists
-        # For now, we'll do this per-list in _process_peptide_list
-        # This is a placeholder for the full implementation
-        logger.info("Homology search would run here (not implemented in mock mode)")
+        self.subset_fasta_path = self.config.output_dir.parent / "work" / "hit_proteins.fasta"
+        n_written = write_subset_fasta(
+            self.proteins, self.all_hit_proteins, self.subset_fasta_path
+        )
+        logger.info(
+            f"Wrote {n_written} hit proteins to subset FASTA: {self.subset_fasta_path}"
+        )
+
+    def _run_homology_search(self) -> None:
+        """Run DIAMOND blastp and filter the results.
+
+        Searches the subset FASTA (hit proteins from the background proteome)
+        against an annotated database. Populates self.protein_to_subjects:
+            background_protein_id -> set of annotated DB accessions
+        """
+        self._update_progress("Homology search")
+
+        if not self.config.annotated_db_path:
+            raise ValueError(
+                "No annotated database specified. An annotated database is required "
+                "for homology search."
+            )
+
+        if not self.subset_fasta_path or not self.subset_fasta_path.exists():
+            logger.warning("No subset FASTA available, skipping homology search")
+            return
+
+        work_dir = self.subset_fasta_path.parent
+        diamond_output = work_dir / "diamond_results.tsv"
+
+        # Run DIAMOND with user-specified evalue and top_k as max-target-seqs
+        diamond_result = run_diamond(
+            query_fasta=self.subset_fasta_path,
+            db_path=self.config.annotated_db_path,
+            output_path=diamond_output,
+            evalue=self.config.filter_policy.max_evalue or 1e-10,
+            max_target_seqs=self.config.filter_policy.top_k or 1,
+            threads=self.config.threads,
+        )
+
+        logger.info(
+            f"DIAMOND returned {diamond_result.n_hits} hits "
+            f"for {diamond_result.n_queries} query proteins"
+        )
+
+        # Apply filter policy (pident, evalue thresholds, top_k ranking, etc.)
+        self._update_progress("Filtering homology hits")
+        self.protein_to_subjects = filter_all_hits(
+            diamond_result.hits_by_query, self.config.filter_policy
+        )
+
+        n_with_hits = sum(1 for s in self.protein_to_subjects.values() if s)
+        logger.info(
+            f"After filtering: {n_with_hits} background proteins "
+            f"have at least one accepted subject hit"
+        )
 
     def _process_peptide_list(
         self,
         peptide_list_path: Path,
         list_id: str,
     ) -> PeptideListResult:
-        """Process a single peptide list through the pipeline."""
-        self._update_progress("Parsing peptide list", list_id)
+        """Process a single peptide list through the pipeline.
 
-        # Stage 1: Parse peptide list
-        peptides = parse_peptide_list(peptide_list_path)
-        logger.info(f"Parsed {len(peptides)} peptides from {peptide_list_path.name}")
+        Peptide parsing and matching have already been done in the shared
+        stages.  This method handles annotation, aggregation, and reporting.
+        """
+        peptides = self.parsed_peptide_lists[list_id]
+        match_result = self.per_list_match_results[list_id]
 
-        # Stage 2: Exact matching
-        self._update_progress("Matching peptides to proteins", list_id)
-        peptide_sequences = {p.sequence for p in peptides}
-        match_result = match_peptides_to_proteins(peptide_sequences, self.proteins)
-        logger.info(
-            f"Matched {match_result.n_matched} peptides, "
-            f"{match_result.n_unmatched} unmatched"
-        )
-
-        # Stage 3-4: Homology search and filtering
-        # (Already done in _initialize for mock mode)
-
-        # Stage 5-6: Annotate peptides
+        # Annotate peptides
         self._update_progress("Annotating peptides", list_id)
         annotations = self._annotate_peptides(peptides, match_result.peptide_to_proteins)
 

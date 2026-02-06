@@ -10,6 +10,7 @@ from metagomics2.core.peptides import (
     STANDARD_AA_ALPHABET,
     Peptide,
     PeptideParsingError,
+    _aggregate_peptides,
     normalize_sequence,
     parse_peptide_list,
     parse_peptide_list_from_handle,
@@ -31,17 +32,21 @@ class TestNormalizeSequence:
     def test_combined_normalization(self):
         assert normalize_sequence("  pepTide  ") == "PEPTIDE"
 
-    def test_rejects_invalid_characters_default_alphabet(self):
-        with pytest.raises(PeptideParsingError) as exc_info:
-            normalize_sequence("PEP*TIDE")
-        assert "*" in str(exc_info.value)
+    def test_strips_non_letter_characters(self):
+        assert normalize_sequence("PEP*TIDE") == "PEPTIDE"
+        assert normalize_sequence("PEP[+80]TIDE") == "PEPTIDE"
+        assert normalize_sequence("P.E.P.T.I.D.E") == "PEPTIDE"
+        assert normalize_sequence("PEPT-IDE") == "PEPTIDE"
 
-    def test_rejects_invalid_characters_shows_all(self):
+    def test_strips_modification_annotations(self):
+        assert normalize_sequence("PEPT[+79.966]IDE") == "PEPTIDE"
+        assert normalize_sequence("[+42]PEPTIDE") == "PEPTIDE"
+        assert normalize_sequence("PEPTIDE[+80]") == "PEPTIDE"
+
+    def test_rejects_empty_after_stripping(self):
         with pytest.raises(PeptideParsingError) as exc_info:
-            normalize_sequence("PEP*TI#DE")
-        error_msg = str(exc_info.value)
-        assert "*" in error_msg
-        assert "#" in error_msg
+            normalize_sequence("[+80]")
+        assert "Empty" in str(exc_info.value)
 
     def test_accepts_custom_alphabet(self):
         # Extended alphabet allows more characters
@@ -125,7 +130,7 @@ class TestParsePeptideListTSV:
     def test_parse_tsv_without_header(self):
         content = "PEPTIDE\t10\nABC\t5\n"
         handle = io.StringIO(content)
-        peptides = parse_peptide_list_from_handle(handle, has_header=False)
+        peptides = parse_peptide_list_from_handle(handle)
 
         assert len(peptides) == 2
         assert peptides[0] == Peptide(sequence="PEPTIDE", quantity=10.0)
@@ -137,36 +142,37 @@ class TestParsePeptideListTSV:
 
         assert len(peptides) == 2
 
-    def test_parse_tsv_case_insensitive_header(self):
-        content = "Peptide_Sequence\tQuantity\nPEPTIDE\t10\n"
+    def test_parse_tsv_any_header_names(self):
+        content = "seq\tcount\nPEPTIDE\t10\n"
         handle = io.StringIO(content)
         peptides = parse_peptide_list_from_handle(handle)
 
         assert len(peptides) == 1
+        assert peptides[0] == Peptide(sequence="PEPTIDE", quantity=10.0)
 
-    def test_parse_tsv_missing_sequence_column(self):
-        content = "wrong_column\tquantity\nPEPTIDE\t10\n"
+    def test_parse_tsv_strips_modifications(self):
+        content = "peptide_sequence\tquantity\nPEPT[+80]IDE\t10\n"
         handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
 
-        with pytest.raises(PeptideParsingError) as exc_info:
-            parse_peptide_list_from_handle(handle)
-        assert "peptide_sequence" in str(exc_info.value).lower()
+        assert len(peptides) == 1
+        assert peptides[0] == Peptide(sequence="PEPTIDE", quantity=10.0)
 
-    def test_parse_tsv_missing_quantity_column(self):
-        content = "peptide_sequence\twrong\nPEPTIDE\t10\n"
-        handle = io.StringIO(content)
-
-        with pytest.raises(PeptideParsingError) as exc_info:
-            parse_peptide_list_from_handle(handle)
-        assert "quantity" in str(exc_info.value).lower()
-
-    def test_parse_tsv_invalid_sequence_reports_line(self):
-        content = "peptide_sequence\tquantity\nPEPTIDE\t10\nINVALID*\t5\n"
+    def test_parse_tsv_empty_after_strip_reports_line_with_header(self):
+        content = "peptide_sequence\tquantity\nPEPTIDE\t10\n[+80]\t5\n"
         handle = io.StringIO(content)
 
         with pytest.raises(PeptideParsingError) as exc_info:
             parse_peptide_list_from_handle(handle)
         assert "Line 3" in str(exc_info.value)
+
+    def test_parse_tsv_empty_after_strip_reports_line_without_header(self):
+        content = "[+80]\t5\n"
+        handle = io.StringIO(content)
+
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(handle)
+        assert "Line 1" in str(exc_info.value)
 
     def test_parse_tsv_invalid_quantity_reports_line(self):
         content = "peptide_sequence\tquantity\nPEPTIDE\tabc\n"
@@ -239,3 +245,79 @@ class TestPeptideDataclass:
         # Should be usable in sets/dicts
         s = {p}
         assert p in s
+
+
+class TestAggregatePeptides:
+    """Tests for merging peptides with identical sequences."""
+
+    def test_no_duplicates(self):
+        peptides = [
+            Peptide(sequence="PEPTIDE", quantity=10.0),
+            Peptide(sequence="ABC", quantity=5.0),
+        ]
+        result = _aggregate_peptides(peptides)
+        assert len(result) == 2
+
+    def test_sums_duplicates(self):
+        peptides = [
+            Peptide(sequence="PEPTIDE", quantity=10.0),
+            Peptide(sequence="PEPTIDE", quantity=5.0),
+        ]
+        result = _aggregate_peptides(peptides)
+        assert len(result) == 1
+        assert result[0].sequence == "PEPTIDE"
+        assert result[0].quantity == 15.0
+
+    def test_sums_multiple_duplicates(self):
+        peptides = [
+            Peptide(sequence="PEPTIDE", quantity=10.0),
+            Peptide(sequence="ABC", quantity=3.0),
+            Peptide(sequence="PEPTIDE", quantity=5.0),
+            Peptide(sequence="ABC", quantity=7.0),
+        ]
+        result = _aggregate_peptides(peptides)
+        assert len(result) == 2
+        by_seq = {p.sequence: p.quantity for p in result}
+        assert by_seq["PEPTIDE"] == 15.0
+        assert by_seq["ABC"] == 10.0
+
+    def test_empty_list(self):
+        assert _aggregate_peptides([]) == []
+
+
+class TestModificationStrippingAndAggregation:
+    """End-to-end tests: modifications are stripped and duplicates are summed."""
+
+    def test_modified_and_unmodified_are_merged(self):
+        content = "peptide_sequence\tquantity\nPEPTIDE\t132\nPEPT[+80]IDE\t10\n"
+        handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
+
+        assert len(peptides) == 1
+        assert peptides[0].sequence == "PEPTIDE"
+        assert peptides[0].quantity == 142.0
+
+    def test_multiple_modifications_merged(self):
+        content = (
+            "seq\tqty\n"
+            "PEPTIDE\t100\n"
+            "PEPT[+80]IDE\t10\n"
+            "[+42]PEPTIDE\t5\n"
+            "PEPT[+79.966]IDE[+16]\t3\n"
+        )
+        handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
+
+        assert len(peptides) == 1
+        assert peptides[0].sequence == "PEPTIDE"
+        assert peptides[0].quantity == 118.0
+
+    def test_different_sequences_stay_separate(self):
+        content = "seq\tqty\nPEPTIDE\t10\nANOTHER\t5\nPEPT[+80]IDE\t3\n"
+        handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
+
+        assert len(peptides) == 2
+        by_seq = {p.sequence: p.quantity for p in peptides}
+        assert by_seq["PEPTIDE"] == 13.0
+        assert by_seq["ANOTHER"] == 5.0

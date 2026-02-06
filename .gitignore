@@ -88,3 +88,12 @@ frontend/.next/
 # Logs
 *.log
 logs/
+
+# Test reference data cache (downloaded from GO/NCBI)
+tests/.ref_cache/
+
+# Default local data directory
+_data/
+
+# Default local databases directory
+_databases/

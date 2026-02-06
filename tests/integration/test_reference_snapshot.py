@@ -17,17 +17,21 @@ class TestReferenceSnapshot:
         tmp_path: Path,
     ):
         """Pipeline should create reference snapshot when job_dir is set and bundled ref exists."""
+        from unittest.mock import patch
+
         job_dir = tmp_path / "job_123"
-        
+
         # Create a mock bundled reference directory for testing
         bundled_ref = tmp_path / "app_reference"
         bundled_ref.mkdir()
         (bundled_ref / "go").mkdir()
-        (bundled_ref / "go" / "go.obo").write_text("[Term]\nid: GO:0000001\n")
+        (bundled_ref / "go" / "go.obo").write_text("[Term]\nid: GO:0000001\nname: test\n")
+        (bundled_ref / "go" / "VERSION").write_text("2024-01-17\nsource=test")
         (bundled_ref / "taxonomy").mkdir()
         (bundled_ref / "taxonomy" / "nodes.dmp").write_text("1\t|\t1\t|\tno rank\t|\n")
         (bundled_ref / "taxonomy" / "names.dmp").write_text("1\t|\troot\t|\t\t|\tscientific name\t|\n")
-        
+        (bundled_ref / "taxonomy" / "VERSION").write_text("2024-01-15\nsource=test")
+
         config = PipelineConfig(
             fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
             peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
@@ -39,12 +43,17 @@ class TestReferenceSnapshot:
             mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
         )
 
-        result = run_pipeline(config)
+        with patch("metagomics2.pipeline.runner.get_bundled_reference_dir", return_value=bundled_ref):
+            result = run_pipeline(config)
 
         assert result.success, f"Pipeline failed: {result.error_message}"
 
-        # In development (no bundled ref), snapshot won't be created
-        # This is expected behavior - snapshots only work in Docker with bundled refs
+        # Verify snapshot was actually created
+        snapshot_dir = job_dir / "work" / "ref_snapshot"
+        assert snapshot_dir.exists(), "Reference snapshot directory should exist"
+        assert (snapshot_dir / "go" / "go.obo").exists(), "GO OBO file should be in snapshot"
+        assert (snapshot_dir / "taxonomy" / "nodes.dmp").exists(), "Taxonomy nodes.dmp should be in snapshot"
+        assert (snapshot_dir / "taxonomy" / "names.dmp").exists(), "Taxonomy names.dmp should be in snapshot"
 
     def test_pipeline_without_job_dir_skips_snapshot(
         self,

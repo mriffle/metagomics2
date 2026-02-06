@@ -6,11 +6,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - metagomics_data:/data
+      - ${METAGOMICS_DATA_DIR:-./_data}:/data
+      - ${METAGOMICS_DATABASES_DIR:-./_databases}:/databases:ro
     environment:
       - METAGOMICS_DATA_DIR=/data
+      - METAGOMICS_DATABASES_DIR=/databases
       - METAGOMICS_WORKERS=1
+      - METAGOMICS_THREADS=${METAGOMICS_THREADS:-4}
+      - METAGOMICS_DATABASES=${METAGOMICS_DATABASES:-[]}
+      - METAGOMICS_ADMIN_PASSWORD=${METAGOMICS_ADMIN_PASSWORD:-changeme}
     restart: unless-stopped
-
-volumes:
-  metagomics_data:

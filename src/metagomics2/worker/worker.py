@@ -1,5 +1,6 @@
 """Background worker for processing jobs."""
 
+import json
 import logging
 import os
 import signal
@@ -17,10 +18,18 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(os.environ.get("METAGOMICS_DATA_DIR", "/data"))
 JOBS_DIR = DATA_DIR / "jobs"
 DB_PATH = DATA_DIR / "metagomics2.db"
-REFERENCE_DIR = DATA_DIR / "reference"
 
 # Worker settings
 POLL_INTERVAL = int(os.environ.get("METAGOMICS_POLL_INTERVAL", "5"))
+THREADS = int(os.environ.get("METAGOMICS_THREADS", "4"))
+DATABASES_DIR = Path(os.environ.get("METAGOMICS_DATABASES_DIR", "/databases"))
+
+# Parse annotated databases configuration from JSON env var
+_databases_raw = os.environ.get("METAGOMICS_DATABASES", "[]")
+try:
+    DATABASES: list[dict] = json.loads(_databases_raw)
+except (json.JSONDecodeError, TypeError):
+    DATABASES = []
 
 
 class Worker:
@@ -91,6 +100,17 @@ class Worker:
             result = run_pipeline(config, progress_callback)
 
             if result.success:
+                # Update per-list status with results
+                for pl_result in result.peptide_list_results:
+                    self.db.update_peptide_list_status(
+                        job_id,
+                        pl_result.list_id,
+                        PeptideListStatus.DONE,
+                        n_peptides=pl_result.n_peptides,
+                        n_matched=pl_result.n_matched,
+                        n_unmatched=pl_result.n_unmatched,
+                    )
+
                 self.db.update_job_status(job_id, JobStatus.COMPLETED)
                 self.db.add_event(job_id, "completed", "Job completed successfully")
                 logger.info(f"Job {job_id} completed successfully")
@@ -139,12 +159,27 @@ class Worker:
             best_hit_only=params.best_hit_only,
         )
 
+        # Resolve database path: db_choice is relative to DATABASES_DIR
+        annotated_db_path = None
+        annotations_db_path = None
+        if params.db_choice:
+            annotated_db_path = DATABASES_DIR / params.db_choice
+            # Look up companion annotations DB from database config
+            for db_entry in DATABASES:
+                if db_entry.get("path") == params.db_choice:
+                    ann_path = db_entry.get("annotations")
+                    if ann_path:
+                        annotations_db_path = DATABASES_DIR / ann_path
+                    break
+
         return PipelineConfig(
             fasta_path=job_dir / "inputs" / "background.fasta",
             peptide_list_paths=peptide_paths,
             output_dir=job_dir / "results",
             search_tool=params.search_tool,
-            annotated_db_path=Path(params.db_choice) if params.db_choice else None,
+            annotated_db_path=annotated_db_path,
+            annotations_db_path=annotations_db_path,
+            threads=THREADS,
             filter_policy=filter_policy,
             job_dir=job_dir,  # Enable reference snapshot creation
             go_edge_types=set(params.go_edge_types.split(",")),

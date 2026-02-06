@@ -1,3 +1,13 @@
+# Stage 1: Build frontend
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python application
 FROM python:3.11-slim
 
 # Version argument - can be overridden at build time
@@ -13,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install DIAMOND
-ARG DIAMOND_VERSION=2.1.8
+ARG DIAMOND_VERSION=2.1.21
 RUN wget -q https://github.com/bbuchfink/diamond/releases/download/v${DIAMOND_VERSION}/diamond-linux64.tar.gz \
     && tar -xzf diamond-linux64.tar.gz \
     && mv diamond /usr/local/bin/ \
@@ -28,6 +38,9 @@ COPY src/ ./src/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .
+
+# Copy built frontend
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # Download and install reference data
 ARG GO_VERSION=2024-01-17
@@ -51,13 +64,18 @@ RUN mkdir -p /app/reference/taxonomy && \
 # Create data directory for persistent storage
 RUN mkdir -p /data/jobs /data/databases /data/reference
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Set environment variables
 ENV METAGOMICS_DATA_DIR=/data
 ENV PYTHONUNBUFFERED=1
 ENV METAGOMICS_VERSION=${VERSION}
+ENV DIAMOND_VERSION=${DIAMOND_VERSION}
 
 # Expose API port
 EXPOSE 8000
 
-# Default command runs the web server
-CMD ["uvicorn", "metagomics2.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start both worker and server
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

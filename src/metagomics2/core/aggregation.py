@@ -1,7 +1,6 @@
 """Aggregation of peptide quantities into taxonomy nodes and GO terms."""
 
 from dataclasses import dataclass, field
-from typing import TypeVar
 
 from metagomics2.core.annotation import PeptideAnnotation
 

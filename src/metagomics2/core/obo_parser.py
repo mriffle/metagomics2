@@ -1,6 +1,5 @@
 """Parser for OBO (Open Biomedical Ontologies) format files."""
 
-import re
 from pathlib import Path
 from typing import TextIO
 

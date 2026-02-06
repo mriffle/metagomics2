@@ -26,6 +26,9 @@ class PeptideParsingError(Exception):
     pass
 
 
+_NON_UPPER_RE = re.compile(r"[^A-Z]")
+
+
 def normalize_sequence(
     sequence: str,
     allowed_alphabet: set[str] | None = None,
@@ -34,25 +37,28 @@ def normalize_sequence(
 
     - Strip whitespace
     - Convert to uppercase
-    - Validate against allowed alphabet
+    - Remove all non-uppercase-letter characters (e.g. modification
+      annotations like ``[+80]``, dots, dashes, etc.)
+    - Validate against allowed alphabet (if provided)
 
     Args:
         sequence: Raw peptide sequence
         allowed_alphabet: Set of allowed characters. If None, uses EXTENDED_AA_ALPHABET.
 
     Returns:
-        Normalized sequence
+        Normalized sequence containing only uppercase amino-acid letters
 
     Raises:
-        PeptideParsingError: If sequence contains invalid characters
+        PeptideParsingError: If the resulting sequence is empty
     """
     if allowed_alphabet is None:
         allowed_alphabet = EXTENDED_AA_ALPHABET
 
-    normalized = sequence.strip().upper()
+    # Uppercase first, then strip everything that isn't A-Z
+    normalized = _NON_UPPER_RE.sub("", sequence.strip().upper())
 
     if not normalized:
-        raise PeptideParsingError("Empty peptide sequence")
+        raise PeptideParsingError("Empty peptide sequence after removing non-letter characters")
 
     invalid_chars = set(normalized) - allowed_alphabet
     if invalid_chars:
@@ -108,21 +114,28 @@ def detect_delimiter(line: str) -> str:
     return ","
 
 
+def _is_numeric(value: str) -> bool:
+    """Check if a string represents a numeric value."""
+    try:
+        float(value.strip())
+        return True
+    except ValueError:
+        return False
+
+
 def parse_peptide_list(
     file_path: Path | str,
-    sequence_column: str = "peptide_sequence",
-    quantity_column: str = "quantity",
     allowed_alphabet: set[str] | None = None,
-    has_header: bool = True,
 ) -> list[Peptide]:
     """Parse a peptide list from a CSV/TSV file.
 
+    The file should have two columns: peptide sequence and count/abundance.
+    A header row is auto-detected: if the second column of the first row is
+    numeric it is treated as data; otherwise it is skipped as a header.
+
     Args:
         file_path: Path to the peptide list file
-        sequence_column: Name of the sequence column (if has_header=True)
-        quantity_column: Name of the quantity column (if has_header=True)
         allowed_alphabet: Set of allowed amino acid characters
-        has_header: Whether the file has a header row
 
     Returns:
         List of Peptide objects
@@ -138,28 +151,23 @@ def parse_peptide_list(
     with open(file_path, "r", newline="", encoding="utf-8") as f:
         return parse_peptide_list_from_handle(
             f,
-            sequence_column=sequence_column,
-            quantity_column=quantity_column,
             allowed_alphabet=allowed_alphabet,
-            has_header=has_header,
         )
 
 
 def parse_peptide_list_from_handle(
     handle: TextIO,
-    sequence_column: str = "peptide_sequence",
-    quantity_column: str = "quantity",
     allowed_alphabet: set[str] | None = None,
-    has_header: bool = True,
 ) -> list[Peptide]:
     """Parse a peptide list from a file handle.
 
+    The file should have two columns: peptide sequence and count/abundance.
+    A header row is auto-detected: if the second column of the first row is
+    numeric it is treated as data; otherwise it is skipped as a header.
+
     Args:
         handle: File handle to read from
-        sequence_column: Name of the sequence column (if has_header=True)
-        quantity_column: Name of the quantity column (if has_header=True)
         allowed_alphabet: Set of allowed amino acid characters
-        has_header: Whether the file has a header row
 
     Returns:
         List of Peptide objects
@@ -178,41 +186,44 @@ def parse_peptide_list_from_handle(
 
     reader = csv.reader(handle, delimiter=delimiter)
 
-    if has_header:
-        try:
-            header = next(reader)
-        except StopIteration:
-            raise PeptideParsingError("Empty file")
+    # Read first row and auto-detect header
+    try:
+        first_row = next(reader)
+    except StopIteration:
+        raise PeptideParsingError("Empty file")
 
-        # Normalize header names
-        header = [col.strip().lower() for col in header]
+    # Always use positional columns: first=sequence, second=quantity
+    seq_idx = 0
+    qty_idx = 1
 
-        try:
-            seq_idx = header.index(sequence_column.lower())
-        except ValueError:
-            raise PeptideParsingError(
-                f"Sequence column '{sequence_column}' not found in header: {header}"
-            )
-
-        try:
-            qty_idx = header.index(quantity_column.lower())
-        except ValueError:
-            raise PeptideParsingError(
-                f"Quantity column '{quantity_column}' not found in header: {header}"
-            )
-    else:
-        # Without header, assume first column is sequence, second is quantity
-        seq_idx = 0
-        qty_idx = 1
+    # Auto-detect header: if second column is numeric, first row is data
+    has_header = len(first_row) > 1 and not _is_numeric(first_row[qty_idx])
 
     peptides = []
-    for line_num, row in enumerate(reader, start=2 if has_header else 1):
+
+    if not has_header:
+        # First row is data, process it
+        if len(first_row) <= max(seq_idx, qty_idx):
+            raise PeptideParsingError(
+                f"Line 1: Not enough columns (expected at least 2)"
+            )
+        try:
+            sequence = normalize_sequence(first_row[seq_idx], allowed_alphabet)
+        except PeptideParsingError as e:
+            raise PeptideParsingError(f"Line 1: {e}")
+        try:
+            quantity = parse_quantity(first_row[qty_idx])
+        except PeptideParsingError as e:
+            raise PeptideParsingError(f"Line 1: {e}")
+        peptides.append(Peptide(sequence=sequence, quantity=quantity))
+
+    for line_num, row in enumerate(reader, start=2):
         if not row or all(cell.strip() == "" for cell in row):
             continue  # Skip empty rows
 
         if len(row) <= max(seq_idx, qty_idx):
             raise PeptideParsingError(
-                f"Line {line_num}: Not enough columns (expected at least {max(seq_idx, qty_idx) + 1})"
+                f"Line {line_num}: Not enough columns (expected at least 2)"
             )
 
         try:
@@ -227,4 +238,12 @@ def parse_peptide_list_from_handle(
 
         peptides.append(Peptide(sequence=sequence, quantity=quantity))
 
-    return peptides
+    return _aggregate_peptides(peptides)
+
+
+def _aggregate_peptides(peptides: list[Peptide]) -> list[Peptide]:
+    """Merge peptides that share the same sequence by summing quantities."""
+    totals: dict[str, float] = {}
+    for p in peptides:
+        totals[p.sequence] = totals.get(p.sequence, 0.0) + p.quantity
+    return [Peptide(sequence=seq, quantity=qty) for seq, qty in totals.items()]

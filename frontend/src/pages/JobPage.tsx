@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Clock,
@@ -8,7 +8,6 @@ import {
   Download,
   FileText,
   AlertCircle,
-  BarChart3,
 } from 'lucide-react'
 
 interface PeptideList {
@@ -45,13 +44,27 @@ export default function JobPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   useEffect(() => {
     if (!jobId) return
 
     fetchJob()
-    const interval = setInterval(fetchJob, 3000)
-    return () => clearInterval(interval)
+    intervalRef.current = setInterval(fetchJob, 3000)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
   }, [jobId])
+
+  // Stop polling once job reaches a terminal state
+  useEffect(() => {
+    if (job && (job.status === 'completed' || job.status === 'failed')) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [job?.status])
 
   async function fetchJob() {
     try {

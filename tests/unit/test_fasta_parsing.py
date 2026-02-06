@@ -14,6 +14,7 @@ from metagomics2.core.fasta import (
     parse_fasta,
     parse_fasta_from_handle,
     parse_fasta_header,
+    write_subset_fasta,
 )
 
 
@@ -193,3 +194,58 @@ class TestFastaRecord:
         r1 = FastaRecord(id="P1", description="desc", sequence="AAA")
         r2 = FastaRecord(id="P1", description="desc", sequence="AAA")
         assert r1 == r2
+
+
+class TestWriteSubsetFasta:
+    """Tests for writing a subset FASTA from selected protein IDs."""
+
+    def test_writes_selected_proteins(self, tmp_path):
+        proteins = {"P1": "ACDE", "P2": "FGHI", "P3": "KLMN"}
+        out = tmp_path / "subset.fasta"
+        n = write_subset_fasta(proteins, {"P1", "P3"}, out)
+        assert n == 2
+        content = out.read_text()
+        assert ">P1" in content
+        assert "ACDE" in content
+        assert ">P3" in content
+        assert "KLMN" in content
+        assert ">P2" not in content
+
+    def test_skips_missing_ids(self, tmp_path):
+        proteins = {"P1": "ACDE"}
+        out = tmp_path / "subset.fasta"
+        n = write_subset_fasta(proteins, {"P1", "MISSING"}, out)
+        assert n == 1
+
+    def test_empty_protein_ids(self, tmp_path):
+        proteins = {"P1": "ACDE"}
+        out = tmp_path / "subset.fasta"
+        n = write_subset_fasta(proteins, set(), out)
+        assert n == 0
+        assert out.read_text() == ""
+
+    def test_line_wrapping(self, tmp_path):
+        proteins = {"P1": "A" * 100}
+        out = tmp_path / "subset.fasta"
+        write_subset_fasta(proteins, {"P1"}, out, line_width=40)
+        lines = out.read_text().strip().split("\n")
+        assert lines[0] == ">P1"
+        assert lines[1] == "A" * 40
+        assert lines[2] == "A" * 40
+        assert lines[3] == "A" * 20
+
+    def test_creates_parent_dirs(self, tmp_path):
+        proteins = {"P1": "ACDE"}
+        out = tmp_path / "deep" / "nested" / "subset.fasta"
+        n = write_subset_fasta(proteins, {"P1"}, out)
+        assert n == 1
+        assert out.exists()
+
+    def test_roundtrip(self, tmp_path):
+        """Subset FASTA can be parsed back correctly."""
+        proteins = {"P1": "ACDEFGHIKLMN", "P2": "PQRSTVWY"}
+        out = tmp_path / "subset.fasta"
+        write_subset_fasta(proteins, {"P1", "P2"}, out)
+        records = parse_fasta(out)
+        result = build_protein_dict(records)
+        assert result == proteins

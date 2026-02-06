@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Dna, Plus } from 'lucide-react'
+import { Dna } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 interface LayoutProps {
@@ -28,11 +28,10 @@ export default function Layout({ children }: LayoutProps) {
             </Link>
             <nav className="flex items-center gap-4">
               <Link
-                to="/new"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                to="/admin"
+                className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
               >
-                <Plus className="w-4 h-4" />
-                New Job
+                Admin
               </Link>
             </nav>
           </div>

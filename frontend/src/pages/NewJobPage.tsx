@@ -1,6 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, FileText, Settings, Loader2, AlertCircle } from 'lucide-react'
+import { Upload, FileText, Settings, Loader2, AlertCircle, HelpCircle } from 'lucide-react'
+
+function Tooltip({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-flex ml-1">
+      <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg whitespace-normal w-56 text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+        {text}
+        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+      </span>
+    </span>
+  )
+}
 
 export default function NewJobPage() {
   const navigate = useNavigate()
@@ -9,11 +21,33 @@ export default function NewJobPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Config from server
+  const [diamondVersion, setDiamondVersion] = useState('')
+  const [databases, setDatabases] = useState<{ name: string; description: string; path: string }[]>([])
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => {
+        setDiamondVersion(data.diamond_version || '')
+        const dbs = data.databases || []
+        setDatabases(dbs)
+        if (dbs.length > 0) {
+          setDbChoice(dbs[0].path)
+        }
+      })
+      .catch(() => {
+        setDiamondVersion('')
+        setDatabases([])
+      })
+  }, [])
+
   // Parameters
   const [searchTool, setSearchTool] = useState('diamond')
-  const [maxEvalue, setMaxEvalue] = useState('')
-  const [minPident, setMinPident] = useState('')
-  const [topK, setTopK] = useState('')
+  const [dbChoice, setDbChoice] = useState('')
+  const [maxEvalue, setMaxEvalue] = useState('1e-10')
+  const [minPident, setMinPident] = useState('80')
+  const [topK, setTopK] = useState('1')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -26,7 +60,6 @@ export default function NewJobPage() {
       setError('Please select at least one peptide file')
       return
     }
-
     setSubmitting(true)
     setError(null)
 
@@ -39,6 +72,7 @@ export default function NewJobPage() {
 
       const params: Record<string, unknown> = {
         search_tool: searchTool,
+        db_choice: dbChoice,
       }
       if (maxEvalue) params.max_evalue = parseFloat(maxEvalue)
       if (minPident) params.min_pident = parseFloat(minPident)
@@ -92,8 +126,9 @@ export default function NewJobPage() {
           <div className="space-y-4">
             {/* FASTA Upload */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 Background Proteome FASTA *
+                <Tooltip text="A FASTA file containing all protein sequences from the metaproteome community. Peptides are searched against this database." />
               </label>
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-indigo-400 transition-colors">
                 <input
@@ -121,8 +156,9 @@ export default function NewJobPage() {
 
             {/* Peptide Files Upload */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 Peptide Lists (CSV/TSV) *
+                <Tooltip text="Two-column files (peptide sequence and count/abundance), one per sample. Peptides are matched exactly against the background proteome." />
               </label>
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-indigo-400 transition-colors">
                 <input
@@ -165,35 +201,55 @@ export default function NewJobPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Search Tool
+                <Tooltip text="The homology search engine used to match peptides against the background proteome." />
               </label>
               <select
                 value={searchTool}
                 onChange={(e) => setSearchTool(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="diamond">DIAMOND</option>
-                <option value="blast">BLAST</option>
+                <option value="diamond">DIAMOND{diamondVersion ? ` v${diamondVersion}` : ''}</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                Annotated Database
+                <Tooltip text="The annotated reference database (e.g. UniProt) to search against using DIAMOND. Database files (.dmnd) are configured by the server administrator." />
+              </label>
+              <select
+                value={dbChoice}
+                onChange={(e) => setDbChoice(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                {databases.map((db) => (
+                  <option key={db.path} value={db.path} title={db.description}>
+                    {db.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Max E-value
+                <Tooltip text="Maximum expect value threshold. Lower values are more stringent, keeping only high-confidence matches." />
               </label>
               <input
                 type="text"
                 value={maxEvalue}
                 onChange={(e) => setMaxEvalue(e.target.value)}
-                placeholder="e.g., 1e-5"
+                placeholder="e.g., 1e-10"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Min % Identity
+                <Tooltip text="Minimum percent identity for retaining DIAMOND homology hits between background proteome proteins and reference database sequences." />
               </label>
               <input
                 type="text"
@@ -205,14 +261,15 @@ export default function NewJobPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Top K Hits
+                <Tooltip text="Number of top-scoring DIAMOND homology hits to retain per background proteome protein for downstream annotation." />
               </label>
               <input
                 type="text"
                 value={topK}
                 onChange={(e) => setTopK(e.target.value)}
-                placeholder="e.g., 10"
+                placeholder="e.g., 1"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>

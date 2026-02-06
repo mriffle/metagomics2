@@ -1,7 +1,6 @@
 """FASTA file parsing and hashing."""
 
 import hashlib
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, TextIO
@@ -167,3 +166,37 @@ def build_protein_dict(records: list[FastaRecord]) -> dict[str, str]:
         Dictionary mapping protein ID to sequence
     """
     return {record.id: record.sequence for record in records}
+
+
+def write_subset_fasta(
+    proteins: dict[str, str],
+    protein_ids: set[str],
+    output_path: Path | str,
+    line_width: int = 80,
+) -> int:
+    """Write a FASTA file containing only the specified proteins.
+
+    Args:
+        proteins: Full dictionary mapping protein ID to sequence
+        protein_ids: Set of protein IDs to include
+        output_path: Path to write the output FASTA file
+        line_width: Maximum characters per sequence line
+
+    Returns:
+        Number of proteins written
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    n_written = 0
+    with open(output_path, "w", encoding="utf-8") as f:
+        for protein_id in sorted(protein_ids):
+            sequence = proteins.get(protein_id)
+            if sequence is None:
+                continue
+            f.write(f">{protein_id}\n")
+            for i in range(0, len(sequence), line_width):
+                f.write(sequence[i : i + line_width] + "\n")
+            n_written += 1
+
+    return n_written

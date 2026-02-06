@@ -79,13 +79,37 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Parse filter policy
     filter_policy = parse_filter_params(args)
 
+    # Validate database paths (required unless in mock mode)
+    db_path = None
+    annotations_db_path = None
+
+    if args.db:
+        db_path = Path(args.db)
+        if not db_path.exists():
+            print(f"Error: Annotated database not found: {db_path}", file=sys.stderr)
+            return 1
+    elif not args.mock_hits:
+        print("Error: --db is required (or use --mock-hits for testing)", file=sys.stderr)
+        return 1
+
+    if args.annotations_db:
+        annotations_db_path = Path(args.annotations_db)
+        if not annotations_db_path.exists():
+            print(f"Error: Annotations database not found: {annotations_db_path}", file=sys.stderr)
+            print("Build it with: python scripts/build_annotations_db.py", file=sys.stderr)
+            return 1
+    elif not args.mock_annotations:
+        print("Error: --annotations-db is required (or use --mock-annotations for testing)", file=sys.stderr)
+        return 1
+
     # Build config
     config = PipelineConfig(
         fasta_path=fasta_path,
         peptide_list_paths=peptide_paths,
         output_dir=output_dir,
         search_tool=args.search_tool,
-        annotated_db_path=Path(args.db) if args.db else None,
+        annotated_db_path=db_path,
+        annotations_db_path=annotations_db_path,
         threads=args.threads,
         filter_policy=filter_policy,
         go_data_path=Path(args.go) if args.go else None,
@@ -161,7 +185,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--db",
-        help="Path to indexed annotated database",
+        help="Path to DIAMOND-formatted annotated database (.dmnd). "
+             "Required unless --mock-hits is used.",
+    )
+    run_parser.add_argument(
+        "--annotations-db",
+        help="Path to companion annotations SQLite database (.annotations.db). "
+             "Required unless --mock-annotations is used.",
     )
     run_parser.add_argument(
         "--threads",

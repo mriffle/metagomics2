@@ -51,8 +51,8 @@ metagomics2 run \
   --fasta background.fasta \
   --peptides peptides.tsv \
   --outdir results/ \
-  --search-tool diamond \
-  --db annotated_db.dmnd \
+  --db uniprot_sprot.dmnd \
+  --annotations-db uniprot_sprot.annotations.db \
   --max-evalue 1e-5 \
   --min-pident 80
 
@@ -63,11 +63,13 @@ metagomics2 run \
   --outdir results/ \
   --go /path/to/go.obo \
   --taxonomy /path/to/taxonomy/ \
-  --search-tool diamond \
-  --db annotated_db.dmnd \
+  --db uniprot_sprot.dmnd \
+  --annotations-db uniprot_sprot.annotations.db \
   --max-evalue 1e-5 \
   --min-pident 80
 ```
+
+Both `--db` and `--annotations-db` are required. See [Annotated Databases](#annotated-databases) for how to build these files.
 
 ### Web Mode
 
@@ -105,6 +107,77 @@ Each job creates a snapshot of reference data in `/data/jobs/<job_id>/work/ref_s
 - Version metadata
 
 See [docs/REFERENCE_DATA.md](docs/REFERENCE_DATA.md) for details.
+
+## Annotated Databases
+
+Metagomics 2 requires at least one annotated DIAMOND database for homology search. Each database consists of two files:
+
+| File | Description |
+|------|-------------|
+| `*.dmnd` | DIAMOND-formatted protein database |
+| `*.annotations.db` | Companion SQLite database with taxonomy IDs and GO terms |
+
+Both files must be placed in the directory specified by `METAGOMICS_DATABASES_DIR` in your `.env`.
+
+### Step 1: Download Source Files
+
+Download the UniProt FASTA and GOA annotation file:
+
+```bash
+# UniProt SwissProt FASTA (reviewed entries only, ~270 MB compressed)
+wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+
+# GOA annotation file (all UniProt entries, ~10 GB compressed)
+wget https://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
+```
+
+### Step 2: Build the DIAMOND Database
+
+```bash
+diamond makedb --in uniprot_sprot.fasta.gz --db /path/to/databases/uniprot_sprot.dmnd
+```
+
+### Step 3: Build the Annotations Database
+
+The annotations database maps UniProt accessions to NCBI taxonomy IDs (from FASTA `OX=` fields) and GO terms (from the GOA GAF file):
+
+```bash
+python scripts/build_annotations_db.py \
+    --fasta uniprot_sprot.fasta.gz \
+    --gaf goa_uniprot_all.gaf.gz \
+    --output /path/to/databases/uniprot_sprot.annotations.db
+```
+
+Both `.gz` and plain text inputs are supported. By default, only GO annotations assigned by UniProt are included. To include all sources:
+
+```bash
+python scripts/build_annotations_db.py \
+    --fasta uniprot_sprot.fasta.gz \
+    --gaf goa_uniprot_all.gaf.gz \
+    --output /path/to/databases/uniprot_sprot.annotations.db \
+    --assigned-by ""
+```
+
+### Step 4: Configure the Environment
+
+In your `.env` file, set `METAGOMICS_DATABASES_DIR` to the directory containing the database files, and `METAGOMICS_DATABASES` to a JSON array describing each database:
+
+```bash
+METAGOMICS_DATABASES_DIR=/path/to/databases
+
+METAGOMICS_DATABASES=[{"name": "UniProt SwissProt", "description": "Reviewed UniProt entries", "path": "uniprot_sprot.dmnd", "annotations": "uniprot_sprot.annotations.db"}]
+```
+
+Each entry in the JSON array has the following fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Display name shown in the web UI |
+| `description` | Yes | Short description shown as tooltip |
+| `path` | Yes | Filename of the `.dmnd` file (relative to `METAGOMICS_DATABASES_DIR`) |
+| `annotations` | Yes | Filename of the `.annotations.db` file (relative to `METAGOMICS_DATABASES_DIR`) |
+
+The service will refuse to start if no databases are configured.
 
 ## Input Files
 
