@@ -44,7 +44,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
             accession TEXT NOT NULL,
             go_id TEXT NOT NULL,
             aspect TEXT NOT NULL,
-            evidence_code TEXT NOT NULL
+            UNIQUE(accession, go_id)
         );
 
         CREATE TABLE IF NOT EXISTS metadata (
@@ -54,17 +54,19 @@ def create_schema(conn: sqlite3.Connection) -> None:
     """)
 
 
-def build_taxonomy(conn: sqlite3.Connection, fasta_path: Path) -> int:
+def build_taxonomy(conn: sqlite3.Connection, fasta_path: Path) -> tuple[int, set[str]]:
     """Parse UniProt FASTA and insert taxonomy mappings.
 
     Returns:
-        Number of rows inserted
+        Tuple of (number of rows inserted, set of accessions found)
     """
     logger.info(f"Parsing taxonomy from FASTA: {fasta_path}")
     count = 0
+    accessions: set[str] = set()
     batch: list[tuple[str, int]] = []
 
     for accession, tax_id in parse_uniprot_fasta_annotations(fasta_path):
+        accessions.add(accession)
         batch.append((accession, tax_id))
         if len(batch) >= BATCH_SIZE:
             conn.executemany(
@@ -85,31 +87,42 @@ def build_taxonomy(conn: sqlite3.Connection, fasta_path: Path) -> int:
 
     conn.commit()
     logger.info(f"Taxonomy: {count:,} total rows inserted")
-    return count
+    return count, accessions
 
 
 def build_go_annotations(
     conn: sqlite3.Connection,
     gaf_path: Path,
+    fasta_accessions: set[str],
 ) -> int:
     """Parse GAF file and insert GO annotations.
 
-    Excludes rows where the Qualifier contains "NOT" (negative annotations)
-    and rows where the evidence code is "ND" (No biological Data).
+    Only includes rows whose accession is present in ``fasta_accessions``
+    (i.e., accessions that appear in the FASTA used to build the DIAMOND DB).
+    Also excludes rows where the Qualifier contains "NOT" (negative
+    annotations) and rows where the evidence code is "ND" (No biological
+    Data).
 
     Returns:
         Number of rows inserted
     """
     logger.info(f"Parsing GO annotations from GAF: {gaf_path}")
+    logger.info(f"Filtering to {len(fasta_accessions):,} accessions from FASTA")
     count = 0
-    batch: list[tuple[str, str, str, str]] = []
+    skipped = 0
+    batch: list[tuple[str, str, str]] = []
 
     for record in parse_gaf_file(gaf_path):
-        batch.append((record.accession, record.go_id, record.aspect, record.evidence_code))
+        if record.accession not in fasta_accessions:
+            skipped += 1
+            if skipped % 10_000_000 == 0:
+                logger.info(f"  skipped {skipped:,} GAF rows (accession not in FASTA)...")
+            continue
+        batch.append((record.accession, record.go_id, record.aspect))
         if len(batch) >= BATCH_SIZE:
             conn.executemany(
-                "INSERT INTO go_annotations (accession, go_id, aspect, evidence_code) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO go_annotations (accession, go_id, aspect) "
+                "VALUES (?, ?, ?)",
                 batch,
             )
             count += len(batch)
@@ -119,15 +132,23 @@ def build_go_annotations(
 
     if batch:
         conn.executemany(
-            "INSERT INTO go_annotations (accession, go_id, aspect, evidence_code) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO go_annotations (accession, go_id, aspect) "
+            "VALUES (?, ?, ?)",
             batch,
         )
         count += len(batch)
 
     conn.commit()
-    logger.info(f"GO annotations: {count:,} total rows inserted")
-    return count
+
+    # Get actual row count (INSERT OR IGNORE silently skips duplicates)
+    actual_count = conn.execute("SELECT COUNT(*) FROM go_annotations").fetchone()[0]
+    duplicates = count - actual_count
+    logger.info(
+        f"GO annotations: {actual_count:,} unique rows inserted, "
+        f"{duplicates:,} duplicates ignored, "
+        f"{skipped:,} rows skipped (accession not in FASTA)"
+    )
+    return actual_count
 
 
 def create_indexes(conn: sqlite3.Connection) -> None:
@@ -159,14 +180,14 @@ def build_annotations_db(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(str(output_path))
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA synchronous=NORMAL")
 
     try:
         create_schema(conn)
 
-        tax_count = build_taxonomy(conn, fasta_path)
-        go_count = build_go_annotations(conn, gaf_path)
+        tax_count, fasta_accessions = build_taxonomy(conn, fasta_path)
+        go_count = build_go_annotations(conn, gaf_path, fasta_accessions)
 
         create_indexes(conn)
 

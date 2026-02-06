@@ -53,7 +53,7 @@ def load_subject_annotations(
         f"from {len(subject_ids)} subject IDs"
     )
 
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
     try:
         # Fetch taxonomy
         tax_map = _batch_query_taxonomy(conn, all_accessions)

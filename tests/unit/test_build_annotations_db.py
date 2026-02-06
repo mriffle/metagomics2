@@ -47,17 +47,50 @@ def test_build_annotations_db(tmp_path):
 
     # Check GO annotations (NOT qualifier and ND evidence lines should be filtered out)
     rows = conn.execute(
-        "SELECT accession, go_id, aspect, evidence_code FROM go_annotations ORDER BY accession, go_id"
+        "SELECT accession, go_id, aspect FROM go_annotations ORDER BY accession, go_id"
     ).fetchall()
     assert len(rows) == 3
-    assert rows[0] == ("P12345", "GO:0006412", "P", "IEA")
-    assert rows[1] == ("Q21HH2", "GO:0003735", "F", "IDA")
-    assert rows[2] == ("Q21HH2", "GO:0005840", "C", "IEA")
+    assert rows[0] == ("P12345", "GO:0006412", "P")
+    assert rows[1] == ("Q21HH2", "GO:0003735", "F")
+    assert rows[2] == ("Q21HH2", "GO:0005840", "C")
 
     # Check metadata
     meta = dict(conn.execute("SELECT key, value FROM metadata").fetchall())
     assert meta["taxonomy_count"] == "2"
     assert meta["go_annotation_count"] == "3"
     assert meta["gaf_filters"] == "exclude NOT qualifier, exclude ND evidence"
+
+    conn.close()
+
+
+def test_build_annotations_db_filters_by_fasta_accessions(tmp_path):
+    """GAF rows for accessions not in the FASTA should be excluded."""
+    fasta_path = tmp_path / "test.fasta"
+    # Only Q21HH2 in the FASTA — P12345 is absent
+    fasta_path.write_text(
+        ">sp|Q21HH2|RS2_SACD2 OS=Saccharopolyspora erythraea OX=266940\n"
+        "MKTLQIRNPQRNAARRRSRPFQFERGQTLVHISGEPVTLKECNLVGSTLNPRGVNALTK\n"
+    )
+
+    gaf_path = tmp_path / "test.gaf"
+    gaf_path.write_text(_GAF_CONTENT)
+
+    output_path = tmp_path / "test.annotations.db"
+    build_annotations_db(fasta_path, gaf_path, output_path)
+
+    conn = sqlite3.connect(str(output_path))
+
+    # Only Q21HH2 GO annotations should be present
+    rows = conn.execute(
+        "SELECT accession, go_id FROM go_annotations ORDER BY accession, go_id"
+    ).fetchall()
+    assert len(rows) == 2
+    assert all(r[0] == "Q21HH2" for r in rows)
+
+    # P12345 rows should have been skipped
+    p_rows = conn.execute(
+        "SELECT COUNT(*) FROM go_annotations WHERE accession = 'P12345'"
+    ).fetchone()
+    assert p_rows[0] == 0
 
     conn.close()

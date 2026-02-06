@@ -148,15 +148,7 @@ python scripts/build_annotations_db.py \
     --output /path/to/databases/uniprot_sprot.annotations.db
 ```
 
-Both `.gz` and plain text inputs are supported. By default, only GO annotations assigned by UniProt are included. To include all sources:
-
-```bash
-python scripts/build_annotations_db.py \
-    --fasta uniprot_sprot.fasta.gz \
-    --gaf goa_uniprot_all.gaf.gz \
-    --output /path/to/databases/uniprot_sprot.annotations.db \
-    --assigned-by ""
-```
+Both `.gz` and plain text inputs are supported. The build script automatically filters the GAF file to only include accessions present in the FASTA, and excludes negative annotations (Qualifier contains "NOT") and ND evidence codes.
 
 ### Step 4: Configure the Environment
 
