@@ -74,14 +74,14 @@ class TestCreateJob:
     def test_job_stores_params(self, tmp_path: Path):
         db = Database(tmp_path / "test.db")
         params = JobParams(
-            search_tool="blast",
+            search_tool="diamond",
             max_evalue=1e-5,
             min_pident=80.0,
             top_k=10,
         )
         job_id = db.create_job(params)
         job = db.get_job(job_id)
-        assert job.params.search_tool == "blast"
+        assert job.params.search_tool == "diamond"
         assert job.params.max_evalue == 1e-5
         assert job.params.min_pident == 80.0
         assert job.params.top_k == 10

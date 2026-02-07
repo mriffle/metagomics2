@@ -76,7 +76,7 @@ class PipelineConfig:
     job_dir: Path | None = None
 
     # GO closure settings
-    go_edge_types: set[str] = field(default_factory=lambda: {"is_a"})
+    go_edge_types: set[str] = field(default_factory=lambda: {"is_a", "part_of"})
     go_include_self: bool = True
 
     # Annotations database path (companion SQLite for taxonomy/GO lookup)
@@ -587,7 +587,11 @@ class PipelineRunner:
             annotated_db_choice=str(self.config.annotated_db_path or "mock"),
             input_fasta_path=self.config.fasta_path,
             peptide_list_path=peptide_list_path,
-            parameters=self.config.filter_policy.to_dict(),
+            parameters={
+                **self.config.filter_policy.to_dict(),
+                "go_edge_types": sorted(self.config.go_edge_types),
+                "go_include_self": self.config.go_include_self,
+            },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None,
             annotated_db_path=self.config.annotated_db_path,

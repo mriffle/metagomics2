@@ -190,6 +190,15 @@ async def create_job(
     # Store original FASTA filename
     job_params.fasta_filename = fasta.filename or "background.fasta"
 
+    # Validate db_choice against configured databases
+    if job_params.db_choice:
+        valid_paths = {db_entry.get("path") for db_entry in DATABASES}
+        if job_params.db_choice not in valid_paths:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown database: {job_params.db_choice}",
+            )
+
     # Resolve database name from config
     if job_params.db_choice and not job_params.db_name:
         for db_entry in DATABASES:

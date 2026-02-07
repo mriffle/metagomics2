@@ -99,7 +99,7 @@ class TestCreateJob:
     def test_create_job_with_params(self, client, tmp_path: Path):
         fasta_content = b">P1\nMPEPTIDEK\n"
         peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
-        params = json.dumps({"search_tool": "blast", "max_evalue": 1e-5, "db_choice": "test.dmnd"})
+        params = json.dumps({"search_tool": "diamond", "max_evalue": 1e-5})
 
         response = client.post(
             "/api/jobs",
