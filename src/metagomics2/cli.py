@@ -42,8 +42,6 @@ def parse_filter_params(args: argparse.Namespace) -> FilterPolicy:
             min_qcov=params.get("min_qcov"),
             min_alnlen=params.get("min_alnlen"),
             top_k=params.get("top_k"),
-            delta_bitscore=params.get("delta_bitscore"),
-            best_hit_only=params.get("best_hit_only", False),
         )
 
     return FilterPolicy(
@@ -52,8 +50,6 @@ def parse_filter_params(args: argparse.Namespace) -> FilterPolicy:
         min_qcov=args.min_qcov,
         min_alnlen=args.min_alnlen,
         top_k=args.top_k,
-        delta_bitscore=args.delta_bitscore,
-        best_hit_only=args.best_hit_only,
     )
 
 
@@ -226,16 +222,6 @@ def create_parser() -> argparse.ArgumentParser:
         "--top-k",
         type=int,
         help="Keep only top K hits by bitscore",
-    )
-    filter_group.add_argument(
-        "--delta-bitscore",
-        type=float,
-        help="Keep hits within delta of best bitscore",
-    )
-    filter_group.add_argument(
-        "--best-hit-only",
-        action="store_true",
-        help="Keep only the single best hit per query",
     )
     filter_group.add_argument(
         "--params",

@@ -235,7 +235,7 @@ export default function NewJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Max E-value
-                <Tooltip text="Maximum expect value threshold. Lower values are more stringent, keeping only high-confidence matches." />
+                <Tooltip text="Maximum e-value threshold for DIAMOND homology hits. Also used as a DIAMOND pre-filter. Lower values are more stringent (e.g., 1e-10 keeps only high-confidence alignments)." />
               </label>
               <input
                 type="text"
@@ -249,7 +249,7 @@ export default function NewJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Min % Identity
-                <Tooltip text="Minimum percent identity for retaining DIAMOND homology hits between background proteome proteins and reference database sequences." />
+                <Tooltip text="Minimum percent identity (0–100) for retaining DIAMOND hits. Applied after the search as a post-filter. Hits below this threshold are discarded before annotation." />
               </label>
               <input
                 type="text"
@@ -263,7 +263,7 @@ export default function NewJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 Top K Hits
-                <Tooltip text="Number of top-scoring DIAMOND homology hits to retain per background proteome protein for downstream annotation." />
+                <Tooltip text="Number of top-scoring DIAMOND hits to keep per query protein, ranked by bitscore. Tie-aware: if multiple hits share the same bitscore at the Kth position, all tied hits are retained to avoid arbitrary bias in annotation." />
               </label>
               <input
                 type="text"

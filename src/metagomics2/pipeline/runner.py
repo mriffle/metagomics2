@@ -456,13 +456,13 @@ class PipelineRunner:
         work_dir = self.subset_fasta_path.parent
         diamond_output = work_dir / "diamond_results.tsv"
 
-        # Run DIAMOND with user-specified evalue and top_k as max-target-seqs
+        # Let DIAMOND return all hits passing the e-value threshold.
+        # The tie-aware top_k cutoff is applied in filter_all_hits.
         diamond_result = run_diamond(
             query_fasta=self.subset_fasta_path,
             db_path=self.config.annotated_db_path,
             output_path=diamond_output,
             evalue=self.config.filter_policy.max_evalue or 1e-10,
-            max_target_seqs=self.config.filter_policy.top_k or 1,
             threads=self.config.threads,
         )
 

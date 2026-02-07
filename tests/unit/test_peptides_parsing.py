@@ -285,6 +285,47 @@ class TestAggregatePeptides:
         assert _aggregate_peptides([]) == []
 
 
+class TestDuplicateRawPeptideDetection:
+    """Tests that exact duplicate raw peptide strings are rejected."""
+
+    def test_exact_duplicate_raises_error_with_header(self):
+        content = "seq\tqty\nPEPTIDE\t10\nPEPTIDE\t5\n"
+        handle = io.StringIO(content)
+
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(handle)
+        assert "Duplicate peptide 'PEPTIDE'" in str(exc_info.value)
+        assert "line 2" in str(exc_info.value)
+
+    def test_exact_duplicate_raises_error_without_header(self):
+        content = "PEPTIDE\t10\nPEPTIDE\t5\n"
+        handle = io.StringIO(content)
+
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(handle)
+        assert "Duplicate peptide 'PEPTIDE'" in str(exc_info.value)
+        assert "Line 2" in str(exc_info.value)
+        assert "line 1" in str(exc_info.value)
+
+    def test_exact_duplicate_reports_first_occurrence_line(self):
+        content = "seq\tqty\nAAA\t1\nBBB\t2\nCCC\t3\nBBB\t4\n"
+        handle = io.StringIO(content)
+
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(handle)
+        assert "Line 5" in str(exc_info.value)
+        assert "line 3" in str(exc_info.value)
+
+    def test_different_raw_forms_same_normalized_allowed(self):
+        content = "seq\tqty\nPEPTIDE\t10\nPEPT[+80]IDE\t5\n"
+        handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
+
+        assert len(peptides) == 1
+        assert peptides[0].sequence == "PEPTIDE"
+        assert peptides[0].quantity == 15.0
+
+
 class TestModificationStrippingAndAggregation:
     """End-to-end tests: modifications are stripped and duplicates are summed."""
 

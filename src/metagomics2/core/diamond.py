@@ -56,7 +56,7 @@ def run_diamond(
     db_path: Path,
     output_path: Path,
     evalue: float = 1e-10,
-    max_target_seqs: int = 1,
+    max_target_seqs: int | None = None,
     threads: int = 4,
 ) -> DiamondResult:
     """Run DIAMOND blastp and parse the results.
@@ -66,7 +66,9 @@ def run_diamond(
         db_path: Path to the DIAMOND-formatted database (.dmnd)
         output_path: Path to write the tabular output
         evalue: Maximum e-value threshold for DIAMOND search
-        max_target_seqs: Maximum number of target sequences per query
+        max_target_seqs: Maximum number of target sequences per query.
+            If None, --max-target-seqs is not passed to DIAMOND and it
+            returns all hits passing the e-value threshold.
         threads: Number of CPU threads to use
 
     Returns:
@@ -83,10 +85,12 @@ def run_diamond(
         "--db", str(db_path),
         "--outfmt", "6",
         "--evalue", str(evalue),
-        "--max-target-seqs", str(max_target_seqs),
         "--threads", str(threads),
         "--out", str(output_path),
     ]
+
+    if max_target_seqs is not None:
+        cmd.extend(["--max-target-seqs", str(max_target_seqs)])
 
     logger.info(f"Running DIAMOND: {' '.join(cmd)}")
 

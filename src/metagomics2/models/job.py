@@ -38,8 +38,6 @@ class JobParams(BaseModel):
     min_qcov: float | None = None
     min_alnlen: int | None = None
     top_k: int | None = None
-    delta_bitscore: float | None = None
-    best_hit_only: bool = False
 
     # GO settings
     go_edge_types: str = "is_a"

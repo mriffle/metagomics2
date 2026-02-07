@@ -202,6 +202,13 @@ export default function JobPage() {
             Downloads
           </h2>
 
+          <div className="mb-4 text-sm text-gray-600 space-y-1">
+            <p><span className="font-medium">taxonomy_nodes.csv</span> — Taxonomy assignments with aggregated peptide quantities and ratios at each node.</p>
+            <p><span className="font-medium">go_terms.csv</span> — Gene Ontology term assignments with aggregated peptide quantities and ratios.</p>
+            <p><span className="font-medium">coverage.csv</span> — Summary of how many peptides (and what fraction of total quantity) received annotation.</p>
+            <p><span className="font-medium">run_manifest.json</span> — Provenance record of parameters, software version, and reference data used for this run.</p>
+          </div>
+
           <div className="space-y-4">
             {/* Download All */}
             <a

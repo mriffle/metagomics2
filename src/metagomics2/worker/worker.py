@@ -155,8 +155,6 @@ class Worker:
             min_qcov=params.min_qcov,
             min_alnlen=params.min_alnlen,
             top_k=params.top_k,
-            delta_bitscore=params.delta_bitscore,
-            best_hit_only=params.best_hit_only,
         )
 
         # Resolve database path: db_choice is relative to DATABASES_DIR
