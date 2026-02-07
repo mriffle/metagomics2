@@ -19,10 +19,24 @@ interface PeptideList {
   n_unmatched: number | null
 }
 
+interface JobParams {
+  search_tool: string
+  db_choice: string
+  db_name: string
+  max_evalue: number | null
+  min_pident: number | null
+  min_qcov: number | null
+  min_alnlen: number | null
+  top_k: number | null
+  notification_email: string
+  fasta_filename: string
+}
+
 interface Job {
   job_id: string
   created_at: string
   status: string
+  params: JobParams
   progress_done: number
   progress_total: number
   current_step: string | null
@@ -123,6 +137,31 @@ export default function JobPage() {
             <p className="text-sm text-gray-500">Created</p>
             <p className="text-gray-900">{new Date(job.created_at).toLocaleString()}</p>
           </div>
+        </div>
+
+        {/* Parameters */}
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+          {job.params.fasta_filename && (
+            <span><span className="font-medium text-gray-700">FASTA:</span> {job.params.fasta_filename}</span>
+          )}
+          {job.params.db_choice && (
+            <span><span className="font-medium text-gray-700">Database:</span> {job.params.db_name ? `${job.params.db_name} (${job.params.db_choice})` : job.params.db_choice}</span>
+          )}
+          {job.params.max_evalue != null && (
+            <span><span className="font-medium text-gray-700">Max E-value:</span> {job.params.max_evalue}</span>
+          )}
+          {job.params.min_pident != null && (
+            <span><span className="font-medium text-gray-700">Min % Identity:</span> {job.params.min_pident}</span>
+          )}
+          {job.params.top_k != null && (
+            <span><span className="font-medium text-gray-700">Top K:</span> {job.params.top_k}</span>
+          )}
+          {job.params.min_qcov != null && (
+            <span><span className="font-medium text-gray-700">Min Query Cov:</span> {job.params.min_qcov}</span>
+          )}
+          {job.params.min_alnlen != null && (
+            <span><span className="font-medium text-gray-700">Min Aln Length:</span> {job.params.min_alnlen}</span>
+          )}
         </div>
 
         {/* Progress Bar */}

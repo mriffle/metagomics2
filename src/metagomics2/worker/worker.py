@@ -10,6 +10,7 @@ from pathlib import Path
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.db.database import Database
 from metagomics2.models.job import JobStatus, PeptideListStatus
+from metagomics2.notifications.email import SmtpConfig, send_job_notification
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,16 @@ try:
     DATABASES: list[dict] = json.loads(_databases_raw)
 except (json.JSONDecodeError, TypeError):
     DATABASES = []
+
+# Email notification settings
+SMTP_CONFIG = SmtpConfig(
+    host=os.environ.get("SMTP_HOST", ""),
+    port=int(os.environ.get("SMTP_PORT", "587")),
+    username=os.environ.get("SMTP_USERNAME", ""),
+    password=os.environ.get("SMTP_PASSWORD", ""),
+    from_address=os.environ.get("SMTP_FROM", ""),
+)
+SITE_URL = os.environ.get("SITE_URL", "")
 
 
 class Worker:
@@ -121,13 +132,26 @@ class Worker:
                 self.db.add_event(job_id, "failed", f"Job failed: {result.error_message}")
                 logger.error(f"Job {job_id} failed: {result.error_message}")
 
+            # Send email notification (re-fetch job to get final status)
+            self._send_notification(job_id)
+
         except Exception as e:
             logger.exception(f"Error processing job {job_id}")
             self.db.update_job_status(job_id, JobStatus.FAILED, str(e))
             self.db.add_event(job_id, "error", str(e))
+            self._send_notification(job_id)
 
         finally:
             self.current_job_id = None
+
+    def _send_notification(self, job_id: str) -> None:
+        """Send email notification for a finished job."""
+        try:
+            job = self.db.get_job(job_id)
+            if job and job.params.notification_email:
+                send_job_notification(job, SITE_URL, SMTP_CONFIG)
+        except Exception:
+            logger.exception(f"Error sending notification for job {job_id}")
 
     def _build_config(self, job_id: str, job) -> PipelineConfig:
         """Build pipeline configuration from job info."""

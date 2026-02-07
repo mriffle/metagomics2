@@ -48,6 +48,7 @@ export default function NewJobPage() {
   const [maxEvalue, setMaxEvalue] = useState('1e-10')
   const [minPident, setMinPident] = useState('80')
   const [topK, setTopK] = useState('1')
+  const [notificationEmail, setNotificationEmail] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -77,6 +78,8 @@ export default function NewJobPage() {
       if (maxEvalue) params.max_evalue = parseFloat(maxEvalue)
       if (minPident) params.min_pident = parseFloat(minPident)
       if (topK) params.top_k = parseInt(topK)
+      const emailTrimmed = notificationEmail.trim()
+      if (emailTrimmed) params.notification_email = emailTrimmed
 
       formData.append('params', JSON.stringify(params))
 
@@ -273,6 +276,26 @@ export default function NewJobPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
+          </div>
+        </div>
+
+        {/* Notification */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            Notification
+          </h2>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+              Email Address (optional)
+              <Tooltip text="If provided, a notification email will be sent when your job completes or fails. The email will include your uploaded filenames, chosen parameters, and a link to view results." />
+            </label>
+            <input
+              type="email"
+              value={notificationEmail}
+              onChange={(e) => setNotificationEmail(e.target.value)}
+              placeholder="user@example.com"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
           </div>
         </div>
 

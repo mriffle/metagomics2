@@ -252,3 +252,100 @@ class TestWorkerRunLoop:
 
         with patch("metagomics2.worker.worker.POLL_INTERVAL", 0):
             worker.run()  # Should return immediately
+
+
+class TestWorkerNotification:
+    """Tests for email notification from worker."""
+
+    def test_process_job_sends_email_on_completion(self, test_db, jobs_dir, fixtures_dir):
+        params = JobParams(notification_email="user@example.com")
+        job_id = test_db.create_job(params)
+        test_db.update_job_status(job_id, JobStatus.QUEUED)
+
+        job_dir = jobs_dir / job_id
+        inputs_dir = job_dir / "inputs"
+        peptides_dir = inputs_dir / "peptides"
+        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        import shutil
+        shutil.copy(
+            fixtures_dir / "fasta" / "small_background.fasta",
+            inputs_dir / "background.fasta",
+        )
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline, \
+             patch("metagomics2.worker.worker.send_job_notification") as mock_send:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        mock_send.assert_called_once()
+        call_args = mock_send.call_args
+        assert call_args[0][0].job_id == job_id
+
+    def test_process_job_sends_email_on_failure(self, test_db, jobs_dir, fixtures_dir):
+        params = JobParams(notification_email="user@example.com")
+        job_id = test_db.create_job(params)
+        test_db.update_job_status(job_id, JobStatus.QUEUED)
+
+        job_dir = jobs_dir / job_id
+        inputs_dir = job_dir / "inputs"
+        peptides_dir = inputs_dir / "peptides"
+        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        import shutil
+        shutil.copy(
+            fixtures_dir / "fasta" / "small_background.fasta",
+            inputs_dir / "background.fasta",
+        )
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline, \
+             patch("metagomics2.worker.worker.send_job_notification") as mock_send:
+            mock_result = MagicMock()
+            mock_result.success = False
+            mock_result.error_message = "Pipeline error"
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        mock_send.assert_called_once()
+
+    def test_process_job_no_email_when_not_configured(self, test_db, jobs_dir, fixtures_dir):
+        params = JobParams()  # No notification_email
+        job_id = test_db.create_job(params)
+        test_db.update_job_status(job_id, JobStatus.QUEUED)
+
+        job_dir = jobs_dir / job_id
+        inputs_dir = job_dir / "inputs"
+        peptides_dir = inputs_dir / "peptides"
+        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        import shutil
+        shutil.copy(
+            fixtures_dir / "fasta" / "small_background.fasta",
+            inputs_dir / "background.fasta",
+        )
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline, \
+             patch("metagomics2.worker.worker.send_job_notification") as mock_send:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        # send_job_notification should not be called because notification_email is empty
+        mock_send.assert_not_called()

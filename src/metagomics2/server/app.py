@@ -187,6 +187,16 @@ async def create_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid parameters: {e}")
 
+    # Store original FASTA filename
+    job_params.fasta_filename = fasta.filename or "background.fasta"
+
+    # Resolve database name from config
+    if job_params.db_choice and not job_params.db_name:
+        for db_entry in DATABASES:
+            if db_entry.get("path") == job_params.db_choice:
+                job_params.db_name = db_entry.get("name", "")
+                break
+
     # Validate FASTA file
     fasta_content = await fasta.read()
     try:

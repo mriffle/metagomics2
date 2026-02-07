@@ -4,7 +4,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class JobStatus(str, Enum):
@@ -31,6 +33,7 @@ class JobParams(BaseModel):
 
     search_tool: str = "diamond"
     db_choice: str = ""
+    db_name: str = ""
 
     # Filter parameters
     max_evalue: float | None = None
@@ -39,9 +42,23 @@ class JobParams(BaseModel):
     min_alnlen: int | None = None
     top_k: int | None = None
 
+    # Notification
+    notification_email: str = ""
+    fasta_filename: str = ""
+
     # GO settings
     go_edge_types: str = "is_a"
     go_include_self: bool = True
+
+    @field_validator("notification_email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            return v
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Invalid email address")
+        return v
 
 
 class JobCreate(BaseModel):
