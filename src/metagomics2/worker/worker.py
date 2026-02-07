@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 import signal
 import time
 from pathlib import Path
@@ -41,6 +42,10 @@ SMTP_CONFIG = SmtpConfig(
     from_address=os.environ.get("SMTP_FROM", ""),
 )
 SITE_URL = os.environ.get("SITE_URL", "")
+
+# Cleanup settings
+CLEANUP_ON_SUCCESS = os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true").lower() == "true"
+CLEANUP_ON_FAILURE = os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true").lower() == "true"
 
 
 class Worker:
@@ -135,14 +140,34 @@ class Worker:
             # Send email notification (re-fetch job to get final status)
             self._send_notification(job_id)
 
+            # Clean up intermediate files
+            if result.success and CLEANUP_ON_SUCCESS:
+                self._cleanup_job_files(job_id)
+            elif not result.success and CLEANUP_ON_FAILURE:
+                self._cleanup_job_files(job_id)
+
         except Exception as e:
             logger.exception(f"Error processing job {job_id}")
             self.db.update_job_status(job_id, JobStatus.FAILED, str(e))
             self.db.add_event(job_id, "error", str(e))
             self._send_notification(job_id)
+            if CLEANUP_ON_FAILURE:
+                self._cleanup_job_files(job_id)
 
         finally:
             self.current_job_id = None
+
+    def _cleanup_job_files(self, job_id: str) -> None:
+        """Remove inputs/ and work/ directories to free disk space."""
+        try:
+            job_dir = JOBS_DIR / job_id
+            for subdir in ("inputs", "work"):
+                path = job_dir / subdir
+                if path.exists():
+                    shutil.rmtree(path)
+                    logger.info(f"Cleaned up {path}")
+        except Exception:
+            logger.exception(f"Error cleaning up files for job {job_id}")
 
     def _send_notification(self, job_id: str) -> None:
         """Send email notification for a finished job."""

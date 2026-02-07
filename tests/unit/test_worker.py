@@ -349,3 +349,172 @@ class TestWorkerNotification:
 
         # send_job_notification should not be called because notification_email is empty
         mock_send.assert_not_called()
+
+
+class TestWorkerCleanup:
+    """Tests for post-job file cleanup."""
+
+    def test_cleanup_on_success_removes_inputs_and_work(self, test_db, jobs_dir, fixtures_dir):
+        """Successful job with cleanup enabled should remove inputs/ and work/."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir = jobs_dir / job_id
+
+        # Add a file in work/ to verify it gets cleaned
+        (job_dir / "work" / "diamond_results.tsv").write_text("test")
+        # Add a file in results/ to verify it is preserved
+        (job_dir / "results" / "output.csv").write_text("results")
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", True), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", True), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        assert not (job_dir / "inputs").exists()
+        assert not (job_dir / "work").exists()
+        assert (job_dir / "results" / "output.csv").exists()
+
+    def test_cleanup_on_failure_removes_inputs_and_work(self, test_db, jobs_dir, fixtures_dir):
+        """Failed job with cleanup enabled should remove inputs/ and work/."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir = jobs_dir / job_id
+
+        (job_dir / "work" / "diamond_results.tsv").write_text("test")
+        (job_dir / "results" / "output.csv").write_text("results")
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", True), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", True), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = False
+            mock_result.error_message = "Pipeline error"
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        assert not (job_dir / "inputs").exists()
+        assert not (job_dir / "work").exists()
+        assert (job_dir / "results" / "output.csv").exists()
+
+    def test_cleanup_on_exception_removes_inputs_and_work(self, test_db, jobs_dir, fixtures_dir):
+        """Exception during processing with cleanup enabled should still clean up."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir = jobs_dir / job_id
+
+        (job_dir / "results" / "output.csv").write_text("results")
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", True), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_pipeline.side_effect = RuntimeError("Unexpected error")
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        assert not (job_dir / "inputs").exists()
+        assert not (job_dir / "work").exists()
+        assert (job_dir / "results" / "output.csv").exists()
+
+    def test_no_cleanup_on_success_when_disabled(self, test_db, jobs_dir, fixtures_dir):
+        """Successful job with cleanup disabled should preserve inputs/ and work/."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir = jobs_dir / job_id
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", False), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        assert (job_dir / "inputs").exists()
+        assert (job_dir / "work").exists()
+
+    def test_no_cleanup_on_failure_when_disabled(self, test_db, jobs_dir, fixtures_dir):
+        """Failed job with failure cleanup disabled should preserve inputs/ and work/."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir = jobs_dir / job_id
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", False), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = False
+            mock_result.error_message = "Pipeline error"
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id)
+
+        assert (job_dir / "inputs").exists()
+        assert (job_dir / "work").exists()
+
+    def test_independent_toggles(self, test_db, jobs_dir, fixtures_dir):
+        """Cleanup on success but not failure should only clean up successful jobs."""
+        # Successful job — should clean up
+        job_id_ok = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir_ok = jobs_dir / job_id_ok
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", True), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", False), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id_ok)
+
+        assert not (job_dir_ok / "inputs").exists()
+
+        # Failed job — should NOT clean up
+        job_id_fail = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job_dir_fail = jobs_dir / job_id_fail
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", True), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_FAILURE", False), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = False
+            mock_result.error_message = "Error"
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            worker._process_job(job_id_fail)
+
+        assert (job_dir_fail / "inputs").exists()
+
+    def test_cleanup_error_does_not_raise(self, test_db, jobs_dir, fixtures_dir):
+        """Cleanup failure should be logged but not raise."""
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.CLEANUP_ON_SUCCESS", True), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline, \
+             patch("shutil.rmtree", side_effect=PermissionError("denied")):
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = Worker(test_db)
+            # Should not raise
+            worker._process_job(job_id)
+
+        job = test_db.get_job(job_id)
+        assert job.status == JobStatus.COMPLETED
