@@ -42,8 +42,6 @@ def parse_filter_params(args: argparse.Namespace) -> FilterPolicy:
             min_qcov=params.get("min_qcov"),
             min_alnlen=params.get("min_alnlen"),
             top_k=params.get("top_k"),
-            delta_bitscore=params.get("delta_bitscore"),
-            best_hit_only=params.get("best_hit_only", False),
         )
 
     return FilterPolicy(
@@ -52,8 +50,6 @@ def parse_filter_params(args: argparse.Namespace) -> FilterPolicy:
         min_qcov=args.min_qcov,
         min_alnlen=args.min_alnlen,
         top_k=args.top_k,
-        delta_bitscore=args.delta_bitscore,
-        best_hit_only=args.best_hit_only,
     )
 
 
@@ -114,7 +110,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         filter_policy=filter_policy,
         go_data_path=Path(args.go) if args.go else None,
         taxonomy_data_path=Path(args.taxonomy) if args.taxonomy else None,
-        go_edge_types=set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a"},
+        go_edge_types=set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a", "part_of"},
         go_include_self=not args.go_exclude_self,
         mock_hits_path=Path(args.mock_hits) if args.mock_hits else None,
         mock_subject_annotations_path=Path(args.mock_annotations) if args.mock_annotations else None,
@@ -228,16 +224,6 @@ def create_parser() -> argparse.ArgumentParser:
         help="Keep only top K hits by bitscore",
     )
     filter_group.add_argument(
-        "--delta-bitscore",
-        type=float,
-        help="Keep hits within delta of best bitscore",
-    )
-    filter_group.add_argument(
-        "--best-hit-only",
-        action="store_true",
-        help="Keep only the single best hit per query",
-    )
-    filter_group.add_argument(
         "--params",
         help="Path to JSON file with filter parameters",
     )
@@ -254,8 +240,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     ref_group.add_argument(
         "--go-edge-types",
-        default="is_a",
-        help="Comma-separated GO edge types for closure (default: is_a)",
+        default="is_a,part_of",
+        help="Comma-separated GO edge types for closure (default: is_a,part_of)",
     )
     ref_group.add_argument(
         "--go-exclude-self",

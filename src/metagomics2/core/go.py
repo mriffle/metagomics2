@@ -21,6 +21,7 @@ class GODAG:
     """Gene Ontology Directed Acyclic Graph."""
 
     terms: dict[str, GOTerm] = field(default_factory=dict)
+    obsolete_terms: dict[str, GOTerm] = field(default_factory=dict)
 
     def get_closure(
         self,
@@ -151,6 +152,15 @@ def load_go_from_dict(data: dict) -> GODAG:
                 if edge_type not in dag.terms[child_id].parents:
                     dag.terms[child_id].parents[edge_type] = set()
                 dag.terms[child_id].parents[edge_type].add(parent_id)
+
+    # Load obsolete terms
+    for term_id, term_data in data.get("obsolete_terms", {}).items():
+        dag.obsolete_terms[term_id] = GOTerm(
+            id=term_id,
+            name=term_data.get("name", ""),
+            namespace=term_data.get("namespace", ""),
+            parents={},
+        )
 
     return dag
 

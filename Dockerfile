@@ -11,7 +11,7 @@ RUN npm run build
 FROM python:3.11-slim
 
 # Version argument - can be overridden at build time
-ARG VERSION=0.1.0
+ARG VERSION=2.0.0
 
 LABEL maintainer="Metagomics Team"
 LABEL description="Metagomics 2 - Metaproteomics annotation and aggregation tool"
@@ -43,8 +43,8 @@ RUN pip install --no-cache-dir -e .
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # Download and install reference data
-ARG GO_VERSION=2024-01-17
-ARG NCBI_TAXONOMY_DATE=2024-01-15
+ARG GO_VERSION=2026-01-23
+ARG NCBI_TAXONOMY_DATE=2026-02-97
 
 # Download Gene Ontology OBO file
 RUN mkdir -p /app/reference/go && \

@@ -100,7 +100,7 @@ class TestFilterHitsForQuery:
         assert result.total_hits == 3
         assert result.passed_threshold_hits == 2
 
-    def test_top_k_by_bitscore(self):
+    def test_top_k_by_bitscore_no_ties(self):
         hits = [
             make_hit(subject_id="S1", bitscore=100),
             make_hit(subject_id="S2", bitscore=90),
@@ -113,42 +113,71 @@ class TestFilterHitsForQuery:
 
         assert result.accepted_subjects == {"S1", "S2"}
 
-    def test_delta_bitscore_from_best(self):
+    def test_top_k_keeps_ties_at_boundary(self):
         hits = [
             make_hit(subject_id="S1", bitscore=100),
-            make_hit(subject_id="S2", bitscore=95),  # Within delta
-            make_hit(subject_id="S3", bitscore=85),  # Outside delta
+            make_hit(subject_id="S2", bitscore=90),
+            make_hit(subject_id="S3", bitscore=90),  # Tied with S2 at boundary
+            make_hit(subject_id="S4", bitscore=70),
         ]
-        policy = FilterPolicy(delta_bitscore=10)
+        policy = FilterPolicy(top_k=2)
 
         result = filter_hits_for_query(hits, policy)
 
+        # S2 and S3 are tied at the Kth-best bitscore, both kept
+        assert result.accepted_subjects == {"S1", "S2", "S3"}
+
+    def test_top_k_1_keeps_all_tied_best_hits(self):
+        hits = [
+            make_hit(subject_id="S1", bitscore=100),
+            make_hit(subject_id="S2", bitscore=100),
+            make_hit(subject_id="S3", bitscore=100),
+            make_hit(subject_id="S4", bitscore=90),
+        ]
+        policy = FilterPolicy(top_k=1)
+
+        result = filter_hits_for_query(hits, policy)
+
+        # All three tied at the best bitscore are kept
+        assert result.accepted_subjects == {"S1", "S2", "S3"}
+
+    def test_top_k_ties_within_k_do_not_expand(self):
+        hits = [
+            make_hit(subject_id="S1", bitscore=100),
+            make_hit(subject_id="S2", bitscore=100),  # Tied within top_k
+            make_hit(subject_id="S3", bitscore=80),
+        ]
+        policy = FilterPolicy(top_k=2)
+
+        result = filter_hits_for_query(hits, policy)
+
+        # S1 and S2 are within top_k, S3 is below the Kth bitscore
         assert result.accepted_subjects == {"S1", "S2"}
 
-    def test_delta_bitscore_boundary(self):
+    def test_top_k_fewer_hits_than_k(self):
         hits = [
             make_hit(subject_id="S1", bitscore=100),
-            make_hit(subject_id="S2", bitscore=90),  # Exactly at boundary
         ]
-        policy = FilterPolicy(delta_bitscore=10)
+        policy = FilterPolicy(top_k=5)
 
         result = filter_hits_for_query(hits, policy)
 
-        assert result.accepted_subjects == {"S1", "S2"}
+        assert result.accepted_subjects == {"S1"}
 
-    def test_best_hit_only(self):
+    def test_top_k_all_tied(self):
         hits = [
             make_hit(subject_id="S1", bitscore=100),
-            make_hit(subject_id="S2", bitscore=100),  # Tie
-            make_hit(subject_id="S3", bitscore=90),
+            make_hit(subject_id="S2", bitscore=100),
+            make_hit(subject_id="S3", bitscore=100),
+            make_hit(subject_id="S4", bitscore=100),
+            make_hit(subject_id="S5", bitscore=100),
         ]
-        policy = FilterPolicy(best_hit_only=True)
+        policy = FilterPolicy(top_k=1)
 
         result = filter_hits_for_query(hits, policy)
 
-        # Should keep only one (deterministic by subject_id)
-        assert len(result.accepted_subjects) == 1
-        assert result.accepted_subjects == {"S1"}  # S1 < S2 alphabetically
+        # All 5 are tied at the best bitscore
+        assert result.accepted_subjects == {"S1", "S2", "S3", "S4", "S5"}
 
     def test_determinism_independent_of_input_order(self):
         hits_order1 = [
@@ -281,4 +310,3 @@ class TestFilterPolicy:
         assert d["max_evalue"] == 1e-5
         assert d["min_pident"] == 80.0
         assert d["top_k"] == 10
-        assert d["best_hit_only"] is False

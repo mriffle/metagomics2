@@ -196,14 +196,17 @@ For each peptide list, the following files are generated:
 
 ### Filter Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `--max-evalue` | Maximum e-value threshold |
-| `--min-pident` | Minimum percent identity |
-| `--min-qcov` | Minimum query coverage |
-| `--top-k` | Keep only top K hits by bitscore |
-| `--delta-bitscore` | Keep hits within delta of best |
-| `--best-hit-only` | Keep only the single best hit |
+These parameters control how DIAMOND homology hits are filtered before
+annotation.  Threshold filters are applied first (as an AND), then the
+tie-aware `top_k` ranking selects which hits to keep.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--max-evalue` | `1e-10` | Maximum e-value threshold. Also passed to DIAMOND as a pre-filter so low-quality alignments are skipped early. Lower values are more stringent. |
+| `--min-pident` | `80` | Minimum percent identity. Applied in post-filtering (not passed to DIAMOND). |
+| `--min-qcov` | *(none)* | Minimum query coverage (percent). Applied in post-filtering. |
+| `--min-alnlen` | *(none)* | Minimum alignment length (residues). Applied in post-filtering. |
+| `--top-k` | `1` | Number of top-scoring hits to keep per query protein, ranked by bitscore. **Tie-aware**: if multiple hits share the same bitscore at the Kth position, all tied hits are retained. For example, with `top_k=1` and five hits tied at the best bitscore, all five are kept. This ensures annotation is not biased by arbitrary tie-breaking. |
 
 ### GO Closure Settings
 

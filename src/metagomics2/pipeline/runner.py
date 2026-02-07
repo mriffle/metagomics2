@@ -76,7 +76,7 @@ class PipelineConfig:
     job_dir: Path | None = None
 
     # GO closure settings
-    go_edge_types: set[str] = field(default_factory=lambda: {"is_a"})
+    go_edge_types: set[str] = field(default_factory=lambda: {"is_a", "part_of"})
     go_include_self: bool = True
 
     # Annotations database path (companion SQLite for taxonomy/GO lookup)
@@ -456,13 +456,13 @@ class PipelineRunner:
         work_dir = self.subset_fasta_path.parent
         diamond_output = work_dir / "diamond_results.tsv"
 
-        # Run DIAMOND with user-specified evalue and top_k as max-target-seqs
+        # Let DIAMOND return all hits passing the e-value threshold.
+        # The tie-aware top_k cutoff is applied in filter_all_hits.
         diamond_result = run_diamond(
             query_fasta=self.subset_fasta_path,
             db_path=self.config.annotated_db_path,
             output_path=diamond_output,
             evalue=self.config.filter_policy.max_evalue or 1e-10,
-            max_target_seqs=self.config.filter_policy.top_k or 1,
             threads=self.config.threads,
         )
 
@@ -587,7 +587,11 @@ class PipelineRunner:
             annotated_db_choice=str(self.config.annotated_db_path or "mock"),
             input_fasta_path=self.config.fasta_path,
             peptide_list_path=peptide_list_path,
-            parameters=self.config.filter_policy.to_dict(),
+            parameters={
+                **self.config.filter_policy.to_dict(),
+                "go_edge_types": sorted(self.config.go_edge_types),
+                "go_include_self": self.config.go_include_self,
+            },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None,
             annotated_db_path=self.config.annotated_db_path,

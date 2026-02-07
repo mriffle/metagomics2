@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 import signal
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.db.database import Database
 from metagomics2.models.job import JobStatus, PeptideListStatus
+from metagomics2.notifications.email import SmtpConfig, send_job_notification
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,20 @@ try:
     DATABASES: list[dict] = json.loads(_databases_raw)
 except (json.JSONDecodeError, TypeError):
     DATABASES = []
+
+# Email notification settings
+SMTP_CONFIG = SmtpConfig(
+    host=os.environ.get("SMTP_HOST", ""),
+    port=int(os.environ.get("SMTP_PORT", "587")),
+    username=os.environ.get("SMTP_USERNAME", ""),
+    password=os.environ.get("SMTP_PASSWORD", ""),
+    from_address=os.environ.get("SMTP_FROM", ""),
+)
+SITE_URL = os.environ.get("SITE_URL", "")
+
+# Cleanup settings
+CLEANUP_ON_SUCCESS = os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true").lower() == "true"
+CLEANUP_ON_FAILURE = os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true").lower() == "true"
 
 
 class Worker:
@@ -121,13 +137,46 @@ class Worker:
                 self.db.add_event(job_id, "failed", f"Job failed: {result.error_message}")
                 logger.error(f"Job {job_id} failed: {result.error_message}")
 
+            # Send email notification (re-fetch job to get final status)
+            self._send_notification(job_id)
+
+            # Clean up intermediate files
+            if result.success and CLEANUP_ON_SUCCESS:
+                self._cleanup_job_files(job_id)
+            elif not result.success and CLEANUP_ON_FAILURE:
+                self._cleanup_job_files(job_id)
+
         except Exception as e:
             logger.exception(f"Error processing job {job_id}")
             self.db.update_job_status(job_id, JobStatus.FAILED, str(e))
             self.db.add_event(job_id, "error", str(e))
+            self._send_notification(job_id)
+            if CLEANUP_ON_FAILURE:
+                self._cleanup_job_files(job_id)
 
         finally:
             self.current_job_id = None
+
+    def _cleanup_job_files(self, job_id: str) -> None:
+        """Remove inputs/ and work/ directories to free disk space."""
+        try:
+            job_dir = JOBS_DIR / job_id
+            for subdir in ("inputs", "work"):
+                path = job_dir / subdir
+                if path.exists():
+                    shutil.rmtree(path)
+                    logger.info(f"Cleaned up {path}")
+        except Exception:
+            logger.exception(f"Error cleaning up files for job {job_id}")
+
+    def _send_notification(self, job_id: str) -> None:
+        """Send email notification for a finished job."""
+        try:
+            job = self.db.get_job(job_id)
+            if job and job.params.notification_email:
+                send_job_notification(job, SITE_URL, SMTP_CONFIG)
+        except Exception:
+            logger.exception(f"Error sending notification for job {job_id}")
 
     def _build_config(self, job_id: str, job) -> PipelineConfig:
         """Build pipeline configuration from job info."""
@@ -155,8 +204,6 @@ class Worker:
             min_qcov=params.min_qcov,
             min_alnlen=params.min_alnlen,
             top_k=params.top_k,
-            delta_bitscore=params.delta_bitscore,
-            best_hit_only=params.best_hit_only,
         )
 
         # Resolve database path: db_choice is relative to DATABASES_DIR

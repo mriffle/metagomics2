@@ -187,6 +187,49 @@ class TestWriteGOTermsCSV:
         assert rows[2]["go_id"] == "GO:0000004"
 
 
+    def test_obsolete_go_term_labeled(self, small_go: dict, tmp_path: Path):
+        """Obsolete GO terms should show 'OBSOLETE: <name>' in the CSV."""
+        # Add an obsolete term to the GO data
+        small_go["obsolete_terms"] = {
+            "GO:9999999": {
+                "name": "positive regulation of something",
+                "namespace": "biological_process",
+            }
+        }
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:9999999"] = make_node("GO:9999999", 5.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["go_id"] == "GO:9999999"
+        assert row["name"] == "OBSOLETE: positive regulation of something"
+        assert row["namespace"] == "biological_process"
+        assert row["parent_go_ids"] == ""
+
+    def test_unknown_go_term_blank_metadata(self, small_go: dict, tmp_path: Path):
+        """GO terms not in DAG or obsolete_terms should have blank name/namespace."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:8888888"] = make_node("GO:8888888", 5.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["go_id"] == "GO:8888888"
+        assert row["name"] == ""
+        assert row["namespace"] == ""
+
+
 class TestWriteCoverageCSV:
     """Tests for coverage.csv generation."""
 

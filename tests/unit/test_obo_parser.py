@@ -90,7 +90,7 @@ relationship: part_of GO:0000002 ! part_of parent
         assert "GO:0000002" in term.parents["part_of"]
 
     def test_parse_obo_skips_obsolete_terms(self, tmp_path: Path):
-        """Obsolete terms should be filtered out."""
+        """Obsolete terms should not be in main terms but stored in obsolete_terms."""
         obo_content = """[Term]
 id: GO:0000001
 name: active term
@@ -110,6 +110,12 @@ is_obsolete: true
         assert len(dag.terms) == 1
         assert "GO:0000001" in dag.terms
         assert "GO:0000002" not in dag.terms
+
+        # Obsolete term should be stored with metadata
+        assert "GO:0000002" in dag.obsolete_terms
+        obs = dag.obsolete_terms["GO:0000002"]
+        assert obs.name == "obsolete term"
+        assert obs.namespace == "biological_process"
 
     def test_parse_obo_handles_comments(self, tmp_path: Path):
         """Comments and trailing annotations should be handled."""
@@ -202,6 +208,42 @@ relationship: part_of GO:0000002
         # Verify part_of edges
         part_of_edges = result["edges"]["part_of"]
         assert ["GO:0000003", "GO:0000002"] in part_of_edges
+
+    def test_convert_obo_to_json_dict_includes_obsolete_terms(self, tmp_path: Path):
+        """Obsolete terms should be included in JSON dict and survive round-trip."""
+        obo_content = """[Term]
+id: GO:0000001
+name: active term
+namespace: biological_process
+
+[Term]
+id: GO:0000002
+name: obsolete regulation
+namespace: molecular_function
+is_obsolete: true
+"""
+        obo_file = tmp_path / "test.obo"
+        obo_file.write_text(obo_content)
+
+        result = convert_obo_to_json_dict(obo_file)
+
+        # Active term in terms, not in obsolete_terms
+        assert "GO:0000001" in result["terms"]
+        assert "GO:0000001" not in result.get("obsolete_terms", {})
+
+        # Obsolete term in obsolete_terms, not in terms
+        assert "GO:0000002" not in result["terms"]
+        assert "GO:0000002" in result["obsolete_terms"]
+        assert result["obsolete_terms"]["GO:0000002"]["name"] == "obsolete regulation"
+        assert result["obsolete_terms"]["GO:0000002"]["namespace"] == "molecular_function"
+
+        # Round-trip through load_go_from_dict
+        from metagomics2.core.go import load_go_from_dict
+        dag = load_go_from_dict(result)
+        assert "GO:0000001" in dag.terms
+        assert "GO:0000002" not in dag.terms
+        assert "GO:0000002" in dag.obsolete_terms
+        assert dag.obsolete_terms["GO:0000002"].name == "obsolete regulation"
 
     def test_parse_obo_empty_file(self, tmp_path: Path):
         """Empty OBO file should result in empty DAG."""

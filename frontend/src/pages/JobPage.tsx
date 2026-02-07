@@ -19,10 +19,24 @@ interface PeptideList {
   n_unmatched: number | null
 }
 
+interface JobParams {
+  search_tool: string
+  db_choice: string
+  db_name: string
+  max_evalue: number | null
+  min_pident: number | null
+  min_qcov: number | null
+  min_alnlen: number | null
+  top_k: number | null
+  notification_email: string
+  fasta_filename: string
+}
+
 interface Job {
   job_id: string
   created_at: string
   status: string
+  params: JobParams
   progress_done: number
   progress_total: number
   current_step: string | null
@@ -125,6 +139,31 @@ export default function JobPage() {
           </div>
         </div>
 
+        {/* Parameters */}
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+          {job.params.fasta_filename && (
+            <span><span className="font-medium text-gray-700">FASTA:</span> {job.params.fasta_filename}</span>
+          )}
+          {job.params.db_choice && (
+            <span><span className="font-medium text-gray-700">Database:</span> {job.params.db_name ? `${job.params.db_name} (${job.params.db_choice})` : job.params.db_choice}</span>
+          )}
+          {job.params.max_evalue != null && (
+            <span><span className="font-medium text-gray-700">Max E-value:</span> {job.params.max_evalue}</span>
+          )}
+          {job.params.min_pident != null && (
+            <span><span className="font-medium text-gray-700">Min % Identity:</span> {job.params.min_pident}</span>
+          )}
+          {job.params.top_k != null && (
+            <span><span className="font-medium text-gray-700">Top K:</span> {job.params.top_k}</span>
+          )}
+          {job.params.min_qcov != null && (
+            <span><span className="font-medium text-gray-700">Min Query Cov:</span> {job.params.min_qcov}</span>
+          )}
+          {job.params.min_alnlen != null && (
+            <span><span className="font-medium text-gray-700">Min Aln Length:</span> {job.params.min_alnlen}</span>
+          )}
+        </div>
+
         {/* Progress Bar */}
         {(job.status === 'running' || job.status === 'queued') && (
           <div className="mt-6">
@@ -201,6 +240,13 @@ export default function JobPage() {
             <Download className="w-5 h-5" />
             Downloads
           </h2>
+
+          <div className="mb-4 text-sm text-gray-600 space-y-1">
+            <p><span className="font-medium">taxonomy_nodes.csv</span> — Taxonomy assignments with aggregated peptide quantities and ratios at each node.</p>
+            <p><span className="font-medium">go_terms.csv</span> — Gene Ontology term assignments with aggregated peptide quantities and ratios.</p>
+            <p><span className="font-medium">coverage.csv</span> — Summary of how many peptides (and what fraction of total quantity) received any annotations (taxonomy or GO).</p>
+            <p><span className="font-medium">run_manifest.json</span> — Provenance record of parameters, software versions, and reference data used for this run.</p>
+          </div>
 
           <div className="space-y-4">
             {/* Download All */}

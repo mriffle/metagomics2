@@ -200,6 +200,7 @@ def parse_peptide_list_from_handle(
     has_header = len(first_row) > 1 and not _is_numeric(first_row[qty_idx])
 
     peptides = []
+    seen_raw: dict[str, int] = {}  # raw sequence -> first line number
 
     if not has_header:
         # First row is data, process it
@@ -207,6 +208,13 @@ def parse_peptide_list_from_handle(
             raise PeptideParsingError(
                 f"Line 1: Not enough columns (expected at least 2)"
             )
+        raw_seq = first_row[seq_idx].strip()
+        if raw_seq in seen_raw:
+            raise PeptideParsingError(
+                f"Line 1: Duplicate peptide '{raw_seq}' "
+                f"(first seen on line {seen_raw[raw_seq]})"
+            )
+        seen_raw[raw_seq] = 1
         try:
             sequence = normalize_sequence(first_row[seq_idx], allowed_alphabet)
         except PeptideParsingError as e:
@@ -225,6 +233,14 @@ def parse_peptide_list_from_handle(
             raise PeptideParsingError(
                 f"Line {line_num}: Not enough columns (expected at least 2)"
             )
+
+        raw_seq = row[seq_idx].strip()
+        if raw_seq in seen_raw:
+            raise PeptideParsingError(
+                f"Line {line_num}: Duplicate peptide '{raw_seq}' "
+                f"(first seen on line {seen_raw[raw_seq]})"
+            )
+        seen_raw[raw_seq] = line_num
 
         try:
             sequence = normalize_sequence(row[seq_idx], allowed_alphabet)

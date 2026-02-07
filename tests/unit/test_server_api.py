@@ -99,7 +99,7 @@ class TestCreateJob:
     def test_create_job_with_params(self, client, tmp_path: Path):
         fasta_content = b">P1\nMPEPTIDEK\n"
         peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
-        params = json.dumps({"search_tool": "blast", "max_evalue": 1e-5, "db_choice": "test.dmnd"})
+        params = json.dumps({"search_tool": "diamond", "max_evalue": 1e-5})
 
         response = client.post(
             "/api/jobs",
@@ -232,6 +232,77 @@ class TestCreateJob:
 
         assert response.status_code == 400
         assert "consecutive header" in response.json()["detail"].lower()
+
+
+class TestUploadSizeLimit:
+    """Tests for upload size limit enforcement."""
+
+    def test_fasta_exceeding_limit_rejected(self, tmp_path: Path, test_db):
+        """A FASTA file exceeding MAX_UPLOAD_MB should be rejected with 413."""
+        (tmp_path / "jobs").mkdir(exist_ok=True)
+
+        with patch.dict(os.environ, {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_ADMIN_PASSWORD": "testpass",
+            "METAGOMICS_DATABASES": json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]),
+            "METAGOMICS_MAX_UPLOAD_MB": "1",  # 1 MB limit
+        }):
+            import metagomics2.server.app as app_module
+            importlib.reload(app_module)
+            app_module.db = test_db
+            app_module.JOBS_DIR = tmp_path / "jobs"
+
+            from fastapi.testclient import TestClient
+            client = TestClient(app_module.app)
+
+            # Create a FASTA file just over 1 MB
+            fasta_content = b">P1\n" + b"M" * (1024 * 1024 + 100) + b"\n"
+            peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+            response = client.post(
+                "/api/jobs",
+                files=[
+                    ("fasta", ("big.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
+                    ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                ],
+                data={"params": json.dumps({"db_choice": "test.dmnd"})},
+            )
+
+            assert response.status_code == 413
+            assert "maximum upload size" in response.json()["detail"].lower()
+
+    def test_fasta_within_limit_accepted(self, tmp_path: Path, test_db):
+        """A FASTA file within MAX_UPLOAD_MB should be accepted."""
+        (tmp_path / "jobs").mkdir(exist_ok=True)
+
+        with patch.dict(os.environ, {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_ADMIN_PASSWORD": "testpass",
+            "METAGOMICS_DATABASES": json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]),
+            "METAGOMICS_MAX_UPLOAD_MB": "1",  # 1 MB limit
+        }):
+            import metagomics2.server.app as app_module
+            importlib.reload(app_module)
+            app_module.db = test_db
+            app_module.JOBS_DIR = tmp_path / "jobs"
+
+            from fastapi.testclient import TestClient
+            client = TestClient(app_module.app)
+
+            # Small valid FASTA
+            fasta_content = b">P1\nMPEPTIDEK\n"
+            peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+            response = client.post(
+                "/api/jobs",
+                files=[
+                    ("fasta", ("small.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
+                    ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                ],
+                data={"params": json.dumps({"db_choice": "test.dmnd"})},
+            )
+
+            assert response.status_code == 200
 
 
 class TestGetJob:

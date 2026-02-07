@@ -26,8 +26,6 @@ class FilterPolicy:
     min_qcov: float | None = None  # minimum query coverage
     min_alnlen: int | None = None  # minimum alignment length
     top_k: int | None = None  # keep only top K by bitscore
-    delta_bitscore: float | None = None  # keep hits within delta of best bitscore
-    best_hit_only: bool = False  # keep only the single best hit
 
     def to_dict(self) -> dict:
         """Convert policy to dictionary for manifest."""
@@ -37,8 +35,6 @@ class FilterPolicy:
             "min_qcov": self.min_qcov,
             "min_alnlen": self.min_alnlen,
             "top_k": self.top_k,
-            "delta_bitscore": self.delta_bitscore,
-            "best_hit_only": self.best_hit_only,
         }
 
 
@@ -85,7 +81,8 @@ def filter_hits_for_query(
 
     Filtering steps:
     1. Apply threshold filters (evalue, pident, qcov, alnlen)
-    2. Apply ranking filters (top_k, delta_bitscore, best_hit_only)
+    2. Apply tie-aware top_k ranking: keep the top K hits by bitscore,
+       plus any additional hits tied with the Kth-best bitscore
 
     Args:
         hits: List of hits for a single query
@@ -110,21 +107,12 @@ def filter_hits_for_query(
     # Step 2: Sort by bitscore descending, then by subject_id for determinism
     passing_hits.sort(key=lambda h: (-h.bitscore, h.subject_id))
 
-    # Step 3: Apply ranking filters
-    if policy.best_hit_only:
-        # Keep only the single best hit
-        result.accepted_subjects = {passing_hits[0].subject_id}
-        return result
-
-    # Apply delta_bitscore filter
-    if policy.delta_bitscore is not None:
-        best_bitscore = passing_hits[0].bitscore
-        threshold = best_bitscore - policy.delta_bitscore
-        passing_hits = [h for h in passing_hits if h.bitscore >= threshold]
-
-    # Apply top_k filter
-    if policy.top_k is not None:
-        passing_hits = passing_hits[: policy.top_k]
+    # Step 3: Apply tie-aware top_k ranking filter
+    if policy.top_k is not None and len(passing_hits) > policy.top_k:
+        # Find the bitscore of the Kth hit (0-indexed: position top_k - 1)
+        kth_bitscore = passing_hits[policy.top_k - 1].bitscore
+        # Keep all hits whose bitscore >= the Kth-best bitscore
+        passing_hits = [h for h in passing_hits if h.bitscore >= kth_bitscore]
 
     result.accepted_subjects = {h.subject_id for h in passing_hits}
     return result

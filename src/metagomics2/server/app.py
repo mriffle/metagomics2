@@ -34,6 +34,11 @@ ADMIN_PASSWORD = os.environ.get("METAGOMICS_ADMIN_PASSWORD", "")
 DIAMOND_VERSION = os.environ.get("DIAMOND_VERSION", "")
 THREADS = int(os.environ.get("METAGOMICS_THREADS", "4"))
 DATABASES_DIR = Path(os.environ.get("METAGOMICS_DATABASES_DIR", "/databases"))
+MAX_UPLOAD_MB = int(os.environ.get("METAGOMICS_MAX_UPLOAD_MB", "1024"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
+# Chunk size for streaming file writes (1 MB)
+_WRITE_CHUNK_SIZE = 1024 * 1024
 
 # Parse annotated databases configuration from JSON env var
 _databases_raw = os.environ.get("METAGOMICS_DATABASES", "[]")
@@ -125,6 +130,19 @@ async def get_config():
     }
 
 
+async def _save_upload_streamed(upload: UploadFile, dest: Path) -> int:
+    """Stream an uploaded file to disk in chunks, returning total bytes written."""
+    total = 0
+    async with aiofiles.open(dest, "wb") as f:
+        while True:
+            chunk = await upload.read(_WRITE_CHUNK_SIZE)
+            if not chunk:
+                break
+            await f.write(chunk)
+            total += len(chunk)
+    return total
+
+
 def _validate_fasta_content(text: str) -> None:
     """Validate that text looks like a FASTA file.
 
@@ -187,17 +205,38 @@ async def create_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid parameters: {e}")
 
-    # Validate FASTA file
-    fasta_content = await fasta.read()
+    # Store original FASTA filename
+    job_params.fasta_filename = fasta.filename or "background.fasta"
+
+    # Validate db_choice against configured databases
+    if job_params.db_choice:
+        valid_paths = {db_entry.get("path") for db_entry in DATABASES}
+        if job_params.db_choice not in valid_paths:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown database: {job_params.db_choice}",
+            )
+
+    # Resolve database name from config
+    if job_params.db_choice and not job_params.db_name:
+        for db_entry in DATABASES:
+            if db_entry.get("path") == job_params.db_choice:
+                job_params.db_name = db_entry.get("name", "")
+                break
+
+    # Validate FASTA file (only read first 8 KB for header check)
+    fasta_header = await fasta.read(8192)
+    if not fasta_header:
+        raise HTTPException(status_code=400, detail="The uploaded FASTA file is empty.")
     try:
-        fasta_text = fasta_content.decode("utf-8", errors="replace")
+        fasta_header_text = fasta_header.decode("utf-8", errors="replace")
     except Exception:
         raise HTTPException(
             status_code=400,
             detail="The uploaded FASTA file could not be read as text.",
         )
 
-    _validate_fasta_content(fasta_text)
+    _validate_fasta_content(fasta_header_text)
     await fasta.seek(0)
 
     # Create job in database
@@ -214,22 +253,32 @@ async def create_job(
     for d in [inputs_dir, peptides_dir, work_dir, results_dir, logs_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
-    # Save FASTA file
+    # Save FASTA file (streamed in chunks)
     fasta_path = inputs_dir / "background.fasta"
-    async with aiofiles.open(fasta_path, "wb") as f:
-        content = await fasta.read()
-        await f.write(content)
+    fasta_size = await _save_upload_streamed(fasta, fasta_path)
+    if fasta_size > MAX_UPLOAD_BYTES:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"FASTA file exceeds the maximum upload size of {MAX_UPLOAD_MB} MB.",
+        )
 
-    # Save peptide files
+    # Save peptide files (streamed in chunks)
+    total_peptide_size = 0
     for i, peptide_file in enumerate(peptides):
         list_id = f"list_{i:03d}"
         filename = peptide_file.filename or f"peptides_{i}.tsv"
         safe_filename = f"{list_id}_{filename}"
         peptide_path = peptides_dir / safe_filename
 
-        async with aiofiles.open(peptide_path, "wb") as f:
-            content = await peptide_file.read()
-            await f.write(content)
+        file_size = await _save_upload_streamed(peptide_file, peptide_path)
+        total_peptide_size += file_size
+        if total_peptide_size > MAX_UPLOAD_BYTES:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=413,
+                detail=f"Total peptide file size exceeds the maximum upload size of {MAX_UPLOAD_MB} MB.",
+            )
 
         # Register in database
         db.add_peptide_list(job_id, list_id, filename, str(peptide_path))

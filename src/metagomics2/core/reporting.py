@@ -133,8 +133,17 @@ def write_go_terms_csv(
 
         for go_id, node in sorted_terms:
             go_term = go_dag.terms.get(go_id)
-            name = go_term.name if go_term else ""
-            namespace = go_term.namespace if go_term else ""
+            if go_term:
+                name = go_term.name
+                namespace = go_term.namespace
+            else:
+                obsolete = go_dag.obsolete_terms.get(go_id)
+                if obsolete:
+                    name = f"OBSOLETE: {obsolete.name}"
+                    namespace = obsolete.namespace
+                else:
+                    name = ""
+                    namespace = ""
 
             # Collect all parent IDs across all edge types
             parent_ids: set[str] = set()
