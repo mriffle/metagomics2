@@ -105,8 +105,16 @@ def _process_term_stanza(stanza: dict[str, list[str]], dag: GODAG) -> None:
         stanza: Dictionary of tag -> list of values
         dag: GODAG to add term to
     """
-    # Skip obsolete terms
+    # Store obsolete terms with metadata but not in the main DAG
     if "is_obsolete" in stanza and stanza["is_obsolete"][0].lower() == "true":
+        if "id" in stanza:
+            term_id = stanza["id"][0]
+            dag.obsolete_terms[term_id] = GOTerm(
+                id=term_id,
+                name=stanza.get("name", [""])[0],
+                namespace=stanza.get("namespace", [""])[0],
+                parents={},
+            )
         return
 
     # Extract required fields
@@ -189,5 +197,14 @@ def convert_obo_to_json_dict(obo_path: Path | str) -> dict:
         for edge_type, parent_ids in term.parents.items():
             for parent_id in parent_ids:
                 result["edges"][edge_type].append([term_id, parent_id])
+
+    # Add obsolete terms
+    if dag.obsolete_terms:
+        result["obsolete_terms"] = {}
+        for term_id, term in dag.obsolete_terms.items():
+            result["obsolete_terms"][term_id] = {
+                "name": term.name,
+                "namespace": term.namespace,
+            }
 
     return result
