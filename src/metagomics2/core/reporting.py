@@ -101,6 +101,7 @@ def write_go_terms_csv(
     go_dag: GODAG,
     output_path: Path,
     parent_delimiter: str = ";",
+    edge_types: set[str] | None = None,
 ) -> None:
     """Write go_terms.csv.
 
@@ -111,6 +112,7 @@ def write_go_terms_csv(
         go_dag: GO DAG for term metadata
         output_path: Path to write CSV
         parent_delimiter: Delimiter for parent IDs (default: ";")
+        edge_types: Edge types to include in parent_go_ids (default: all)
     """
     # Sort by quantity descending, then by go_id for determinism
     sorted_terms = sorted(
@@ -145,11 +147,15 @@ def write_go_terms_csv(
                     name = ""
                     namespace = ""
 
-            # Collect all parent IDs across all edge types
+            # Collect parent IDs for the specified edge types
             parent_ids: set[str] = set()
             if go_term:
-                for parents in go_term.parents.values():
-                    parent_ids |= parents
+                if edge_types is not None:
+                    for et in edge_types:
+                        parent_ids |= go_term.parents.get(et, set())
+                else:
+                    for parents in go_term.parents.values():
+                        parent_ids |= parents
             parent_ids_str = parent_delimiter.join(sorted(parent_ids))
 
             ratio_annotated_str = (

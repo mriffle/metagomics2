@@ -1,0 +1,358 @@
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
+import cytoscape from 'cytoscape'
+import dagre from 'cytoscape-dagre'
+import type { GoTermNode, MetricKey } from '../pages/GoDagPage'
+
+// Register dagre layout
+cytoscape.use(dagre)
+
+// Color scale: indigo ramp from very light to dark
+const COLOR_STOPS = [
+  [238, 242, 255],  // #eef2ff  indigo-50
+  [199, 210, 254],  // #c7d2fe  indigo-200
+  [129, 140, 248],  // #818cf8  indigo-400
+  [67, 56, 202],    // #4338ca  indigo-700
+  [30, 27, 75],     // #1e1b4b  indigo-950
+]
+
+function interpolateColor(t: number): string {
+  // t is 0..1, interpolate through COLOR_STOPS
+  const clamped = Math.max(0, Math.min(1, t))
+  const segment = clamped * (COLOR_STOPS.length - 1)
+  const i = Math.floor(segment)
+  const f = segment - i
+
+  if (i >= COLOR_STOPS.length - 1) {
+    const c = COLOR_STOPS[COLOR_STOPS.length - 1]
+    return `rgb(${c[0]},${c[1]},${c[2]})`
+  }
+
+  const c0 = COLOR_STOPS[i]
+  const c1 = COLOR_STOPS[i + 1]
+  const r = Math.round(c0[0] + (c1[0] - c0[0]) * f)
+  const g = Math.round(c0[1] + (c1[1] - c0[1]) * f)
+  const b = Math.round(c0[2] + (c1[2] - c0[2]) * f)
+  return `rgb(${r},${g},${b})`
+}
+
+function textColorForBg(t: number): string {
+  return t > 0.5 ? '#ffffff' : '#1e1b4b'
+}
+
+function getMetricValue(node: GoTermNode, metric: MetricKey): number {
+  switch (metric) {
+    case 'quantity': return node.quantity
+    case 'ratioTotal': return node.ratioTotal
+    case 'ratioAnnotated': return node.ratioAnnotated
+    case 'nPeptides': return node.nPeptides
+  }
+}
+
+function normalizeValues(nodes: GoTermNode[], metric: MetricKey): Map<string, number> {
+  const useLog = metric === 'quantity' || metric === 'nPeptides'
+  const values = nodes.map(n => getMetricValue(n, metric))
+  const transformed = useLog ? values.map(v => Math.log1p(v)) : values
+
+  const min = Math.min(...transformed)
+  const max = Math.max(...transformed)
+  const range = max - min
+
+  const result = new Map<string, number>()
+  nodes.forEach((node, i) => {
+    result.set(node.id, range > 0 ? (transformed[i] - min) / range : 0)
+  })
+  return result
+}
+
+interface GoDagViewerProps {
+  nodes: GoTermNode[]
+  metric: MetricKey
+}
+
+export default function GoDagViewer({ nodes, metric }: GoDagViewerProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const cyRef = useRef<cytoscape.Core | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<{
+    x: number
+    y: number
+    node: GoTermNode
+  } | null>(null)
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
+
+  // Reposition tooltip to stay within viewport
+  useLayoutEffect(() => {
+    if (!tooltip || !tooltipRef.current || !containerRef.current) return
+    const wrapper = containerRef.current.parentElement!
+    const wRect = wrapper.getBoundingClientRect()
+    const tRect = tooltipRef.current.getBoundingClientRect()
+
+    // Convert rendered position to viewport coordinates
+    let left = wRect.left + tooltip.x + 12
+    let top = wRect.top + tooltip.y - 12
+
+    // Flip horizontally if overflowing right edge of viewport
+    if (left + tRect.width > window.innerWidth - 8) {
+      left = wRect.left + tooltip.x - tRect.width - 12
+    }
+    if (left < 8) left = 8
+
+    // Flip vertically if overflowing bottom edge of viewport
+    if (top + tRect.height > window.innerHeight - 8) {
+      top = wRect.top + tooltip.y - tRect.height - 12
+    }
+    if (top < 8) top = 8
+
+    setTooltipPos({ left, top })
+  }, [tooltip])
+
+  // Build cytoscape elements from nodes
+  const buildElements = useCallback(() => {
+    const nodeIds = new Set(nodes.map(n => n.id))
+    const elements: cytoscape.ElementDefinition[] = []
+
+    // Add nodes
+    for (const node of nodes) {
+      elements.push({
+        group: 'nodes',
+        data: {
+          id: node.id,
+          label: node.name.length > 40 ? node.name.substring(0, 37) + '...' : node.name,
+          fullName: node.name,
+          namespace: node.namespace,
+          quantity: node.quantity,
+          ratioTotal: node.ratioTotal,
+          ratioAnnotated: node.ratioAnnotated,
+          nPeptides: node.nPeptides,
+        },
+      })
+    }
+
+    // Add edges (parent -> child)
+    for (const node of nodes) {
+      for (const parentId of node.parentIds) {
+        if (nodeIds.has(parentId)) {
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${parentId}->${node.id}`,
+              source: parentId,
+              target: node.id,
+            },
+          })
+        }
+      }
+    }
+
+    return elements
+  }, [nodes])
+
+  // Initialize cytoscape
+  useEffect(() => {
+    if (!containerRef.current || nodes.length === 0) return
+
+    const elements = buildElements()
+    const normalized = normalizeValues(nodes, metric)
+
+    // Build a lookup for quick access
+    const nodeMap = new Map<string, GoTermNode>()
+    for (const n of nodes) nodeMap.set(n.id, n)
+
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'shape': 'round-rectangle',
+            'width': 'label',
+            'height': 'label',
+            'padding': '8px',
+            'label': 'data(label)',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '12px',
+            'text-wrap': 'wrap',
+            'text-max-width': '140px',
+            'border-width': 1,
+            'border-color': '#94a3b8',
+            'background-color': '#e2e8f0',
+            'color': '#1e1b4b',
+            'min-zoomed-font-size': 4,
+          } as any,
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 1,
+            'line-color': '#cbd5e1',
+            'target-arrow-color': '#cbd5e1',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.6,
+            'curve-style': 'bezier',
+          } as any,
+        },
+        {
+          selector: 'node:active',
+          style: {
+            'overlay-opacity': 0,
+          } as any,
+        },
+        {
+          selector: 'node.highlighted',
+          style: {
+            'border-width': 2,
+            'border-color': '#4338ca',
+          } as any,
+        },
+        {
+          selector: 'edge.highlighted',
+          style: {
+            'width': 2,
+            'line-color': '#818cf8',
+            'target-arrow-color': '#818cf8',
+          } as any,
+        },
+      ],
+      layout: {
+        name: 'dagre',
+        rankDir: 'TB',
+        ranker: 'tight-tree',
+        nodeSep: 20,
+        rankSep: 40,
+        animate: false,
+      } as any,
+      minZoom: 0.05,
+      maxZoom: 3,
+      wheelSensitivity: 0.3,
+    })
+
+    // Apply colors based on metric
+    cy.nodes().forEach((ele) => {
+      const t = normalized.get(ele.id()) ?? 0
+      ele.style('background-color', interpolateColor(t))
+      ele.style('color', textColorForBg(t))
+    })
+
+    // Hover: highlight connected edges
+    cy.on('mouseover', 'node', (evt) => {
+      const node = evt.target
+      node.addClass('highlighted')
+      node.connectedEdges().addClass('highlighted')
+      node.neighborhood('node').addClass('highlighted')
+    })
+
+    cy.on('mouseout', 'node', (evt) => {
+      const node = evt.target
+      node.removeClass('highlighted')
+      node.connectedEdges().removeClass('highlighted')
+      node.neighborhood('node').removeClass('highlighted')
+    })
+
+    // Click: show tooltip
+    cy.on('tap', 'node', (evt) => {
+      const node = evt.target
+      const goNode = nodeMap.get(node.id())
+      if (!goNode) return
+
+      const renderedPos = node.renderedPosition()
+      setTooltip({
+        x: renderedPos.x,
+        y: renderedPos.y,
+        node: goNode,
+      })
+    })
+
+    // Click background: dismiss tooltip
+    cy.on('tap', (evt) => {
+      if (evt.target === cy) {
+        setTooltip(null)
+      }
+    })
+
+    // Dismiss tooltip on zoom/pan
+    cy.on('zoom pan', () => {
+      setTooltip(null)
+    })
+
+    cyRef.current = cy
+
+    return () => {
+      cy.destroy()
+      cyRef.current = null
+    }
+  }, [nodes, buildElements])
+
+  // Update colors when metric changes (without re-layout)
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy || nodes.length === 0) return
+
+    const normalized = normalizeValues(nodes, metric)
+    cy.batch(() => {
+      cy.nodes().forEach((ele) => {
+        const t = normalized.get(ele.id()) ?? 0
+        ele.style('background-color', interpolateColor(t))
+        ele.style('color', textColorForBg(t))
+      })
+    })
+  }, [metric, nodes])
+
+  // Export PNG handler — exposed via ref or callback
+  useEffect(() => {
+    // Attach export function to the container element for parent access
+    const el = containerRef.current
+    if (el) {
+      (el as any).__exportPng = () => {
+        const cy = cyRef.current
+        if (!cy) return
+        const png = cy.png({ full: true, scale: 2, bg: '#ffffff' })
+        const link = document.createElement('a')
+        link.href = png
+        link.download = 'go_dag.png'
+        link.click()
+      }
+    }
+  })
+
+  if (nodes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500">
+        No GO terms in this namespace.
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative w-full h-full overflow-visible">
+      <div ref={containerRef} data-cy-container className="absolute inset-0" />
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          ref={tooltipRef}
+          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm pointer-events-none"
+          style={{
+            left: tooltipPos.left,
+            top: tooltipPos.top,
+            maxWidth: 320,
+          }}
+        >
+          <p className="font-mono text-xs text-gray-500 mb-1">{tooltip.node.id}</p>
+          <p className="font-semibold text-gray-900 mb-2">{tooltip.node.name}</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <span className="text-gray-600">Quantity:</span>
+            <span className="font-medium text-right">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
+            <span className="text-gray-600">Ratio (Total):</span>
+            <span className="font-medium text-right">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
+            <span className="text-gray-600">Ratio (Annotated):</span>
+            <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+            <span className="text-gray-600"># Peptides:</span>
+            <span className="font-medium text-right">{tooltip.node.nPeptides}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

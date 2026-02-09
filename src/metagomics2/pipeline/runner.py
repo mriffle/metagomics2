@@ -571,6 +571,7 @@ class PipelineRunner:
                 aggregation,
                 self.go_dag,
                 list_output_dir / "go_terms.csv",
+                edge_types=self.config.go_edge_types,
             )
 
         # Write coverage CSV

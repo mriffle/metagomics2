@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   Clock,
   CheckCircle,
@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   AlertCircle,
+  GitBranch,
 } from 'lucide-react'
 
 interface PeptideList {
@@ -279,6 +280,13 @@ export default function JobPage() {
                         {file}
                       </a>
                     ))}
+                    <Link
+                      to={`/job/${job.job_id}/go/${list.list_id}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors"
+                    >
+                      <GitBranch className="w-3 h-3" />
+                      GO DAG
+                    </Link>
                   </div>
                 </div>
               ))}
