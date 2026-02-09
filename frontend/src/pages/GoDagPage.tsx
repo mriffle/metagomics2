@@ -3,84 +3,16 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
 import GoDagViewer from '../components/GoDagViewer'
 import GoDagControls from '../components/GoDagControls'
+import { parseGoTermsCsv } from '../utils/goParser'
+import type { GoTermNode } from '../utils/goParser'
 
-export interface GoTermNode {
-  id: string
-  name: string
-  namespace: string
-  parentIds: string[]
-  quantity: number
-  ratioTotal: number
-  ratioAnnotated: number
-  nPeptides: number
-}
-
+export type { GoTermNode } from '../utils/goParser'
 export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   biological_process: 'Biological Process',
   cellular_component: 'Cellular Component',
   molecular_function: 'Molecular Function',
-}
-
-function parseCsv(text: string): GoTermNode[] {
-  const lines = text.trim().split('\n')
-  if (lines.length < 2) return []
-
-  const nodes: GoTermNode[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const fields = parseCSVLine(lines[i])
-    if (fields.length < 8) continue
-
-    const [goId, name, namespace, parentGoIds, quantity, ratioTotal, ratioAnnotated, nPeptides] = fields
-
-    nodes.push({
-      id: goId.trim(),
-      name: name.trim(),
-      namespace: namespace.trim(),
-      parentIds: parentGoIds.trim()
-        ? parentGoIds.trim().split(';').map(s => s.trim()).filter(Boolean)
-        : [],
-      quantity: parseFloat(quantity) || 0,
-      ratioTotal: parseFloat(ratioTotal) || 0,
-      ratioAnnotated: parseFloat(ratioAnnotated) || 0,
-      nPeptides: parseInt(nPeptides, 10) || 0,
-    })
-  }
-  return nodes
-}
-
-function parseCSVLine(line: string): string[] {
-  const fields: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (inQuotes) {
-      if (ch === '"') {
-        if (i + 1 < line.length && line[i + 1] === '"') {
-          current += '"'
-          i++
-        } else {
-          inQuotes = false
-        }
-      } else {
-        current += ch
-      }
-    } else {
-      if (ch === '"') {
-        inQuotes = true
-      } else if (ch === ',') {
-        fields.push(current)
-        current = ''
-      } else {
-        current += ch
-      }
-    }
-  }
-  fields.push(current)
-  return fields
 }
 
 export default function GoDagPage() {
@@ -100,6 +32,11 @@ export default function GoDagPage() {
     if (el?.__exportPng) el.__exportPng()
   }, [])
 
+  const handleExportSvg = useCallback(() => {
+    const el = viewerContainerRef.current?.querySelector('[data-cy-container]') as any
+    if (el?.__exportSvg) el.__exportSvg()
+  }, [])
+
   useEffect(() => {
     if (!jobId || !listId) return
 
@@ -108,7 +45,7 @@ export default function GoDagPage() {
         const response = await fetch(`/api/jobs/${jobId}/results/${listId}/go_terms.csv`)
         if (!response.ok) throw new Error(`Failed to fetch GO terms: ${response.status}`)
         const text = await response.text()
-        const nodes = parseCsv(text)
+        const nodes = parseGoTermsCsv(text)
         setAllNodes(nodes)
 
         // Check for dangling parents
@@ -211,6 +148,7 @@ export default function GoDagPage() {
         filteredNodeCount={filteredNodes.length}
         totalNodeCount={allNodes.filter(n => n.namespace === selectedNamespace).length}
         onExportPng={handleExportPng}
+        onExportSvg={handleExportSvg}
       />
 
       {/* Graph */}

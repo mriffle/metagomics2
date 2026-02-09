@@ -187,6 +187,105 @@ class TestWriteGOTermsCSV:
         assert rows[2]["go_id"] == "GO:0000004"
 
 
+    def test_edge_types_is_a_only(self, small_go: dict, tmp_path: Path):
+        """edge_types={'is_a'} should only include is_a parents."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        # D (GO:0000005) has is_a parent A (GO:0000002) and part_of parent B (GO:0000003)
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types={"is_a"})
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        parents = [p for p in row["parent_go_ids"].split(";") if p]
+        assert "GO:0000002" in parents  # is_a parent
+        assert "GO:0000003" not in parents  # part_of parent excluded
+
+    def test_edge_types_part_of_only(self, small_go: dict, tmp_path: Path):
+        """edge_types={'part_of'} should only include part_of parents."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types={"part_of"})
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        parents = [p for p in row["parent_go_ids"].split(";") if p]
+        assert "GO:0000003" in parents  # part_of parent
+        assert "GO:0000002" not in parents  # is_a parent excluded
+
+    def test_edge_types_both(self, small_go: dict, tmp_path: Path):
+        """edge_types={'is_a', 'part_of'} should include parents from both."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types={"is_a", "part_of"})
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        parents = [p for p in row["parent_go_ids"].split(";") if p]
+        assert "GO:0000002" in parents
+        assert "GO:0000003" in parents
+
+    def test_edge_types_none_includes_all(self, small_go: dict, tmp_path: Path):
+        """edge_types=None should include parents from all edge types."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types=None)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        parents = [p for p in row["parent_go_ids"].split(";") if p]
+        assert "GO:0000002" in parents
+        assert "GO:0000003" in parents
+
+    def test_edge_types_empty_set(self, small_go: dict, tmp_path: Path):
+        """edge_types=set() should produce no parents."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types=set())
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["parent_go_ids"] == ""
+
+    def test_edge_types_nonexistent_type(self, small_go: dict, tmp_path: Path):
+        """edge_types with a type not in the data should produce no parents for that type."""
+        go_dag = load_go_from_dict(small_go)
+        result = AggregationResult()
+        result.go_terms["GO:0000005"] = make_node("GO:0000005", 10.0, 1)
+
+        output_path = tmp_path / "go_terms.csv"
+        write_go_terms_csv(result, go_dag, output_path, edge_types={"regulates"})
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["parent_go_ids"] == ""
+
     def test_obsolete_go_term_labeled(self, small_go: dict, tmp_path: Path):
         """Obsolete GO terms should show 'OBSOLETE: <name>' in the CSV."""
         # Add an obsolete term to the GO data

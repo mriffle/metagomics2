@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
+import cytoscapeSvg from 'cytoscape-svg'
 import type { GoTermNode, MetricKey } from '../pages/GoDagPage'
 
-// Register dagre layout
+// Register extensions
 cytoscape.use(dagre)
+cytoscape.use(cytoscapeSvg)
 
 // Color scale: indigo ramp from very light to dark
 const COLOR_STOPS = [
@@ -312,6 +314,18 @@ export default function GoDagViewer({ nodes, metric }: GoDagViewerProps) {
         link.href = png
         link.download = 'go_dag.png'
         link.click()
+      }
+      ;(el as any).__exportSvg = () => {
+        const cy = cyRef.current
+        if (!cy) return
+        const svgContent = (cy as any).svg({ full: true, scale: 1, bg: '#ffffff' })
+        const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = 'go_dag.svg'
+        link.click()
+        URL.revokeObjectURL(url)
       }
     }
   })

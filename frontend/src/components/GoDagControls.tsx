@@ -14,6 +14,7 @@ interface GoDagControlsProps {
   filteredNodeCount: number
   totalNodeCount: number
   onExportPng?: () => void
+  onExportSvg?: () => void
 }
 
 const CUTOFF_PRESETS = [
@@ -44,6 +45,7 @@ export default function GoDagControls({
   filteredNodeCount,
   totalNodeCount,
   onExportPng,
+  onExportSvg,
 }: GoDagControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
 
@@ -119,6 +121,15 @@ export default function GoDagControls({
             >
               <Download className="w-3 h-3" />
               PNG
+            </button>
+          )}
+          {onExportSvg && (
+            <button
+              onClick={onExportSvg}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+            >
+              <Download className="w-3 h-3" />
+              SVG
             </button>
           )}
         </div>

@@ -9,6 +9,7 @@ import {
   FileText,
   AlertCircle,
   GitBranch,
+  TreePine,
 } from 'lucide-react'
 
 interface PeptideList {
@@ -286,6 +287,13 @@ export default function JobPage() {
                     >
                       <GitBranch className="w-3 h-3" />
                       GO DAG
+                    </Link>
+                    <Link
+                      to={`/job/${job.job_id}/taxonomy/${list.list_id}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded transition-colors"
+                    >
+                      <TreePine className="w-3 h-3" />
+                      Taxonomy
                     </Link>
                   </div>
                 </div>

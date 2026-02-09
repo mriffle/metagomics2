@@ -18,7 +18,7 @@ class TestNCBIParser:
         """Parse a minimal NCBI taxonomy dump."""
         # Create nodes.dmp
         nodes_content = """1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
-2\t|\t1\t|\tsuperkingdom\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
+2\t|\t1\t|\tdomain\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 10\t|\t2\t|\tphylum\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 """
         nodes_file = tmp_path / "nodes.dmp"
@@ -48,7 +48,7 @@ class TestNCBIParser:
         # Check bacteria
         bacteria = tree.nodes[2]
         assert bacteria.name == "Bacteria"
-        assert bacteria.rank == "superkingdom"
+        assert bacteria.rank == "domain"
         assert bacteria.parent_tax_id == 1
 
         # Check proteobacteria
@@ -102,7 +102,7 @@ class TestNCBIParser:
     def test_convert_ncbi_dump_to_json_dict(self, tmp_path: Path):
         """Convert NCBI dump to JSON dictionary format."""
         nodes_content = """1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
-2\t|\t1\t|\tsuperkingdom\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
+2\t|\t1\t|\tdomain\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 """
         nodes_file = tmp_path / "nodes.dmp"
         nodes_file.write_text(nodes_content)
@@ -127,13 +127,13 @@ class TestNCBIParser:
 
         # Check bacteria
         assert result["nodes"]["2"]["name"] == "Bacteria"
-        assert result["nodes"]["2"]["rank"] == "superkingdom"
+        assert result["nodes"]["2"]["rank"] == "domain"
         assert result["nodes"]["2"]["parent_tax_id"] == 1
 
     def test_parse_taxonomy_with_various_ranks(self, tmp_path: Path):
         """Parse taxonomy with different rank levels."""
         nodes_content = """1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
-2\t|\t1\t|\tsuperkingdom\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
+2\t|\t1\t|\tdomain\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 10\t|\t2\t|\tphylum\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 20\t|\t10\t|\tclass\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 30\t|\t20\t|\torder\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
@@ -160,7 +160,7 @@ class TestNCBIParser:
 
         assert len(tree.nodes) == 8
         assert tree.nodes[1].rank == "no rank"
-        assert tree.nodes[2].rank == "superkingdom"
+        assert tree.nodes[2].rank == "domain"
         assert tree.nodes[10].rank == "phylum"
         assert tree.nodes[20].rank == "class"
         assert tree.nodes[30].rank == "order"
