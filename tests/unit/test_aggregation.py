@@ -4,8 +4,10 @@ import pytest
 
 from metagomics2.core.aggregation import (
     AggregationResult,
+    ComboAggregate,
     CoverageStats,
     NodeAggregate,
+    aggregate_go_taxonomy_combos,
     aggregate_peptide_annotations,
     validate_aggregation_invariants,
 )
@@ -308,3 +310,118 @@ class TestAggregationWithFixtureScenario:
         # Invariants hold
         violations = validate_aggregation_invariants(result)
         assert violations == []
+
+
+class TestGoTaxonomyComboAggregation:
+    """Tests for GO-taxonomy cross-tabulation."""
+
+    def test_basic_combo(self):
+        """Single peptide with one tax node and one GO term produces one combo."""
+        annotations = [
+            make_annotation(
+                "P1", 10.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms={"GO:0000001"},
+            ),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        assert len(combos) == 1
+        assert (30, "GO:0000001") in combos
+        combo = combos[(30, "GO:0000001")]
+        assert combo.quantity == 10.0
+        assert combo.n_peptides == 1
+        assert combo.fraction_of_taxon == pytest.approx(1.0)
+        assert combo.fraction_of_go == pytest.approx(1.0)
+
+    def test_cartesian_product(self):
+        """Peptide with 2 tax nodes and 2 GO terms produces 4 combos."""
+        annotations = [
+            make_annotation(
+                "P1", 10.0, is_annotated=True,
+                taxonomy_nodes={30, 1}, go_terms={"GO:0000001", "GO:0000002"},
+            ),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        assert len(combos) == 4
+        for tax_id in [30, 1]:
+            for go_id in ["GO:0000001", "GO:0000002"]:
+                assert (tax_id, go_id) in combos
+                assert combos[(tax_id, go_id)].quantity == 10.0
+
+    def test_multiple_peptides_accumulate(self):
+        """Two peptides sharing a (tax, GO) pair accumulate quantities."""
+        annotations = [
+            make_annotation(
+                "P1", 10.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms={"GO:0000001"},
+            ),
+            make_annotation(
+                "P2", 5.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms={"GO:0000001"},
+            ),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        combo = combos[(30, "GO:0000001")]
+        assert combo.quantity == 15.0
+        assert combo.n_peptides == 2
+
+    def test_fractions_correct(self):
+        """Fractions are computed relative to per-node totals."""
+        annotations = [
+            make_annotation(
+                "P1", 10.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms={"GO:0000001", "GO:0000002"},
+            ),
+            make_annotation(
+                "P2", 10.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms={"GO:0000001"},
+            ),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        # tax 30 total = 20, GO:0000001 total = 20, GO:0000002 total = 10
+        c1 = combos[(30, "GO:0000001")]
+        assert c1.quantity == 20.0
+        assert c1.fraction_of_taxon == pytest.approx(1.0)  # 20/20
+        assert c1.fraction_of_go == pytest.approx(1.0)  # 20/20
+
+        c2 = combos[(30, "GO:0000002")]
+        assert c2.quantity == 10.0
+        assert c2.fraction_of_taxon == pytest.approx(0.5)  # 10/20
+        assert c2.fraction_of_go == pytest.approx(1.0)  # 10/10
+
+    def test_unannotated_peptides_excluded(self):
+        """Unannotated peptides produce no combos."""
+        annotations = [
+            make_annotation("P1", 10.0, is_annotated=False),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        assert len(combos) == 0
+
+    def test_peptide_with_only_taxonomy_excluded(self):
+        """Peptide with taxonomy but no GO terms produces no combos."""
+        annotations = [
+            make_annotation(
+                "P1", 10.0, is_annotated=True,
+                taxonomy_nodes={30}, go_terms=set(),
+            ),
+        ]
+        agg = aggregate_peptide_annotations(annotations)
+        combos = aggregate_go_taxonomy_combos(annotations, agg)
+
+        assert len(combos) == 0
+
+    def test_empty_annotations(self):
+        """Empty annotations produce no combos."""
+        agg = aggregate_peptide_annotations([])
+        combos = aggregate_go_taxonomy_combos([], agg)
+
+        assert len(combos) == 0

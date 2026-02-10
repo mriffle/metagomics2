@@ -5,9 +5,12 @@ import GoDagViewer from '../components/GoDagViewer'
 import GoDagControls from '../components/GoDagControls'
 import { parseGoTermsCsv } from '../utils/goParser'
 import type { GoTermNode } from '../utils/goParser'
+import { parseTaxonomyCsv } from '../utils/taxonomyParser'
+import { parseComboCsv, comboRowsToGoTermNodes } from '../utils/comboParser'
+import type { AutocompleteOption } from '../components/Autocomplete'
 
 export type { GoTermNode } from '../utils/goParser'
-export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides'
+export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides' | 'fractionOfTaxon' | 'fractionOfGo'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   biological_process: 'Biological Process',
@@ -28,6 +31,11 @@ export default function GoDagPage() {
   const [minRatioTotal, setMinRatioTotal] = useState(0.1)
   const viewerContainerRef = useRef<HTMLDivElement>(null)
 
+  // Taxonomy filter state
+  const [taxonOptions, setTaxonOptions] = useState<AutocompleteOption[]>([])
+  const [selectedTaxon, setSelectedTaxon] = useState('')
+  const [baseAllNodes, setBaseAllNodes] = useState<GoTermNode[]>([])
+
   const handleExportPng = useCallback(() => {
     const el = viewerContainerRef.current?.querySelector('[data-cy-container]') as any
     if (el?.__exportPng) el.__exportPng()
@@ -37,6 +45,26 @@ export default function GoDagPage() {
     const el = viewerContainerRef.current?.querySelector('[data-cy-container]') as any
     if (el?.__exportSvg) el.__exportSvg()
   }, [])
+
+  const handleTaxonChange = useCallback(async (taxId: string) => {
+    setSelectedTaxon(taxId)
+    if (!taxId) {
+      // Revert to unfiltered data
+      setAllNodes(baseAllNodes)
+      return
+    }
+    if (!jobId || !listId) return
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/results/${listId}/go_taxonomy_combo.csv`)
+      if (!response.ok) return
+      const text = await response.text()
+      const comboRows = parseComboCsv(text)
+      const nodes = comboRowsToGoTermNodes(comboRows, taxId)
+      setAllNodes(nodes)
+    } catch {
+      // On error, keep current data
+    }
+  }, [jobId, listId, baseAllNodes])
 
   useEffect(() => {
     if (!jobId || !listId) return
@@ -59,6 +87,7 @@ export default function GoDagPage() {
         const text = await response.text()
         const nodes = parseGoTermsCsv(text)
         setAllNodes(nodes)
+        setBaseAllNodes(nodes)
 
         // Check for dangling parents
         const nodeIds = new Set(nodes.map(n => n.id))
@@ -76,6 +105,19 @@ export default function GoDagPage() {
         setLoading(false)
       }
     }
+
+    // Fetch taxonomy nodes for autocomplete options
+    fetch(`/api/jobs/${jobId}/results/${listId}/taxonomy_nodes.csv`)
+      .then(res => res.ok ? res.text() : '')
+      .then(text => {
+        if (text) {
+          const taxNodes = parseTaxonomyCsv(text)
+          setTaxonOptions(
+            taxNodes.map(n => ({ value: n.taxId, label: `${n.name} (${n.rank})` }))
+          )
+        }
+      })
+      .catch(() => {})
 
     fetchData()
   }, [jobId, listId])
@@ -161,6 +203,10 @@ export default function GoDagPage() {
         totalNodeCount={allNodes.filter(n => n.namespace === selectedNamespace).length}
         onExportPng={handleExportPng}
         onExportSvg={handleExportSvg}
+        taxonOptions={taxonOptions}
+        selectedTaxon={selectedTaxon}
+        onTaxonChange={handleTaxonChange}
+        filterLabel={selectedTaxon || undefined}
       />
 
       {/* Graph */}
@@ -170,6 +216,7 @@ export default function GoDagPage() {
             nodes={filteredNodes}
             metric={selectedMetric}
             key={selectedNamespace}
+            filterLabel={selectedTaxon || undefined}
           />
         </div>
       </div>

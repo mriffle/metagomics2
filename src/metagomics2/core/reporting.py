@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from metagomics2.core.aggregation import AggregationResult, CoverageStats
+from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats
 from metagomics2.core.go import GODAG
 from metagomics2.core.taxonomy import TaxonomyTree
 
@@ -208,6 +208,106 @@ def write_coverage_csv(
             coverage.n_peptides_annotated,
             coverage.n_peptides_unannotated,
         ])
+
+
+def write_go_taxonomy_combo_csv(
+    combos: dict[tuple[int, str], ComboAggregate],
+    taxonomy_tree: TaxonomyTree,
+    go_dag: GODAG,
+    output_path: Path,
+    parent_delimiter: str = ";",
+    edge_types: set[str] | None = None,
+) -> None:
+    """Write go_taxonomy_combo.csv.
+
+    Cross-tabulation of taxonomy nodes and GO terms with enough
+    parent information to rebuild both trees.
+
+    Columns: tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name,
+             go_namespace, parent_go_ids, quantity, fraction_of_taxon,
+             fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides
+
+    Args:
+        combos: Dictionary mapping (tax_id, go_id) to ComboAggregate
+        taxonomy_tree: Taxonomy tree for node metadata
+        go_dag: GO DAG for term metadata
+        output_path: Path to write CSV
+        parent_delimiter: Delimiter for parent GO IDs (default: ";")
+        edge_types: Edge types to include in parent_go_ids (default: all)
+    """
+    # Sort by quantity descending, then tax_id, then go_id for determinism
+    sorted_combos = sorted(
+        combos.values(),
+        key=lambda c: (-c.quantity, c.tax_id, c.go_id),
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "tax_id",
+            "tax_name",
+            "tax_rank",
+            "parent_tax_id",
+            "go_id",
+            "go_name",
+            "go_namespace",
+            "parent_go_ids",
+            "quantity",
+            "fraction_of_taxon",
+            "fraction_of_go",
+            "ratio_total_taxon",
+            "ratio_total_go",
+            "n_peptides",
+        ])
+
+        for combo in sorted_combos:
+            # Taxonomy metadata
+            tax_node = taxonomy_tree.nodes.get(combo.tax_id)
+            tax_name = tax_node.name if tax_node else ""
+            tax_rank = tax_node.rank if tax_node else ""
+            parent_tax_id = tax_node.parent_tax_id if tax_node else None
+
+            # GO metadata
+            go_term = go_dag.terms.get(combo.go_id)
+            if go_term:
+                go_name = go_term.name
+                go_namespace = go_term.namespace
+            else:
+                obsolete = go_dag.obsolete_terms.get(combo.go_id)
+                if obsolete:
+                    go_name = f"OBSOLETE: {obsolete.name}"
+                    go_namespace = obsolete.namespace
+                else:
+                    go_name = ""
+                    go_namespace = ""
+
+            # Collect parent GO IDs
+            parent_go_ids: set[str] = set()
+            if go_term:
+                if edge_types is not None:
+                    for et in edge_types:
+                        parent_go_ids |= go_term.parents.get(et, set())
+                else:
+                    for parents in go_term.parents.values():
+                        parent_go_ids |= parents
+            parent_go_ids_str = parent_delimiter.join(sorted(parent_go_ids))
+
+            writer.writerow([
+                combo.tax_id,
+                tax_name,
+                tax_rank,
+                parent_tax_id if parent_tax_id is not None else "",
+                combo.go_id,
+                go_name,
+                go_namespace,
+                parent_go_ids_str,
+                f"{combo.quantity:.10f}",
+                f"{combo.fraction_of_taxon:.10f}",
+                f"{combo.fraction_of_go:.10f}",
+                f"{combo.ratio_total_taxon:.10f}",
+                f"{combo.ratio_total_go:.10f}",
+                combo.n_peptides,
+            ])
 
 
 def get_tool_version(tool: str) -> str:

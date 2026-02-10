@@ -327,6 +327,7 @@ async def download_result(job_id: str, list_id: str, filename: str):
     allowed_files = [
         "taxonomy_nodes.csv",
         "go_terms.csv",
+        "go_taxonomy_combo.csv",
         "coverage.csv",
         "run_manifest.json",
         "peptides_annotated.csv",

@@ -9,6 +9,8 @@ export interface GoTermNode {
   ratioTotal: number
   ratioAnnotated: number
   nPeptides: number
+  fractionOfTaxon?: number
+  fractionOfGo?: number
 }
 
 export function parseGoTermsCsv(text: string): GoTermNode[] {

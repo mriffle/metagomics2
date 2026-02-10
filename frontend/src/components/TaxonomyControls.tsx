@@ -3,6 +3,8 @@ import { Download, Filter } from 'lucide-react'
 import type { ChartType } from '../pages/TaxonomyPage'
 import { CANONICAL_RANKS_ORDERED } from '../utils/taxonomyParser'
 import type { CanonicalRank } from '../utils/taxonomyParser'
+import Autocomplete from './Autocomplete'
+import type { AutocompleteOption } from './Autocomplete'
 
 interface TaxonomyControlsProps {
   chartType: ChartType
@@ -15,6 +17,9 @@ interface TaxonomyControlsProps {
   totalNodeCount: number
   onExportPng?: () => void
   onExportSvg?: () => void
+  goOptions?: AutocompleteOption[]
+  selectedGoTerm?: string
+  onGoTermChange?: (goId: string) => void
 }
 
 const CUTOFF_PRESETS = [
@@ -58,6 +63,9 @@ export default function TaxonomyControls({
   totalNodeCount,
   onExportPng,
   onExportSvg,
+  goOptions,
+  selectedGoTerm,
+  onGoTermChange,
 }: TaxonomyControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
 
@@ -129,6 +137,25 @@ export default function TaxonomyControls({
         )}
       </div>
       </div>
+
+      {/* GO term filter row */}
+      {goOptions && goOptions.length > 0 && onGoTermChange && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-xs text-gray-600 font-medium">Filter by GO term:</span>
+          <Autocomplete
+            options={goOptions}
+            value={selectedGoTerm || ''}
+            onChange={onGoTermChange}
+            placeholder="Search GO term..."
+          />
+          {selectedGoTerm && (
+            <span className="text-xs text-indigo-600 font-medium">
+              Showing taxonomy for {selectedGoTerm}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Bottom row: abundance cutoff filter */}
       <div className="flex items-center gap-2 flex-wrap">

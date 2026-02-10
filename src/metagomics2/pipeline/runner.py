@@ -13,6 +13,7 @@ from typing import Any, Callable
 from metagomics2 import __version__
 from metagomics2.core.aggregation import (
     AggregationResult,
+    aggregate_go_taxonomy_combos,
     aggregate_peptide_annotations,
     validate_aggregation_invariants,
 )
@@ -40,6 +41,7 @@ from metagomics2.core.reporting import (
     ManifestInfo,
     create_manifest,
     write_coverage_csv,
+    write_go_taxonomy_combo_csv,
     write_go_terms_csv,
     write_manifest_json,
     write_taxonomy_nodes_csv,
@@ -511,7 +513,7 @@ class PipelineRunner:
 
         # Stage 8: Write reports
         self._update_progress("Writing reports", list_id)
-        self._write_reports(list_id, peptide_list_path, aggregation)
+        self._write_reports(list_id, peptide_list_path, aggregation, annotations)
 
         return PeptideListResult(
             list_id=list_id,
@@ -551,6 +553,7 @@ class PipelineRunner:
         list_id: str,
         peptide_list_path: Path,
         aggregation: AggregationResult,
+        annotations: list[PeptideAnnotation] | None = None,
     ) -> None:
         """Write output reports for a peptide list."""
         # Create output directory for this list
@@ -571,6 +574,17 @@ class PipelineRunner:
                 aggregation,
                 self.go_dag,
                 list_output_dir / "go_terms.csv",
+                edge_types=self.config.go_edge_types,
+            )
+
+        # Write GO-taxonomy combo CSV
+        if self.taxonomy_tree and self.go_dag and annotations:
+            combos = aggregate_go_taxonomy_combos(annotations, aggregation)
+            write_go_taxonomy_combo_csv(
+                combos,
+                self.taxonomy_tree,
+                self.go_dag,
+                list_output_dir / "go_taxonomy_combo.csv",
                 edge_types=self.config.go_edge_types,
             )
 

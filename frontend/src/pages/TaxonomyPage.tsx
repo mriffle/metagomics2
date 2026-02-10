@@ -5,6 +5,9 @@ import TaxonomyChart from '../components/TaxonomyChart'
 import TaxonomyControls from '../components/TaxonomyControls'
 import { parseTaxonomyCsv, filterCanonicalRanks, filterByMaxRank, validateCanonicalHierarchy, ensureStrictRankLayers } from '../utils/taxonomyParser'
 import type { TaxonNode, CanonicalRank } from '../utils/taxonomyParser'
+import { parseGoTermsCsv } from '../utils/goParser'
+import { parseComboCsv, comboRowsToTaxonNodes } from '../utils/comboParser'
+import type { AutocompleteOption } from '../components/Autocomplete'
 
 export type { TaxonNode } from '../utils/taxonomyParser'
 export type ChartType = 'sunburst' | 'treemap' | 'icicle' | 'sankey'
@@ -21,6 +24,12 @@ export default function TaxonomyPage() {
   const [maxRank, setMaxRank] = useState<CanonicalRank>('species')
   const [minRatioTotal, setMinRatioTotal] = useState(0.001)
   const chartContainerRef = useRef<HTMLDivElement>(null)
+
+  // GO term filter state
+  const [goOptions, setGoOptions] = useState<AutocompleteOption[]>([])
+  const [selectedGoTerm, setSelectedGoTerm] = useState('')
+  const [baseAllNodes, setBaseAllNodes] = useState<TaxonNode[]>([])
+  const [baseCanonicalNodes, setBaseCanonicalNodes] = useState<TaxonNode[]>([])
 
   const filteredNodes = useMemo(
     () => {
@@ -62,6 +71,29 @@ export default function TaxonomyPage() {
     }
   }, [])
 
+  const handleGoTermChange = useCallback(async (goId: string) => {
+    setSelectedGoTerm(goId)
+    if (!goId) {
+      // Revert to unfiltered data
+      setAllNodes(baseAllNodes)
+      setCanonicalNodes(baseCanonicalNodes)
+      return
+    }
+    if (!jobId || !listId) return
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/results/${listId}/go_taxonomy_combo.csv`)
+      if (!response.ok) return
+      const text = await response.text()
+      const comboRows = parseComboCsv(text)
+      const nodes = comboRowsToTaxonNodes(comboRows, goId)
+      setAllNodes(nodes)
+      const canonical = filterCanonicalRanks(nodes)
+      setCanonicalNodes(canonical)
+    } catch {
+      // On error, keep current data
+    }
+  }, [jobId, listId, baseAllNodes, baseCanonicalNodes])
+
   useEffect(() => {
     if (!jobId || !listId) return
 
@@ -83,6 +115,7 @@ export default function TaxonomyPage() {
         const text = await response.text()
         const nodes = parseTaxonomyCsv(text)
         setAllNodes(nodes)
+        setBaseAllNodes(nodes)
         const canonical = filterCanonicalRanks(nodes)
         const validationErrors = validateCanonicalHierarchy(canonical)
         if (validationErrors.length > 0) {
@@ -91,6 +124,7 @@ export default function TaxonomyPage() {
           )
         }
         setCanonicalNodes(canonical)
+        setBaseCanonicalNodes(canonical)
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -98,6 +132,19 @@ export default function TaxonomyPage() {
         setLoading(false)
       }
     }
+
+    // Fetch GO terms for autocomplete options
+    fetch(`/api/jobs/${jobId}/results/${listId}/go_terms.csv`)
+      .then(res => res.ok ? res.text() : '')
+      .then(text => {
+        if (text) {
+          const goNodes = parseGoTermsCsv(text)
+          setGoOptions(
+            goNodes.map(n => ({ value: n.id, label: `${n.id} \u2014 ${n.name}` }))
+          )
+        }
+      })
+      .catch(() => {})
 
     fetchData()
   }, [jobId, listId])
@@ -156,6 +203,9 @@ export default function TaxonomyPage() {
         totalNodeCount={canonicalNodes.length}
         onExportPng={handleExportPng}
         onExportSvg={handleExportSvg}
+        goOptions={goOptions}
+        selectedGoTerm={selectedGoTerm}
+        onGoTermChange={handleGoTermChange}
       />
 
       {/* Chart */}
@@ -164,6 +214,7 @@ export default function TaxonomyPage() {
           <TaxonomyChart
             nodes={filteredNodes}
             chartType={chartType}
+            filterLabel={selectedGoTerm || undefined}
           />
         </div>
       </div>

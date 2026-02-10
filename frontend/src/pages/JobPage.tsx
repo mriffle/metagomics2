@@ -249,6 +249,7 @@ export default function JobPage() {
                     {[
                       { name: 'taxonomy_nodes.csv', tip: 'Taxonomy assignments with aggregated peptide quantities and ratios at each node' },
                       { name: 'go_terms.csv', tip: 'Gene Ontology term assignments with aggregated peptide quantities and ratios' },
+                      { name: 'go_taxonomy_combo.csv', tip: 'Cross-tabulation of taxonomy nodes and GO terms with quantities and fractions for each combination' },
                       { name: 'coverage.csv', tip: 'Summary of how many peptides (and what fraction of total quantity) received any annotations (taxonomy or GO)' },
                       { name: 'run_manifest.json', tip: 'Provenance record of parameters, software versions, and reference data used for this run' },
                     ].map((file) => (

@@ -9,6 +9,8 @@ export interface TaxonNode {
   ratioTotal: number
   ratioAnnotated: number
   nPeptides: number
+  fractionOfTaxon?: number
+  fractionOfGo?: number
 }
 
 export const CANONICAL_RANKS_ORDERED = [

@@ -211,3 +211,75 @@ def validate_aggregation_invariants(result: AggregationResult) -> list[str]:
                 )
 
     return violations
+
+
+@dataclass
+class ComboAggregate:
+    """Aggregated data for a (taxonomy node, GO term) pair."""
+
+    tax_id: int
+    go_id: str
+    quantity: float = 0.0
+    n_peptides: int = 0
+    contributing_peptides: set[str] = field(default_factory=set)
+    fraction_of_taxon: float = 0.0
+    fraction_of_go: float = 0.0
+    ratio_total_taxon: float = 0.0
+    ratio_total_go: float = 0.0
+
+
+def aggregate_go_taxonomy_combos(
+    annotations: list[PeptideAnnotation],
+    aggregation: AggregationResult,
+) -> dict[tuple[int, str], ComboAggregate]:
+    """Cross-tabulate taxonomy nodes and GO terms.
+
+    For each annotated peptide p, for every (tax_id, go_id) in
+    TAX(p) × GO(p), accumulate q(p).
+
+    Then compute:
+        fraction_of_taxon = combo_quantity / taxon_total_quantity
+        fraction_of_go    = combo_quantity / go_total_quantity
+
+    Args:
+        annotations: List of PeptideAnnotation objects
+        aggregation: The already-computed AggregationResult (for per-node totals)
+
+    Returns:
+        Dictionary mapping (tax_id, go_id) to ComboAggregate
+    """
+    combos: dict[tuple[int, str], ComboAggregate] = {}
+
+    for ann in annotations:
+        if not ann.is_annotated:
+            continue
+        if not ann.taxonomy_nodes or not ann.go_terms:
+            continue
+
+        for tax_id in ann.taxonomy_nodes:
+            for go_id in ann.go_terms:
+                key = (tax_id, go_id)
+                if key not in combos:
+                    combos[key] = ComboAggregate(tax_id=tax_id, go_id=go_id)
+
+                combo = combos[key]
+                combo.quantity += ann.quantity
+                combo.contributing_peptides.add(ann.peptide)
+
+    # Finalize n_peptides and fractions
+    for combo in combos.values():
+        combo.n_peptides = len(combo.contributing_peptides)
+
+        tax_node = aggregation.taxonomy_nodes.get(combo.tax_id)
+        if tax_node and tax_node.quantity > 0:
+            combo.fraction_of_taxon = combo.quantity / tax_node.quantity
+        if tax_node:
+            combo.ratio_total_taxon = tax_node.ratio_total
+
+        go_node = aggregation.go_terms.get(combo.go_id)
+        if go_node and go_node.quantity > 0:
+            combo.fraction_of_go = combo.quantity / go_node.quantity
+        if go_node:
+            combo.ratio_total_go = go_node.ratio_total
+
+    return combos

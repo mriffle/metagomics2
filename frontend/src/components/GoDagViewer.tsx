@@ -47,6 +47,8 @@ function getMetricValue(node: GoTermNode, metric: MetricKey): number {
     case 'ratioTotal': return node.ratioTotal
     case 'ratioAnnotated': return node.ratioAnnotated
     case 'nPeptides': return node.nPeptides
+    case 'fractionOfTaxon': return node.fractionOfTaxon ?? 0
+    case 'fractionOfGo': return node.fractionOfGo ?? 0
   }
 }
 
@@ -69,9 +71,10 @@ function normalizeValues(nodes: GoTermNode[], metric: MetricKey): Map<string, nu
 interface GoDagViewerProps {
   nodes: GoTermNode[]
   metric: MetricKey
+  filterLabel?: string
 }
 
-export default function GoDagViewer({ nodes, metric }: GoDagViewerProps) {
+export default function GoDagViewer({ nodes, metric, filterLabel }: GoDagViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -360,8 +363,24 @@ export default function GoDagViewer({ nodes, metric }: GoDagViewerProps) {
             <span className="font-medium text-right">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
             <span className="text-gray-600">Ratio (Total):</span>
             <span className="font-medium text-right">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
-            <span className="text-gray-600">Ratio (Annotated):</span>
-            <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+            {filterLabel && tooltip.node.fractionOfTaxon != null && (
+              <>
+                <span className="text-gray-600">Fraction of Taxon:</span>
+                <span className="font-medium text-right">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.fractionOfGo != null && (
+              <>
+                <span className="text-gray-600">Fraction of GO:</span>
+                <span className="font-medium text-right">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {!filterLabel && (
+              <>
+                <span className="text-gray-600">Ratio (Annotated):</span>
+                <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+              </>
+            )}
             <span className="text-gray-600"># Peptides:</span>
             <span className="font-medium text-right">{tooltip.node.nPeptides}</span>
           </div>

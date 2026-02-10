@@ -37,9 +37,10 @@ function domainColorAtDepth(base: number[], depthRatio: number): string {
 interface TaxonomyChartProps {
   nodes: TaxonNode[]
   chartType: ChartType
+  filterLabel?: string
 }
 
-export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) {
+export default function TaxonomyChart({ nodes, chartType, filterLabel }: TaxonomyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{
@@ -329,8 +330,24 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
             <span className="font-medium text-right">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
             <span className="text-gray-600">Ratio (Total):</span>
             <span className="font-medium text-right">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
-            <span className="text-gray-600">Ratio (Annotated):</span>
-            <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+            {filterLabel && tooltip.node.fractionOfTaxon != null && (
+              <>
+                <span className="text-gray-600">Fraction of Taxon:</span>
+                <span className="font-medium text-right">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.fractionOfGo != null && (
+              <>
+                <span className="text-gray-600">Fraction of GO:</span>
+                <span className="font-medium text-right">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {!filterLabel && (
+              <>
+                <span className="text-gray-600">Ratio (Annotated):</span>
+                <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+              </>
+            )}
             <span className="text-gray-600"># Peptides:</span>
             <span className="font-medium text-right">{tooltip.node.nPeptides}</span>
           </div>

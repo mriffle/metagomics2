@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from metagomics2.core.aggregation import AggregationResult, CoverageStats, NodeAggregate
+from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats, NodeAggregate
 from metagomics2.core.go import load_go_from_dict
 from metagomics2.core.reporting import (
     ManifestInfo,
     compute_file_hash,
     write_coverage_csv,
+    write_go_taxonomy_combo_csv,
     write_go_terms_csv,
     write_manifest_json,
     write_taxonomy_nodes_csv,
@@ -515,3 +516,132 @@ class TestRoundTripTreeRebuild:
         assert len(parents) == 2
         assert "GO:0000002" in parents
         assert "GO:0000003" in parents
+
+
+def make_combo(
+    tax_id: int,
+    go_id: str,
+    quantity: float,
+    n_peptides: int,
+    fraction_of_taxon: float = 0.0,
+    fraction_of_go: float = 0.0,
+) -> ComboAggregate:
+    """Helper to create a ComboAggregate."""
+    combo = ComboAggregate(tax_id=tax_id, go_id=go_id)
+    combo.quantity = quantity
+    combo.n_peptides = n_peptides
+    combo.fraction_of_taxon = fraction_of_taxon
+    combo.fraction_of_go = fraction_of_go
+    return combo
+
+
+class TestWriteGoTaxonomyComboCSV:
+    """Tests for go_taxonomy_combo.csv generation."""
+
+    def test_columns_present(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combos = {
+            (30, "GO:0000004"): make_combo(30, "GO:0000004", 10.0, 1, 1.0, 1.0),
+        }
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) == 1
+        expected_cols = [
+            "tax_id", "tax_name", "tax_rank", "parent_tax_id",
+            "go_id", "go_name", "go_namespace", "parent_go_ids",
+            "quantity", "fraction_of_taxon", "fraction_of_go", "n_peptides",
+        ]
+        for col in expected_cols:
+            assert col in reader.fieldnames
+
+    def test_metadata_correct(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combos = {
+            (30, "GO:0000004"): make_combo(30, "GO:0000004", 10.0, 1, 0.5, 0.8),
+        }
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["tax_id"] == "30"
+        assert row["tax_name"] == "ClassA"
+        assert row["tax_rank"] == "class"
+        assert row["parent_tax_id"] == "20"
+        assert row["go_id"] == "GO:0000004"
+        assert row["go_name"] == "C"
+        assert row["go_namespace"] == "biological_process"
+        assert float(row["fraction_of_taxon"]) == pytest.approx(0.5)
+        assert float(row["fraction_of_go"]) == pytest.approx(0.8)
+        assert int(row["n_peptides"]) == 1
+
+    def test_parent_go_ids_present(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        """GO:0000004 (C) has parents GO:0000002 (A) and GO:0000003 (B)."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combos = {
+            (30, "GO:0000004"): make_combo(30, "GO:0000004", 10.0, 1),
+        }
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        parents = row["parent_go_ids"].split(";")
+        assert "GO:0000002" in parents
+        assert "GO:0000003" in parents
+
+    def test_stable_sorting(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        """Output sorted by quantity desc, then tax_id, then go_id."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combos = {
+            (30, "GO:0000004"): make_combo(30, "GO:0000004", 10.0, 1),
+            (20, "GO:0000002"): make_combo(20, "GO:0000002", 20.0, 2),
+            (30, "GO:0000002"): make_combo(30, "GO:0000002", 10.0, 1),
+        }
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # First: (20, GO:0000002) with qty 20
+        assert rows[0]["tax_id"] == "20"
+        assert rows[0]["go_id"] == "GO:0000002"
+        # Then: (30, GO:0000002) and (30, GO:0000004) both qty 10, same tax_id, sorted by go_id
+        assert rows[1]["tax_id"] == "30"
+        assert rows[1]["go_id"] == "GO:0000002"
+        assert rows[2]["tax_id"] == "30"
+        assert rows[2]["go_id"] == "GO:0000004"
+
+    def test_empty_combos(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        """Empty combos produce header-only CSV."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv({}, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) == 0
+        assert "tax_id" in reader.fieldnames

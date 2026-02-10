@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Download, Filter } from 'lucide-react'
 import type { MetricKey } from '../pages/GoDagPage'
+import Autocomplete from './Autocomplete'
+import type { AutocompleteOption } from './Autocomplete'
 
 interface GoDagControlsProps {
   namespaces: string[]
@@ -15,6 +17,10 @@ interface GoDagControlsProps {
   totalNodeCount: number
   onExportPng?: () => void
   onExportSvg?: () => void
+  taxonOptions?: AutocompleteOption[]
+  selectedTaxon?: string
+  onTaxonChange?: (taxId: string) => void
+  filterLabel?: string
 }
 
 const CUTOFF_PRESETS = [
@@ -26,11 +32,16 @@ const CUTOFF_PRESETS = [
   { label: '10%', value: 0.1 },
 ]
 
-const METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
+const BASE_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
   { value: 'quantity', label: 'Quantity' },
   { value: 'ratioTotal', label: 'Ratio (Total)' },
   { value: 'ratioAnnotated', label: 'Ratio (Annotated)' },
   { value: 'nPeptides', label: '# Peptides' },
+]
+
+const FILTER_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
+  { value: 'fractionOfTaxon', label: 'Fraction of Taxon' },
+  { value: 'fractionOfGo', label: 'Fraction of GO' },
 ]
 
 export default function GoDagControls({
@@ -46,6 +57,10 @@ export default function GoDagControls({
   totalNodeCount,
   onExportPng,
   onExportSvg,
+  taxonOptions,
+  selectedTaxon,
+  onTaxonChange,
+  filterLabel,
 }: GoDagControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
 
@@ -93,7 +108,7 @@ export default function GoDagControls({
               onChange={(e) => onMetricChange(e.target.value as MetricKey)}
               className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              {METRIC_OPTIONS.map((opt) => (
+              {(filterLabel ? [...BASE_METRIC_OPTIONS, ...FILTER_METRIC_OPTIONS] : BASE_METRIC_OPTIONS).map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -134,6 +149,25 @@ export default function GoDagControls({
           )}
         </div>
       </div>
+
+      {/* Taxonomy filter row */}
+      {taxonOptions && taxonOptions.length > 0 && onTaxonChange && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-xs text-gray-600 font-medium">Filter by taxon:</span>
+          <Autocomplete
+            options={taxonOptions}
+            value={selectedTaxon || ''}
+            onChange={onTaxonChange}
+            placeholder="Search taxonomy..."
+          />
+          {selectedTaxon && (
+            <span className="text-xs text-indigo-600 font-medium">
+              Showing GO terms for taxon {selectedTaxon}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Bottom row: abundance cutoff filter */}
       <div className="flex items-center gap-2 flex-wrap">
