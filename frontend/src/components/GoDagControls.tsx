@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Download, Filter } from 'lucide-react'
 import type { MetricKey } from '../pages/GoDagPage'
 import Autocomplete from './Autocomplete'
@@ -21,6 +21,8 @@ interface GoDagControlsProps {
   selectedTaxon?: string
   onTaxonChange?: (taxId: string) => void
   filterLabel?: string
+  baseColor?: string
+  onBaseColorChange?: (color: string) => void
 }
 
 const CUTOFF_PRESETS = [
@@ -60,8 +62,11 @@ export default function GoDagControls({
   selectedTaxon,
   onTaxonChange,
   filterLabel,
+  baseColor = '#4338ca',
+  onBaseColorChange,
 }: GoDagControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
+  const colorInputRef = useRef<HTMLInputElement>(null)
 
   const handleCustomCutoff = () => {
     const val = parseFloat(customCutoff)
@@ -115,14 +120,23 @@ export default function GoDagControls({
             </select>
           </div>
 
-          {/* Color legend */}
-          <div className="flex items-center gap-1">
+          {/* Color legend — click to change color */}
+          <div className="flex items-center gap-1 relative">
             <span className="text-xs text-gray-500">Low</span>
             <div
-              className="w-20 h-3 rounded"
+              className="w-20 h-3 rounded cursor-pointer ring-offset-1 hover:ring-2 hover:ring-gray-300 transition-shadow"
               style={{
-                background: 'linear-gradient(to right, #eef2ff, #4338ca)',
+                background: `linear-gradient(to right, #f8f8ff, ${baseColor})`,
               }}
+              title="Click to change color"
+              onClick={() => colorInputRef.current?.click()}
+            />
+            <input
+              ref={colorInputRef}
+              type="color"
+              value={baseColor}
+              onChange={(e) => onBaseColorChange?.(e.target.value)}
+              className="sr-only"
             />
             <span className="text-xs text-gray-500">High</span>
           </div>

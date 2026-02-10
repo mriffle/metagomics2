@@ -8,29 +8,52 @@ import type { GoTermNode, MetricKey } from '../pages/GoDagPage'
 cytoscape.use(dagre)
 cytoscape.use(cytoscapeSvg)
 
-// Color scale: indigo ramp from very light to dark
-const COLOR_STOPS = [
-  [238, 242, 255],  // #eef2ff  indigo-50
-  [199, 210, 254],  // #c7d2fe  indigo-200
-  [129, 140, 248],  // #818cf8  indigo-400
-  [67, 56, 202],    // #4338ca  indigo-700
-  [30, 27, 75],     // #1e1b4b  indigo-950
-]
+// Parse a hex color string to [r, g, b]
+function hexToRgb(hex: string): number[] {
+  const h = hex.replace('#', '')
+  return [
+    parseInt(h.substring(0, 2), 16),
+    parseInt(h.substring(2, 4), 16),
+    parseInt(h.substring(4, 6), 16),
+  ]
+}
 
-function interpolateColor(t: number): string {
-  // t is 0..1, interpolate through COLOR_STOPS
+// Blend two RGB colors by factor t (0 = a, 1 = b)
+function blendRgb(a: number[], b: number[], t: number): number[] {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ]
+}
+
+// Generate a 5-stop color ramp from near-white through baseColor to a darkened version
+function generateColorStops(baseHex: string): number[][] {
+  const base = hexToRgb(baseHex)
+  const white = [255, 255, 255]
+  const dark = blendRgb(base, [0, 0, 0], 0.6)
+  return [
+    blendRgb(white, base, 0.07),  // very light tint
+    blendRgb(white, base, 0.25),  // light
+    blendRgb(white, base, 0.55),  // mid
+    base,                          // full color
+    dark,                          // darkened
+  ]
+}
+
+function interpolateColor(t: number, stops: number[][]): string {
   const clamped = Math.max(0, Math.min(1, t))
-  const segment = clamped * (COLOR_STOPS.length - 1)
+  const segment = clamped * (stops.length - 1)
   const i = Math.floor(segment)
   const f = segment - i
 
-  if (i >= COLOR_STOPS.length - 1) {
-    const c = COLOR_STOPS[COLOR_STOPS.length - 1]
+  if (i >= stops.length - 1) {
+    const c = stops[stops.length - 1]
     return `rgb(${c[0]},${c[1]},${c[2]})`
   }
 
-  const c0 = COLOR_STOPS[i]
-  const c1 = COLOR_STOPS[i + 1]
+  const c0 = stops[i]
+  const c1 = stops[i + 1]
   const r = Math.round(c0[0] + (c1[0] - c0[0]) * f)
   const g = Math.round(c0[1] + (c1[1] - c0[1]) * f)
   const b = Math.round(c0[2] + (c1[2] - c0[2]) * f)
@@ -72,9 +95,10 @@ interface GoDagViewerProps {
   nodes: GoTermNode[]
   metric: MetricKey
   filterLabel?: string
+  baseColor?: string
 }
 
-export default function GoDagViewer({ nodes, metric, filterLabel }: GoDagViewerProps) {
+export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#4338ca' }: GoDagViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -158,6 +182,7 @@ export default function GoDagViewer({ nodes, metric, filterLabel }: GoDagViewerP
 
     const elements = buildElements()
     const normalized = normalizeValues(nodes, metric)
+    const stops = generateColorStops(baseColor)
 
     // Build a lookup for quick access
     const nodeMap = new Map<string, GoTermNode>()
@@ -236,7 +261,7 @@ export default function GoDagViewer({ nodes, metric, filterLabel }: GoDagViewerP
     // Apply colors based on metric
     cy.nodes().forEach((ele) => {
       const t = normalized.get(ele.id()) ?? 0
-      ele.style('background-color', interpolateColor(t))
+      ele.style('background-color', interpolateColor(t, stops))
       ele.style('color', textColorForBg(t))
     })
 
@@ -287,22 +312,23 @@ export default function GoDagViewer({ nodes, metric, filterLabel }: GoDagViewerP
       cy.destroy()
       cyRef.current = null
     }
-  }, [nodes, buildElements])
+  }, [nodes, buildElements, baseColor])
 
-  // Update colors when metric changes (without re-layout)
+  // Update colors when metric or baseColor changes (without re-layout)
   useEffect(() => {
     const cy = cyRef.current
     if (!cy || nodes.length === 0) return
 
     const normalized = normalizeValues(nodes, metric)
+    const stops = generateColorStops(baseColor)
     cy.batch(() => {
       cy.nodes().forEach((ele) => {
         const t = normalized.get(ele.id()) ?? 0
-        ele.style('background-color', interpolateColor(t))
+        ele.style('background-color', interpolateColor(t, stops))
         ele.style('color', textColorForBg(t))
       })
     })
-  }, [metric, nodes])
+  }, [metric, nodes, baseColor])
 
   // Export PNG handler — exposed via ref or callback
   useEffect(() => {

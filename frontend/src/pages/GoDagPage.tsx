@@ -29,6 +29,7 @@ export default function GoDagPage() {
   const [selectedNamespace, setSelectedNamespace] = useState('biological_process')
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('quantity')
   const [minRatioTotal, setMinRatioTotal] = useState(0.1)
+  const [baseColor, setBaseColor] = useState('#4338ca')
   const viewerContainerRef = useRef<HTMLDivElement>(null)
 
   // Taxonomy filter state
@@ -207,6 +208,8 @@ export default function GoDagPage() {
         selectedTaxon={selectedTaxon}
         onTaxonChange={handleTaxonChange}
         filterLabel={selectedTaxon || undefined}
+        baseColor={baseColor}
+        onBaseColorChange={setBaseColor}
       />
 
       {/* Graph */}
@@ -217,6 +220,7 @@ export default function GoDagPage() {
             metric={selectedMetric}
             key={selectedNamespace}
             filterLabel={selectedTaxon || undefined}
+            baseColor={baseColor}
           />
         </div>
       </div>
