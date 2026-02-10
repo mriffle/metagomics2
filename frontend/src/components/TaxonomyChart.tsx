@@ -89,6 +89,7 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
     const parents: string[] = []
     const values: number[] = []
     const colors: string[] = []
+    const ranks: string[] = []
     const customdata: TaxonNode[] = []
 
     // Build parent lookup and find domain ancestor for each node
@@ -131,6 +132,7 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
       labels.push(node.name)
       parents.push(nodeIds.has(node.parentTaxId) ? node.parentTaxId : '')
       values.push(node.quantity)
+      ranks.push(node.rank)
       customdata.push(node)
 
       if (node.rank === 'root') {
@@ -148,7 +150,7 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
       }
     }
 
-    return { ids, labels, parents, values, colors, customdata }
+    return { ids, labels, parents, values, colors, ranks, customdata }
   }, [nodes])
 
   // Keep nodeMap in a ref so hover callbacks don't need it as a dependency
@@ -158,6 +160,65 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
   // Memoize Plotly props so tooltip state changes don't reset the chart
   const plotlyData = useMemo(() => {
     if (!plotData) return null
+
+    // Sankey uses a completely different trace format (node + link arrays)
+    if (chartType === 'sankey') {
+      const idToIndex = new Map<string, number>()
+      plotData.ids.forEach((id, i) => idToIndex.set(id, i))
+
+      const source: number[] = []
+      const target: number[] = []
+      const value: number[] = []
+      const linkColor: string[] = []
+
+      for (let i = 0; i < plotData.ids.length; i++) {
+        const parentId = plotData.parents[i]
+        if (!parentId) continue
+        const parentIdx = idToIndex.get(parentId)
+        if (parentIdx === undefined) continue
+        source.push(parentIdx)
+        target.push(i)
+        value.push(plotData.values[i])
+        // Use a semi-transparent version of the target node color for links
+        const c = plotData.colors[i]
+        linkColor.push(c.replace('rgb(', 'rgba(').replace(')', ',0.4)'))
+      }
+
+      // Assign explicit x positions so each rank aligns to a column
+      const RANK_COL: Record<string, number> = {
+        root: 0, domain: 1, kingdom: 2, phylum: 3, class: 4,
+        order: 5, family: 6, genus: 7, species: 8,
+      }
+      // Find the max column actually used to normalize x to [0, 1]
+      let maxCol = 0
+      for (const r of plotData.ranks) {
+        const col = RANK_COL[r] ?? 0
+        if (col > maxCol) maxCol = col
+      }
+      // Plotly requires x in (0, 1) exclusive — use small epsilon at edges
+      const eps = 0.001
+      const nodeX = plotData.ranks.map(r => {
+        const col = RANK_COL[r] ?? 0
+        return maxCol === 0 ? eps : eps + (col / maxCol) * (1 - 2 * eps)
+      })
+
+      return [{
+        type: 'sankey',
+        orientation: 'h',
+        arrangement: 'snap',
+        node: {
+          label: plotData.labels,
+          color: plotData.colors,
+          x: nodeX,
+          pad: 20,
+          thickness: 15,
+          line: { color: '#888', width: 0.5 },
+        },
+        link: { source, target, value, color: linkColor },
+        valueformat: value.some(v => v > 9999) ? '.3e' : ',.2f',
+      }]
+    }
+
     const trace: any = {
       type: chartType,
       ids: plotData.ids,
@@ -166,7 +227,7 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
       values: plotData.values,
       marker: {
         colors: plotData.colors,
-        line: { width: chartType === 'treemap' ? 1 : 0.5, color: '#ffffff' },
+        line: { width: chartType === 'sunburst' ? 0.5 : 1, color: '#ffffff' },
       },
       branchvalues: 'total',
       hoverinfo: 'none',
@@ -179,12 +240,16 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
       trace.tiling = { packing: 'squarify', pad: 2 }
       trace.pathbar = { visible: true, textfont: { size: 12 } }
     }
+    if (chartType === 'icicle') {
+      trace.tiling = { orientation: 'v' }
+      trace.pathbar = { visible: true, textfont: { size: 12 } }
+    }
     return [trace]
   }, [plotData, chartType])
 
   const plotlyLayout = useMemo(() => {
     const layout: any = {
-      margin: { t: chartType === 'treemap' ? 20 : 10, b: 10, l: 10, r: 10 },
+      margin: { t: chartType === 'sunburst' ? 10 : 20, b: 10, l: 10, r: 10 },
       paper_bgcolor: 'transparent',
       font: { family: 'Inter, system-ui, sans-serif' },
       autosize: true,
@@ -241,12 +306,12 @@ export default function TaxonomyChart({ nodes, chartType }: TaxonomyChartProps) 
         config={plotlyConfig}
         style={{ width: '100%', height: '100%' }}
         useResizeHandler
-        onHover={handleHover}
-        onUnhover={handleUnhover}
+        onHover={chartType !== 'sankey' ? handleHover : undefined}
+        onUnhover={chartType !== 'sankey' ? handleUnhover : undefined}
       />
 
-      {/* Tooltip */}
-      {tooltip && (
+      {/* Tooltip (not used for Sankey — it has its own hover) */}
+      {tooltip && chartType !== 'sankey' && (
         <div
           ref={tooltipRef}
           className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm pointer-events-none"

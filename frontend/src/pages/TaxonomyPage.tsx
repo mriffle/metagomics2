@@ -7,7 +7,7 @@ import { parseTaxonomyCsv, filterCanonicalRanks, filterByMaxRank, validateCanoni
 import type { TaxonNode, CanonicalRank } from '../utils/taxonomyParser'
 
 export type { TaxonNode } from '../utils/taxonomyParser'
-export type ChartType = 'sunburst' | 'treemap'
+export type ChartType = 'sunburst' | 'treemap' | 'icicle' | 'sankey'
 
 export default function TaxonomyPage() {
   const { jobId, listId } = useParams<{ jobId: string; listId: string }>()
@@ -18,11 +18,18 @@ export default function TaxonomyPage() {
 
   const [chartType, setChartType] = useState<ChartType>('sunburst')
   const [maxRank, setMaxRank] = useState<CanonicalRank>('species')
+  const [minRatioTotal, setMinRatioTotal] = useState(0.001)
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
   const filteredNodes = useMemo(
-    () => ensureStrictRankLayers(filterByMaxRank(canonicalNodes, maxRank)),
-    [canonicalNodes, maxRank],
+    () => {
+      // Filter by min ratio, but always keep the root node
+      const byRatio = canonicalNodes.filter(n => n.rank === 'root' || n.ratioTotal >= minRatioTotal)
+      const byRank = filterByMaxRank(byRatio, maxRank)
+      // Sankey uses explicit x positions for rank alignment — no placeholders needed
+      return chartType === 'sankey' ? byRank : ensureStrictRankLayers(byRank)
+    },
+    [canonicalNodes, maxRank, minRatioTotal, chartType],
   )
 
   const handleExportPng = useCallback(() => {
@@ -131,6 +138,10 @@ export default function TaxonomyPage() {
         onChartTypeChange={setChartType}
         maxRank={maxRank}
         onMaxRankChange={setMaxRank}
+        minRatioTotal={minRatioTotal}
+        onMinRatioTotalChange={setMinRatioTotal}
+        filteredNodeCount={filteredNodes.length}
+        totalNodeCount={canonicalNodes.length}
         onExportPng={handleExportPng}
         onExportSvg={handleExportSvg}
       />
