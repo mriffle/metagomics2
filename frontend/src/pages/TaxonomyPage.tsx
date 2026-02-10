@@ -15,6 +15,7 @@ export default function TaxonomyPage() {
   const [canonicalNodes, setCanonicalNodes] = useState<TaxonNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [listFilename, setListFilename] = useState<string>('')
 
   const [chartType, setChartType] = useState<ChartType>('sunburst')
   const [maxRank, setMaxRank] = useState<CanonicalRank>('species')
@@ -63,6 +64,17 @@ export default function TaxonomyPage() {
 
   useEffect(() => {
     if (!jobId || !listId) return
+
+    // Fetch the job to get the filename for this list
+    fetch(`/api/jobs/${jobId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.peptide_lists) {
+          const match = data.peptide_lists.find((pl: any) => pl.list_id === listId)
+          if (match) setListFilename(match.filename)
+        }
+      })
+      .catch(() => {})
 
     async function fetchData() {
       try {
@@ -127,7 +139,7 @@ export default function TaxonomyPage() {
             Taxonomy Visualization
           </h1>
           <span className="text-sm text-gray-500">
-            {listId} · {canonicalNodes.length} terms ({allNodes.length} total)
+            {listFilename || listId} · {canonicalNodes.length} terms ({allNodes.length} total)
           </span>
         </div>
       </div>

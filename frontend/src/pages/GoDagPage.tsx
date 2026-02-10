@@ -21,6 +21,7 @@ export default function GoDagPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [danglingParents, setDanglingParents] = useState<string[]>([])
+  const [listFilename, setListFilename] = useState<string>('')
 
   const [selectedNamespace, setSelectedNamespace] = useState('biological_process')
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('quantity')
@@ -39,6 +40,17 @@ export default function GoDagPage() {
 
   useEffect(() => {
     if (!jobId || !listId) return
+
+    // Fetch the job to get the filename for this list
+    fetch(`/api/jobs/${jobId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.peptide_lists) {
+          const match = data.peptide_lists.find((pl: any) => pl.list_id === listId)
+          if (match) setListFilename(match.filename)
+        }
+      })
+      .catch(() => {})
 
     async function fetchData() {
       try {
@@ -120,7 +132,7 @@ export default function GoDagPage() {
             Gene Ontology DAG
           </h1>
           <span className="text-sm text-gray-500">
-            {listId} · {allNodes.length} terms
+            {listFilename || listId} · {allNodes.length} terms
           </span>
         </div>
       </div>

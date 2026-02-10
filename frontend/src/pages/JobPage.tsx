@@ -193,10 +193,21 @@ export default function JobPage() {
 
       {/* Peptide Lists */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Peptide Lists
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <FileText className="w-5 h-5" />
+            Peptide Lists
+          </h2>
+          {job.status === 'completed' && (
+            <a
+              href={`/api/jobs/${job.job_id}/results/all_results.zip`}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Download All Results (ZIP)
+            </a>
+          )}
+        </div>
 
         <div className="space-y-4">
           {job.peptide_lists.map((list) => (
@@ -207,7 +218,6 @@ export default function JobPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-gray-900">{list.filename}</p>
-                  <p className="text-sm text-gray-500">{list.list_id}</p>
                 </div>
                 <div className="flex items-center gap-4">
                   {list.n_peptides !== null && (
@@ -230,78 +240,68 @@ export default function JobPage() {
                   </span>
                 </div>
               </div>
+
+              {/* Per-list downloads and visualizations */}
+              {job.status === 'completed' && list.status === 'done' && (
+                <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-gray-500">Download results:</span>
+                    {[
+                      { name: 'taxonomy_nodes.csv', tip: 'Taxonomy assignments with aggregated peptide quantities and ratios at each node' },
+                      { name: 'go_terms.csv', tip: 'Gene Ontology term assignments with aggregated peptide quantities and ratios' },
+                      { name: 'coverage.csv', tip: 'Summary of how many peptides (and what fraction of total quantity) received any annotations (taxonomy or GO)' },
+                      { name: 'run_manifest.json', tip: 'Provenance record of parameters, software versions, and reference data used for this run' },
+                    ].map((file) => (
+                      <span key={file.name} className="relative group inline-flex">
+                        <a
+                          href={`/api/jobs/${job.job_id}/results/${list.list_id}/${file.name}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                        >
+                          <FileText className="w-3 h-3" />
+                          {file.name}
+                        </a>
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg whitespace-normal w-56 text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                          {file.tip}
+                          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-gray-500">View results:</span>
+                    <span className="relative group inline-flex">
+                      <Link
+                        to={`/job/${job.job_id}/go/${list.list_id}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors"
+                      >
+                        <GitBranch className="w-3 h-3" />
+                        Gene Ontology
+                      </Link>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg whitespace-normal w-56 text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                        Visualize Gene Ontology terms found for this peptide list
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                      </span>
+                    </span>
+                    <span className="relative group inline-flex">
+                      <Link
+                        to={`/job/${job.job_id}/taxonomy/${list.list_id}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded transition-colors"
+                      >
+                        <TreePine className="w-3 h-3" />
+                        Taxonomy
+                      </Link>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg whitespace-normal w-56 text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                        Visualize taxonomic assignments found for this peptide list
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
-
-      {/* Downloads */}
-      {job.status === 'completed' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            Downloads
-          </h2>
-
-          <div className="mb-4 text-sm text-gray-600 space-y-1">
-            <p><span className="font-medium">taxonomy_nodes.csv</span> — Taxonomy assignments with aggregated peptide quantities and ratios at each node.</p>
-            <p><span className="font-medium">go_terms.csv</span> — Gene Ontology term assignments with aggregated peptide quantities and ratios.</p>
-            <p><span className="font-medium">coverage.csv</span> — Summary of how many peptides (and what fraction of total quantity) received any annotations (taxonomy or GO).</p>
-            <p><span className="font-medium">run_manifest.json</span> — Provenance record of parameters, software versions, and reference data used for this run.</p>
-          </div>
-
-          <div className="space-y-4">
-            {/* Download All */}
-            <a
-              href={`/api/jobs/${job.job_id}/results/all_results.zip`}
-              className="block p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Download className="w-8 h-8 text-indigo-600" />
-                <div>
-                  <p className="font-medium text-gray-900">Download All Results</p>
-                  <p className="text-sm text-gray-500">ZIP archive with all output files</p>
-                </div>
-              </div>
-            </a>
-
-            {/* Individual Files */}
-            <div className="grid grid-cols-2 gap-4">
-              {job.peptide_lists.map((list) => (
-                <div key={list.list_id} className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700">{list.filename}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {['taxonomy_nodes.csv', 'go_terms.csv', 'coverage.csv', 'run_manifest.json'].map((file) => (
-                      <a
-                        key={file}
-                        href={`/api/jobs/${job.job_id}/results/${list.list_id}/${file}`}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                      >
-                        <FileText className="w-3 h-3" />
-                        {file}
-                      </a>
-                    ))}
-                    <Link
-                      to={`/job/${job.job_id}/go/${list.list_id}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors"
-                    >
-                      <GitBranch className="w-3 h-3" />
-                      GO DAG
-                    </Link>
-                    <Link
-                      to={`/job/${job.job_id}/taxonomy/${list.list_id}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded transition-colors"
-                    >
-                      <TreePine className="w-3 h-3" />
-                      Taxonomy
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
