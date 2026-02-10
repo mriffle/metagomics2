@@ -35,7 +35,6 @@ const CUTOFF_PRESETS = [
 const BASE_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
   { value: 'quantity', label: 'Quantity' },
   { value: 'ratioTotal', label: 'Ratio (Total)' },
-  { value: 'ratioAnnotated', label: 'Ratio (Annotated)' },
   { value: 'nPeptides', label: '# Peptides' },
 ]
 
