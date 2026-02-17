@@ -317,6 +317,55 @@ class Database:
                 (job_id, timestamp, event_type, message),
             )
 
+    def regenerate_job_id(self, old_job_id: str, jobs_dir: Path) -> str:
+        """Generate a new job ID and migrate all references.
+
+        Atomically updates the job_id in all database tables and renames
+        the job directory on disk.
+
+        Args:
+            old_job_id: Current job ID
+            jobs_dir: Base directory containing job directories
+
+        Returns:
+            The new job ID
+
+        Raises:
+            ValueError: If the old job ID does not exist
+            OSError: If the directory rename fails
+        """
+        new_job_id = generate_job_id()
+
+        with self._get_connection() as conn:
+            # Verify old job exists
+            row = conn.execute(
+                "SELECT job_id FROM jobs WHERE job_id = ?", (old_job_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Job not found: {old_job_id}")
+
+            # Update all tables
+            conn.execute(
+                "UPDATE jobs SET job_id = ? WHERE job_id = ?",
+                (new_job_id, old_job_id),
+            )
+            conn.execute(
+                "UPDATE peptide_lists SET job_id = ? WHERE job_id = ?",
+                (new_job_id, old_job_id),
+            )
+            conn.execute(
+                "UPDATE job_events SET job_id = ? WHERE job_id = ?",
+                (new_job_id, old_job_id),
+            )
+
+        # Rename directory on disk (if it exists)
+        old_dir = jobs_dir / old_job_id
+        if old_dir.exists():
+            new_dir = jobs_dir / new_job_id
+            old_dir.rename(new_dir)
+
+        return new_job_id
+
     def list_jobs(self, limit: int = 100) -> list[JobInfo]:
         """List recent jobs.
 

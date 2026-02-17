@@ -299,6 +299,31 @@ async def get_job(job_id: str):
     return job
 
 
+class RegenerateIdResponse(BaseModel):
+    new_job_id: str
+
+
+@app.post("/api/jobs/{job_id}/regenerate-id", response_model=RegenerateIdResponse)
+async def regenerate_job_id(job_id: str):
+    """Regenerate the job ID (URL hash) for a job.
+
+    This changes the URL used to access the job, invalidating the old one.
+    Useful when a user has shared a link and wants to revoke access.
+    """
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    try:
+        new_job_id = db.regenerate_job_id(job_id, JOBS_DIR)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Job not found")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rename job directory: {e}")
+
+    return RegenerateIdResponse(new_job_id=new_job_id)
+
+
 @app.get("/api/admin/jobs", response_model=JobListResponse)
 async def list_jobs(limit: int = 100, _token: str = Depends(require_admin)):
     """List recent jobs (admin only)."""

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Clock,
   CheckCircle,
@@ -10,6 +10,7 @@ import {
   AlertCircle,
   GitBranch,
   TreePine,
+  RefreshCw,
 } from 'lucide-react'
 
 interface PeptideList {
@@ -56,9 +57,11 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 export default function JobPage() {
   const { jobId } = useParams<{ jobId: string }>()
+  const navigate = useNavigate()
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -101,6 +104,25 @@ export default function JobPage() {
     }
   }
 
+  async function handleRegenerateId() {
+    if (!jobId || regenerating) return
+    if (!window.confirm('This will change the URL for this job. The old URL will stop working. Continue?')) return
+    setRegenerating(true)
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/regenerate-id`, { method: 'POST' })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail || 'Failed to regenerate ID')
+      }
+      const data = await response.json()
+      navigate(`/job/${data.new_job_id}`, { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -133,7 +155,23 @@ export default function JobPage() {
               {statusIcons[job.status]}
               Job Status
             </h1>
-            <p className="mt-1 text-sm text-gray-500 font-mono">{job.job_id}</p>
+            <div className="mt-1 flex items-center gap-2">
+              <p className="text-sm text-gray-500 font-mono">{job.job_id}</p>
+              <span className="relative group inline-flex">
+                <button
+                  onClick={handleRegenerateId}
+                  disabled={regenerating}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${regenerating ? 'animate-spin' : ''}`} />
+                  Change Hash
+                </button>
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg whitespace-normal w-56 text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                  Generate a new URL for this job. The old URL will stop working. Use this to revoke access if you previously shared the link.
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                </span>
+              </span>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-500">Created</p>
