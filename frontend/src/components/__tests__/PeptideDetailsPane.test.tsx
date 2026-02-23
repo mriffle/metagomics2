@@ -64,7 +64,7 @@ describe('PeptideDetailsPane', () => {
       makeQueryResult([
         {
           peptide: 'PEPTIDESEQ',
-          peptide_tax_id: 9606,
+          peptide_lca_tax_ids: [9606, 1],
           peptide_go_terms: ['GO:0000001'],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
@@ -98,7 +98,7 @@ describe('PeptideDetailsPane', () => {
       makeQueryResult([
         {
           peptide: 'PEPTIDESEQ',
-          peptide_tax_id: 9606,
+          peptide_lca_tax_ids: [9606, 1],
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
@@ -124,7 +124,7 @@ describe('PeptideDetailsPane', () => {
       makeQueryResult([
         {
           peptide: 'PEPTIDESEQ',
-          peptide_tax_id: 9606,
+          peptide_lca_tax_ids: [9606, 1],
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
@@ -153,7 +153,7 @@ describe('PeptideDetailsPane', () => {
       makeQueryResult([
         {
           peptide: 'PEPTIDESEQ',
-          peptide_tax_id: 9606,
+          peptide_lca_tax_ids: [9606, 1],
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',

@@ -326,7 +326,7 @@ def write_peptide_mapping_parquet(
 
     Schema:
         peptide: Utf8
-        peptide_tax_id: Int64 (nullable)
+        peptide_lca_tax_ids: List[Int64]
         peptide_go_terms: List[Utf8]
         background_protein: Utf8
         annotated_protein: Utf8
@@ -338,7 +338,7 @@ def write_peptide_mapping_parquet(
         output_path: Path to write the Parquet file
     """
     rows_peptide: list[str] = []
-    rows_tax_id: list[int | None] = []
+    rows_lca_tax_ids: list[list[int]] = []
     rows_go_terms: list[list[str]] = []
     rows_bg_protein: list[str] = []
     rows_ann_protein: list[str] = []
@@ -348,21 +348,21 @@ def write_peptide_mapping_parquet(
             continue
 
         go_terms_sorted = sorted(ann.go_terms)
-        tax_id = ann.lca_tax_id
+        lca_tax_ids = sorted(ann.taxonomy_nodes)
 
         bg_proteins = peptide_to_proteins.get(ann.peptide, set())
         for bg_protein in sorted(bg_proteins):
             subjects = protein_to_subjects.get(bg_protein, set())
             for subject in sorted(subjects):
                 rows_peptide.append(ann.peptide)
-                rows_tax_id.append(tax_id)
+                rows_lca_tax_ids.append(lca_tax_ids)
                 rows_go_terms.append(go_terms_sorted)
                 rows_bg_protein.append(bg_protein)
                 rows_ann_protein.append(subject)
 
     schema = {
         "peptide": pl.Utf8,
-        "peptide_tax_id": pl.Int64,
+        "peptide_lca_tax_ids": pl.List(pl.Int64),
         "peptide_go_terms": pl.List(pl.Utf8),
         "background_protein": pl.Utf8,
         "annotated_protein": pl.Utf8,
@@ -372,7 +372,7 @@ def write_peptide_mapping_parquet(
         df = pl.DataFrame(
             {
                 "peptide": rows_peptide,
-                "peptide_tax_id": rows_tax_id,
+                "peptide_lca_tax_ids": rows_lca_tax_ids,
                 "peptide_go_terms": rows_go_terms,
                 "background_protein": rows_bg_protein,
                 "annotated_protein": rows_ann_protein,

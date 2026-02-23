@@ -7,7 +7,7 @@ import UniprotProteinLabel from './UniprotProteinLabel'
 
 interface MappingRow {
   peptide: string
-  peptide_tax_id: number | null
+  peptide_lca_tax_ids: number[]
   peptide_go_terms: string[]
   background_protein: string
   annotated_protein: string
@@ -79,10 +79,8 @@ export default function PeptideDetailsPane({
         const conditions: string[] = []
         if (selectedTaxIds && selectedTaxIds.length > 0) {
           const ids = selectedTaxIds.map(id => parseInt(id, 10)).filter(n => !isNaN(n))
-          if (ids.length === 1) {
-            conditions.push(`peptide_tax_id = ${ids[0]}`)
-          } else if (ids.length > 1) {
-            conditions.push(`peptide_tax_id IN (${ids.join(', ')})`)
+          if (ids.length > 0) {
+            conditions.push(`list_has_any(peptide_lca_tax_ids, [${ids.join(', ')}])`)
           }
         }
         if (selectedGoId) {
@@ -92,7 +90,7 @@ export default function PeptideDetailsPane({
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
         const sql = `
-          SELECT peptide, peptide_tax_id, peptide_go_terms, background_protein, annotated_protein
+          SELECT peptide, peptide_lca_tax_ids, peptide_go_terms, background_protein, annotated_protein
           FROM mappings
           ${where}
         `

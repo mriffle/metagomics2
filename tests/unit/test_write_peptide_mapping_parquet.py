@@ -13,15 +13,21 @@ def make_annotation(
     peptide: str,
     is_annotated: bool = True,
     lca_tax_id: int | None = None,
+    taxonomy_nodes: set[int] | None = None,
     go_terms: set[str] | None = None,
     background_proteins: set[str] | None = None,
 ) -> PeptideAnnotation:
     """Helper to create a PeptideAnnotation."""
+    # If taxonomy_nodes not supplied but lca_tax_id is, use lca_tax_id as the sole node
+    resolved_nodes: set[int] = taxonomy_nodes if taxonomy_nodes is not None else (
+        {lca_tax_id} if lca_tax_id is not None else set()
+    )
     return PeptideAnnotation(
         peptide=peptide,
         quantity=1.0,
         is_annotated=is_annotated,
         lca_tax_id=lca_tax_id,
+        taxonomy_nodes=resolved_nodes,
         go_terms=go_terms or set(),
         background_proteins=background_proteins or set(),
     )
@@ -37,6 +43,7 @@ class TestWritePeptideMappingParquet:
                 "PEPTIDE",
                 is_annotated=True,
                 lca_tax_id=9606,
+                taxonomy_nodes={9606, 1},
                 go_terms={"GO:0000001"},
                 background_proteins={"prot_A"},
             ),
@@ -51,7 +58,7 @@ class TestWritePeptideMappingParquet:
         assert len(df) == 1
         row = df.row(0, named=True)
         assert row["peptide"] == "PEPTIDE"
-        assert row["peptide_tax_id"] == 9606
+        assert set(row["peptide_lca_tax_ids"]) == {9606, 1}
         assert row["peptide_go_terms"] == ["GO:0000001"]
         assert row["background_protein"] == "prot_A"
         assert row["annotated_protein"] == "subj_X"
@@ -63,6 +70,7 @@ class TestWritePeptideMappingParquet:
                 "PEPTIDE",
                 is_annotated=True,
                 lca_tax_id=9606,
+                taxonomy_nodes={9606, 1},
                 go_terms={"GO:0000001"},
                 background_proteins={"prot_A", "prot_B"},
             ),
@@ -83,7 +91,7 @@ class TestWritePeptideMappingParquet:
     def test_unannotated_peptide_excluded(self, tmp_path: Path) -> None:
         """Unannotated peptides are not written to the Parquet file."""
         annotations = [
-            make_annotation("ANNOTATED", is_annotated=True, lca_tax_id=9606, background_proteins={"prot_A"}),
+            make_annotation("ANNOTATED", is_annotated=True, lca_tax_id=9606, taxonomy_nodes={9606, 1}, background_proteins={"prot_A"}),
             make_annotation("UNANNOTATED", is_annotated=False),
         ]
         peptide_to_proteins = {"ANNOTATED": {"prot_A"}, "UNANNOTATED": set()}
@@ -113,7 +121,7 @@ class TestWritePeptideMappingParquet:
         df = pl.read_parquet(output)
         assert df.columns == [
             "peptide",
-            "peptide_tax_id",
+            "peptide_lca_tax_ids",
             "peptide_go_terms",
             "background_protein",
             "annotated_protein",
@@ -126,18 +134,19 @@ class TestWritePeptideMappingParquet:
 
         df = pl.read_parquet(output)
         assert df.dtypes[0] == pl.Utf8
-        assert df.dtypes[1] == pl.Int64
+        assert df.dtypes[1] == pl.List(pl.Int64)
         assert df.dtypes[2] == pl.List(pl.Utf8)
         assert df.dtypes[3] == pl.Utf8
         assert df.dtypes[4] == pl.Utf8
 
-    def test_nullable_tax_id(self, tmp_path: Path) -> None:
-        """Peptide with no LCA tax_id writes None for peptide_tax_id."""
+    def test_empty_lca_tax_ids(self, tmp_path: Path) -> None:
+        """Peptide with no taxonomy nodes writes an empty list for peptide_lca_tax_ids."""
         annotations = [
             make_annotation(
                 "PEPTIDE",
                 is_annotated=True,
                 lca_tax_id=None,
+                taxonomy_nodes=set(),
                 go_terms={"GO:0000001"},
                 background_proteins={"prot_A"},
             ),
@@ -150,7 +159,7 @@ class TestWritePeptideMappingParquet:
 
         df = pl.read_parquet(output)
         assert len(df) == 1
-        assert df["peptide_tax_id"][0] is None
+        assert df["peptide_lca_tax_ids"][0].to_list() == []
 
     def test_multiple_subjects_per_background_protein(self, tmp_path: Path) -> None:
         """One background protein with two subjects → two rows."""
@@ -159,6 +168,7 @@ class TestWritePeptideMappingParquet:
                 "PEPTIDE",
                 is_annotated=True,
                 lca_tax_id=9606,
+                taxonomy_nodes={9606, 1},
                 background_proteins={"prot_A"},
             ),
         ]
@@ -178,6 +188,7 @@ class TestWritePeptideMappingParquet:
             make_annotation(
                 "PEPTIDE",
                 is_annotated=True,
+                taxonomy_nodes={1},
                 go_terms={"GO:0000003", "GO:0000001", "GO:0000002"},
                 background_proteins={"prot_A"},
             ),
@@ -205,7 +216,7 @@ class TestWritePeptideMappingParquet:
         assert len(df) == 0
         assert df.columns == [
             "peptide",
-            "peptide_tax_id",
+            "peptide_lca_tax_ids",
             "peptide_go_terms",
             "background_protein",
             "annotated_protein",
