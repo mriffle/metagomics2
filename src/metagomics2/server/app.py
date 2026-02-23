@@ -356,6 +356,7 @@ async def download_result(job_id: str, list_id: str, filename: str):
         "coverage.csv",
         "run_manifest.json",
         "peptides_annotated.csv",
+        "peptide_mapping.parquet",
     ]
     if filename not in allowed_files:
         raise HTTPException(status_code=400, detail="Invalid filename")

@@ -290,6 +290,7 @@ export default function JobPage() {
                       { name: 'go_taxonomy_combo.csv', tip: 'Cross-tabulation of taxonomy nodes and GO terms with quantities and fractions for each combination' },
                       { name: 'coverage.csv', tip: 'Summary of how many peptides (and what fraction of total quantity) received any annotations (taxonomy or GO)' },
                       { name: 'run_manifest.json', tip: 'Provenance record of parameters, software versions, and reference data used for this run' },
+                      { name: 'peptide_mapping.parquet', tip: 'Full peptide-to-protein mapping table with taxonomy and GO annotations. Query with DuckDB or any Parquet-compatible tool.' },
                     ].map((file) => (
                       <span key={file.name} className="relative group inline-flex">
                         <a

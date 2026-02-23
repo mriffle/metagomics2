@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
 import TaxonomyChart from '../components/TaxonomyChart'
 import TaxonomyControls from '../components/TaxonomyControls'
-import { parseTaxonomyCsv, filterCanonicalRanks, filterByMaxRank, validateCanonicalHierarchy, ensureStrictRankLayers } from '../utils/taxonomyParser'
+import PeptideDetailsPane from '../components/PeptideDetailsPane'
+import { parseTaxonomyCsv, filterCanonicalRanks, filterByMaxRank, validateCanonicalHierarchy, ensureStrictRankLayers, getDescendantTaxIds } from '../utils/taxonomyParser'
 import type { TaxonNode, CanonicalRank } from '../utils/taxonomyParser'
 import { parseGoTermsCsv } from '../utils/goParser'
 import { parseComboCsv, comboRowsToTaxonNodes } from '../utils/comboParser'
@@ -24,6 +25,28 @@ export default function TaxonomyPage() {
   const [maxRank, setMaxRank] = useState<CanonicalRank>('species')
   const [minRatioTotal, setMinRatioTotal] = useState(0.001)
   const chartContainerRef = useRef<HTMLDivElement>(null)
+
+  // Selected taxonomy node for peptide details pane (includes all descendant tax IDs)
+  const [selectedTaxIds, setSelectedTaxIds] = useState<string[] | null>(null)
+  const [selectedTaxName, setSelectedTaxName] = useState<string | null>(null)
+
+  const handleTaxNodeClick = useCallback((taxId: string | null) => {
+    if (!taxId) {
+      // Clicking background resets to root (all)
+      const rootNode = allNodes.find(n => !n.parentTaxId || n.parentTaxId === n.taxId)
+      if (rootNode) {
+        setSelectedTaxIds(getDescendantTaxIds(rootNode.taxId, allNodes))
+        setSelectedTaxName('Any Taxonomy')
+      } else {
+        setSelectedTaxIds(null)
+        setSelectedTaxName(null)
+      }
+      return
+    }
+    const node = allNodes.find(n => n.taxId === taxId)
+    setSelectedTaxName(node ? node.name : `Tax ID: ${taxId}`)
+    setSelectedTaxIds(getDescendantTaxIds(taxId, allNodes))
+  }, [allNodes])
 
   // GO term filter state
   const [goOptions, setGoOptions] = useState<AutocompleteOption[]>([])
@@ -126,6 +149,12 @@ export default function TaxonomyPage() {
         setCanonicalNodes(canonical)
         setBaseCanonicalNodes(canonical)
         setError(null)
+        // Default: show all peptides (root node)
+        const rootNode = nodes.find(n => !n.parentTaxId || n.parentTaxId === n.taxId)
+        if (rootNode) {
+          setSelectedTaxIds(getDescendantTaxIds(rootNode.taxId, nodes))
+          setSelectedTaxName('Any Taxonomy')
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -208,14 +237,32 @@ export default function TaxonomyPage() {
         onGoTermChange={handleGoTermChange}
       />
 
-      {/* Chart */}
-      <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
-        <div ref={chartContainerRef} className="w-full h-full">
-          <TaxonomyChart
-            nodes={filteredNodes}
-            chartType={chartType}
-            filterLabel={selectedGoTerm || undefined}
-          />
+      {/* Main content: chart + details pane */}
+      <div className="flex flex-1 min-h-0 gap-3">
+        {/* Chart */}
+        <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
+          <div ref={chartContainerRef} className="w-full h-full">
+            <TaxonomyChart
+              nodes={filteredNodes}
+              chartType={chartType}
+              filterLabel={selectedGoTerm || undefined}
+              onNodeClick={handleTaxNodeClick}
+            />
+          </div>
+        </div>
+
+        {/* Peptide details pane */}
+        <div className="w-80 min-h-0 flex-shrink-0">
+          {jobId && listId && (
+            <PeptideDetailsPane
+              jobId={jobId}
+              listId={listId}
+              selectedTaxIds={selectedTaxIds}
+              selectedTaxName={selectedTaxName}
+              selectedGoId={selectedGoTerm || null}
+              selectedGoName={goOptions.find(o => o.value === selectedGoTerm)?.label.split(' — ')[1] ?? null}
+            />
+          )}
         </div>
       </div>
     </div>

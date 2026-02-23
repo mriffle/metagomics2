@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import polars as pl
+
 from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats
+from metagomics2.core.annotation import PeptideAnnotation
 from metagomics2.core.go import GODAG
 from metagomics2.core.taxonomy import TaxonomyTree
 
@@ -308,6 +311,78 @@ def write_go_taxonomy_combo_csv(
                 f"{combo.ratio_total_go:.10f}",
                 combo.n_peptides,
             ])
+
+
+def write_peptide_mapping_parquet(
+    annotations: list[PeptideAnnotation],
+    peptide_to_proteins: dict[str, set[str]],
+    protein_to_subjects: dict[str, set[str]],
+    output_path: Path,
+) -> None:
+    """Write peptide_mapping.parquet.
+
+    Each row represents one (peptide, background_protein, annotated_protein) triple
+    for annotated peptides only.
+
+    Schema:
+        peptide: Utf8
+        peptide_tax_id: Int64 (nullable)
+        peptide_go_terms: List[Utf8]
+        background_protein: Utf8
+        annotated_protein: Utf8
+
+    Args:
+        annotations: List of PeptideAnnotation objects
+        peptide_to_proteins: Mapping from peptide sequence to background protein IDs
+        protein_to_subjects: Mapping from background protein ID to annotated subject IDs
+        output_path: Path to write the Parquet file
+    """
+    rows_peptide: list[str] = []
+    rows_tax_id: list[int | None] = []
+    rows_go_terms: list[list[str]] = []
+    rows_bg_protein: list[str] = []
+    rows_ann_protein: list[str] = []
+
+    for ann in annotations:
+        if not ann.is_annotated:
+            continue
+
+        go_terms_sorted = sorted(ann.go_terms)
+        tax_id = ann.lca_tax_id
+
+        bg_proteins = peptide_to_proteins.get(ann.peptide, set())
+        for bg_protein in sorted(bg_proteins):
+            subjects = protein_to_subjects.get(bg_protein, set())
+            for subject in sorted(subjects):
+                rows_peptide.append(ann.peptide)
+                rows_tax_id.append(tax_id)
+                rows_go_terms.append(go_terms_sorted)
+                rows_bg_protein.append(bg_protein)
+                rows_ann_protein.append(subject)
+
+    schema = {
+        "peptide": pl.Utf8,
+        "peptide_tax_id": pl.Int64,
+        "peptide_go_terms": pl.List(pl.Utf8),
+        "background_protein": pl.Utf8,
+        "annotated_protein": pl.Utf8,
+    }
+
+    if rows_peptide:
+        df = pl.DataFrame(
+            {
+                "peptide": rows_peptide,
+                "peptide_tax_id": rows_tax_id,
+                "peptide_go_terms": rows_go_terms,
+                "background_protein": rows_bg_protein,
+                "annotated_protein": rows_ann_protein,
+            },
+            schema=schema,
+        )
+    else:
+        df = pl.DataFrame(schema=schema)
+
+    df.write_parquet(output_path)
 
 
 def get_tool_version(tool: str) -> str:

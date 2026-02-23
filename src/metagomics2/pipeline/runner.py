@@ -44,6 +44,7 @@ from metagomics2.core.reporting import (
     write_go_taxonomy_combo_csv,
     write_go_terms_csv,
     write_manifest_json,
+    write_peptide_mapping_parquet,
     write_taxonomy_nodes_csv,
 )
 from metagomics2.core.taxonomy import TaxonomyTree, load_taxonomy_from_dict, load_taxonomy_from_json
@@ -593,6 +594,15 @@ class PipelineRunner:
             aggregation.coverage,
             list_output_dir / "coverage.csv",
         )
+
+        # Write peptide mapping Parquet
+        if annotations:
+            write_peptide_mapping_parquet(
+                annotations,
+                self.per_list_match_results[list_id].peptide_to_proteins,
+                self.protein_to_subjects,
+                list_output_dir / "peptide_mapping.parquet",
+            )
 
         # Write manifest
         manifest = create_manifest(

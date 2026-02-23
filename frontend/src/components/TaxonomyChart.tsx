@@ -38,9 +38,10 @@ interface TaxonomyChartProps {
   nodes: TaxonNode[]
   chartType: ChartType
   filterLabel?: string
+  onNodeClick?: (taxId: string | null) => void
 }
 
-export default function TaxonomyChart({ nodes, chartType, filterLabel }: TaxonomyChartProps) {
+export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeClick }: TaxonomyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{
@@ -157,6 +158,19 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel }: Taxonom
   // Keep nodeMap in a ref so hover callbacks don't need it as a dependency
   const nodeMapRef = useRef(nodeMap)
   nodeMapRef.current = nodeMap
+
+  // Keep onNodeClick in a ref to avoid stale closures
+  const onNodeClickRef = useRef(onNodeClick)
+  onNodeClickRef.current = onNodeClick
+
+  const handleClick = useCallback((event: any) => {
+    if (chartType === 'sankey') return
+    if (event.points && event.points.length > 0) {
+      const point = event.points[0]
+      const taxId = point.id
+      if (taxId) onNodeClickRef.current?.(String(taxId))
+    }
+  }, [chartType])
 
   // Memoize Plotly props so tooltip state changes don't reset the chart
   const plotlyData = useMemo(() => {
@@ -309,6 +323,7 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel }: Taxonom
         useResizeHandler
         onHover={chartType !== 'sankey' ? handleHover : undefined}
         onUnhover={chartType !== 'sankey' ? handleUnhover : undefined}
+        onClick={chartType !== 'sankey' ? handleClick : undefined}
       />
 
       {/* Tooltip (not used for Sankey — it has its own hover) */}

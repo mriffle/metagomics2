@@ -191,6 +191,32 @@ export function ensureStrictRankLayers(nodes: TaxonNode[]): TaxonNode[] {
 }
 
 /**
+ * Collect the tax ID of a node and all its descendants from the full node list.
+ * Uses allNodes (not filtered) so no descendants are missed.
+ */
+export function getDescendantTaxIds(rootTaxId: string, allNodes: TaxonNode[]): string[] {
+  const childrenOf = new Map<string, string[]>()
+  for (const n of allNodes) {
+    if (!n.parentTaxId || n.parentTaxId === n.taxId) continue
+    if (!childrenOf.has(n.parentTaxId)) childrenOf.set(n.parentTaxId, [])
+    childrenOf.get(n.parentTaxId)!.push(n.taxId)
+  }
+
+  const result: string[] = []
+  const queue = [rootTaxId]
+  const visited = new Set<string>()
+  while (queue.length > 0) {
+    const id = queue.pop()!
+    if (visited.has(id)) continue
+    visited.add(id)
+    result.push(id)
+    const children = childrenOf.get(id)
+    if (children) queue.push(...children)
+  }
+  return result
+}
+
+/**
  * Filter to canonical ranks and re-link parents.
  * For each canonical node, walk up the parent chain until finding
  * the nearest ancestor that is also at a canonical rank.

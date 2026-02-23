@@ -3,9 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
 import GoDagViewer from '../components/GoDagViewer'
 import GoDagControls from '../components/GoDagControls'
+import PeptideDetailsPane from '../components/PeptideDetailsPane'
 import { parseGoTermsCsv } from '../utils/goParser'
 import type { GoTermNode } from '../utils/goParser'
-import { parseTaxonomyCsv } from '../utils/taxonomyParser'
+import { parseTaxonomyCsv, getDescendantTaxIds } from '../utils/taxonomyParser'
 import { parseComboCsv, comboRowsToGoTermNodes } from '../utils/comboParser'
 import type { AutocompleteOption } from '../components/Autocomplete'
 
@@ -32,9 +33,13 @@ export default function GoDagPage() {
   const [baseColor, setBaseColor] = useState('#4338ca')
   const viewerContainerRef = useRef<HTMLDivElement>(null)
 
+  // Selected GO node for peptide details pane
+  const [selectedGoNode, setSelectedGoNode] = useState<string | null>(null)
+
   // Taxonomy filter state
   const [taxonOptions, setTaxonOptions] = useState<AutocompleteOption[]>([])
   const [selectedTaxon, setSelectedTaxon] = useState('')
+  const [allTaxNodes, setAllTaxNodes] = useState<ReturnType<typeof parseTaxonomyCsv>>([])
   const [baseAllNodes, setBaseAllNodes] = useState<GoTermNode[]>([])
 
   const handleExportPng = useCallback(() => {
@@ -107,12 +112,13 @@ export default function GoDagPage() {
       }
     }
 
-    // Fetch taxonomy nodes for autocomplete options
+    // Fetch taxonomy nodes for autocomplete options and descendant computation
     fetch(`/api/jobs/${jobId}/results/${listId}/taxonomy_nodes.csv`)
       .then(res => res.ok ? res.text() : '')
       .then(text => {
         if (text) {
           const taxNodes = parseTaxonomyCsv(text)
+          setAllTaxNodes(taxNodes)
           setTaxonOptions(
             taxNodes.map(n => ({ value: n.taxId, label: `${n.name} (${n.rank})` }))
           )
@@ -212,16 +218,34 @@ export default function GoDagPage() {
         onBaseColorChange={setBaseColor}
       />
 
-      {/* Graph */}
-      <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
-        <div ref={viewerContainerRef} className="w-full h-full">
-          <GoDagViewer
-            nodes={filteredNodes}
-            metric={selectedMetric}
-            key={selectedNamespace}
-            filterLabel={selectedTaxon || undefined}
-            baseColor={baseColor}
-          />
+      {/* Main content: graph + details pane */}
+      <div className="flex flex-1 min-h-0 gap-3">
+        {/* Graph */}
+        <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
+          <div ref={viewerContainerRef} className="w-full h-full">
+            <GoDagViewer
+              nodes={filteredNodes}
+              metric={selectedMetric}
+              key={selectedNamespace}
+              filterLabel={selectedTaxon || undefined}
+              baseColor={baseColor}
+              onNodeClick={setSelectedGoNode}
+            />
+          </div>
+        </div>
+
+        {/* Peptide details pane */}
+        <div className="w-80 min-h-0 flex-shrink-0">
+          {jobId && listId && (
+            <PeptideDetailsPane
+              jobId={jobId}
+              listId={listId}
+              selectedGoId={selectedGoNode}
+              selectedGoName={selectedGoNode ? allNodes.find(n => n.id === selectedGoNode)?.name ?? null : null}
+              selectedTaxIds={selectedTaxon ? getDescendantTaxIds(selectedTaxon, allTaxNodes) : null}
+              selectedTaxName={selectedTaxon ? (taxonOptions.find(o => o.value === selectedTaxon)?.label.split(' (')[0] ?? null) : null}
+            />
+          )}
         </div>
       </div>
     </div>

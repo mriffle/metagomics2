@@ -96,12 +96,15 @@ interface GoDagViewerProps {
   metric: MetricKey
   filterLabel?: string
   baseColor?: string
+  onNodeClick?: (nodeId: string | null) => void
 }
 
-export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#4338ca' }: GoDagViewerProps) {
+export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#4338ca', onNodeClick }: GoDagViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
+  const onNodeClickRef = useRef(onNodeClick)
+  onNodeClickRef.current = onNodeClick
   const [tooltip, setTooltip] = useState<{
     x: number
     y: number
@@ -265,12 +268,18 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       ele.style('color', textColorForBg(t))
     })
 
-    // Hover: highlight connected edges
+    // Hover: show tooltip and highlight connected edges
     cy.on('mouseover', 'node', (evt) => {
       const node = evt.target
       node.addClass('highlighted')
       node.connectedEdges().addClass('highlighted')
       node.neighborhood('node').addClass('highlighted')
+
+      const goNode = nodeMap.get(node.id())
+      if (goNode) {
+        const renderedPos = node.renderedPosition()
+        setTooltip({ x: renderedPos.x, y: renderedPos.y, node: goNode })
+      }
     })
 
     cy.on('mouseout', 'node', (evt) => {
@@ -278,26 +287,18 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       node.removeClass('highlighted')
       node.connectedEdges().removeClass('highlighted')
       node.neighborhood('node').removeClass('highlighted')
+      setTooltip(null)
     })
 
-    // Click: show tooltip
+    // Click: notify parent for peptide pane selection
     cy.on('tap', 'node', (evt) => {
-      const node = evt.target
-      const goNode = nodeMap.get(node.id())
-      if (!goNode) return
-
-      const renderedPos = node.renderedPosition()
-      setTooltip({
-        x: renderedPos.x,
-        y: renderedPos.y,
-        node: goNode,
-      })
+      onNodeClickRef.current?.(evt.target.id())
     })
 
-    // Click background: dismiss tooltip
+    // Click background: clear selection
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
-        setTooltip(null)
+        onNodeClickRef.current?.(null)
       }
     })
 
