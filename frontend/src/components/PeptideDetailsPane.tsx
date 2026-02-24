@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, ChevronRight, ChevronDown } from 'lucide-react'
+import { Loader2, ChevronRight, ChevronDown, Download } from 'lucide-react'
 import { registerMappingFile } from '../utils/duckdb'
 import { getDuckDB } from '../utils/duckdb'
 import { isUniprotAccession } from '../utils/uniprot'
@@ -11,9 +11,16 @@ interface MappingRow {
   peptide_go_terms: string[]
   background_protein: string
   annotated_protein: string
+  evalue: number | null
+  pident: number | null
 }
 
-type BgProteinMap = Map<string, Set<string>>
+interface SubjectHit {
+  evalue: number | null
+  pident: number | null
+}
+
+type BgProteinMap = Map<string, Map<string, SubjectHit>>
 type PeptideMap = Map<string, BgProteinMap>
 
 interface PeptideDetailsPaneProps {
@@ -90,7 +97,7 @@ export default function PeptideDetailsPane({
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
         const sql = `
-          SELECT peptide, peptide_lca_tax_ids, peptide_go_terms, background_protein, annotated_protein
+          SELECT peptide, peptide_lca_tax_ids, peptide_go_terms, background_protein, annotated_protein, evalue, pident
           FROM mappings
           ${where}
         `
@@ -104,8 +111,8 @@ export default function PeptideDetailsPane({
           const r = row.toJSON() as MappingRow
           if (!map.has(r.peptide)) map.set(r.peptide, new Map())
           const bgMap = map.get(r.peptide)!
-          if (!bgMap.has(r.background_protein)) bgMap.set(r.background_protein, new Set())
-          bgMap.get(r.background_protein)!.add(r.annotated_protein)
+          if (!bgMap.has(r.background_protein)) bgMap.set(r.background_protein, new Map())
+          bgMap.get(r.background_protein)!.set(r.annotated_protein, { evalue: r.evalue ?? null, pident: r.pident ?? null })
         }
 
         setHierarchy(map)
@@ -142,12 +149,44 @@ export default function PeptideDetailsPane({
     })
   }
 
+  function downloadCsv() {
+    const escape = (s: string) => `"${s.replace(/"/g, '""')}"`
+    const lines: string[] = ['peptide,background_protein,annotated_protein,evalue,pident']
+    for (const [peptide, bgMap] of Array.from(hierarchy.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+      for (const [bgProtein, subjects] of Array.from(bgMap.entries())) {
+        for (const [subject, hit] of Array.from(subjects.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+          const evalue = hit.evalue !== null ? String(hit.evalue) : ''
+          const pident = hit.pident !== null ? String(hit.pident) : ''
+          lines.push(`${escape(peptide)},${escape(bgProtein)},${escape(subject)},${evalue},${pident}`)
+        }
+      }
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'peptide_details.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const hasSelection = (selectedTaxIds && selectedTaxIds.length > 0) || selectedGoId
 
   return (
     <div className="flex flex-col h-full border border-gray-200 rounded-lg bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-        <h3 className="text-sm font-semibold text-gray-700">Peptide Details</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Peptide Details</h3>
+          {hasSelection && !loading && hierarchy.size > 0 && (
+            <button
+              onClick={downloadCsv}
+              title="Download as CSV"
+              className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
         {hasSelection && (
           <p className="text-xs text-gray-500 mt-0.5">
             {selectedTaxIds && selectedTaxIds.length > 0 && (
@@ -222,15 +261,27 @@ export default function PeptideDetailsPane({
 
                             {isBgExpanded && (
                               <ul className="bg-white border-t border-gray-100">
-                                {Array.from(subjects).sort().map(subject => (
+                                {Array.from(subjects.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([subject, hit]) => (
                                   <li
                                     key={subject}
-                                    className="pl-14 pr-4 py-1 text-xs break-all"
+                                    className="pl-14 pr-4 py-1.5 text-xs break-all"
                                   >
-                                    {isUniprotAccession(subject)
-                                      ? <UniprotProteinLabel rawId={subject} />
-                                      : <span className="font-mono text-emerald-700">{subject}</span>
-                                    }
+                                    <div>
+                                      {isUniprotAccession(subject)
+                                        ? <UniprotProteinLabel rawId={subject} />
+                                        : <span className="font-mono text-emerald-700">{subject}</span>
+                                      }
+                                    </div>
+                                    {(hit.evalue !== null || hit.pident !== null) && (
+                                      <div className="mt-0.5 flex gap-3 text-gray-400">
+                                        {hit.evalue !== null && (
+                                          <span>E: <span className="font-mono text-gray-500">{hit.evalue.toExponential(1)}</span></span>
+                                        )}
+                                        {hit.pident !== null && (
+                                          <span>ID: <span className="font-mono text-gray-500">{hit.pident.toFixed(1)}%</span></span>
+                                        )}
+                                      </div>
+                                    )}
                                   </li>
                                 ))}
                               </ul>

@@ -26,7 +26,7 @@ from metagomics2.core.annotation import (
 from metagomics2.core.diamond import DiamondError, run_diamond
 from metagomics2.core.subject_lookup import load_subject_annotations
 from metagomics2.core.fasta import build_protein_dict, compute_file_sha256, parse_fasta, write_subset_fasta
-from metagomics2.core.filtering import FilterPolicy, filter_all_hits, parse_blast_tabular
+from metagomics2.core.filtering import FilterPolicy, HomologyHit, filter_all_hits, filter_all_hits_with_hits, parse_blast_tabular
 from metagomics2.core.go import GODAG, load_go_from_dict, load_go_from_json
 from metagomics2.core.matching import MatchResult, match_peptides_to_proteins
 from metagomics2.core.peptides import Peptide, parse_peptide_list
@@ -145,6 +145,7 @@ class PipelineRunner:
 
         # Shared across peptide lists
         self.protein_to_subjects: dict[str, set[str]] = {}
+        self.protein_to_subject_hits: dict[str, dict[str, HomologyHit]] = {}
 
         # Per-list parsed peptides and match results
         self.parsed_peptide_lists: dict[str, list[Peptide]] = {}
@@ -479,6 +480,9 @@ class PipelineRunner:
         self.protein_to_subjects = filter_all_hits(
             diamond_result.hits_by_query, self.config.filter_policy
         )
+        self.protein_to_subject_hits = filter_all_hits_with_hits(
+            diamond_result.hits_by_query, self.config.filter_policy
+        )
 
         n_with_hits = sum(1 for s in self.protein_to_subjects.values() if s)
         logger.info(
@@ -602,6 +606,7 @@ class PipelineRunner:
                 self.per_list_match_results[list_id].peptide_to_proteins,
                 self.protein_to_subjects,
                 list_output_dir / "peptide_mapping.parquet",
+                self.protein_to_subject_hits,
             )
 
         # Write manifest

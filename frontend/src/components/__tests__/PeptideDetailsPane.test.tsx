@@ -68,6 +68,8 @@ describe('PeptideDetailsPane', () => {
           peptide_go_terms: ['GO:0000001'],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
+          evalue: 1e-20,
+          pident: 95.5,
         },
       ])
     )
@@ -102,6 +104,8 @@ describe('PeptideDetailsPane', () => {
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
+          evalue: 1e-10,
+          pident: 90.0,
         },
       ])
     )
@@ -128,6 +132,8 @@ describe('PeptideDetailsPane', () => {
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
+          evalue: 1e-10,
+          pident: 90.0,
         },
       ])
     )
@@ -157,6 +163,8 @@ describe('PeptideDetailsPane', () => {
           peptide_go_terms: [],
           background_protein: 'prot_A',
           annotated_protein: 'subj_X',
+          evalue: 1e-10,
+          pident: 90.0,
         },
       ])
     )

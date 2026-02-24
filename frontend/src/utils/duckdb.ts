@@ -36,6 +36,7 @@ export async function getDuckDB(): Promise<DuckDBInstance> {
 export async function registerMappingFile(jobId: string, listId: string): Promise<void> {
   const { db, conn } = await getDuckDB()
   const url = `${window.location.origin}/api/jobs/${jobId}/results/${listId}/peptide_mapping.parquet`
+  await db.dropFile('mappings.parquet')
   await db.registerFileURL('mappings.parquet', url, duckdb.DuckDBDataProtocol.HTTP, false)
   await conn.query(`
     CREATE OR REPLACE VIEW mappings AS

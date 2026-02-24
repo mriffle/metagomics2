@@ -191,7 +191,7 @@ For each peptide list, the following files are generated:
 | `go_terms.csv` | GO terms with quantities and ratios |
 | `go_taxonomy_combo.csv` | Cross-tabulation of GO terms against taxonomy nodes, used to filter the taxonomy or GO DAG visualizations by the other dimension |
 | `coverage.csv` | Coverage statistics |
-| `peptide_mapping.parquet` | Per-peptide annotation detail: one row per (peptide, background protein, annotated protein) triple. Contains `peptide_lca_tax_ids` (the LCA taxonomy node and all its ancestors to root, as a list of NCBI tax IDs) and `peptide_go_terms` (union of GO annotation closures across all implied subjects). Used by the web UI to display peptide-level details when clicking a node in the taxonomy or GO DAG visualizations |
+| `peptide_mapping.parquet` | Per-peptide annotation detail: one row per (peptide, background protein, annotated protein) triple. Contains `peptide_lca_tax_ids` (the LCA taxonomy node and all its ancestors to root, as a list of NCBI tax IDs), `peptide_go_terms` (union of GO annotation closures across all implied subjects), `evalue` and `pident` (e-value and percent identity of the homology search hit between the background protein and the annotated protein). Used by the web UI to display peptide-level details when clicking a node in the taxonomy or GO DAG visualizations |
 | `run_manifest.json` | Provenance information |
 
 ## Configuration

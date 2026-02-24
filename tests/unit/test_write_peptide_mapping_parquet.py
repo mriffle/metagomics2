@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from metagomics2.core.annotation import PeptideAnnotation
+from metagomics2.core.filtering import HomologyHit
 from metagomics2.core.reporting import write_peptide_mapping_parquet
 
 
@@ -62,6 +63,39 @@ class TestWritePeptideMappingParquet:
         assert row["peptide_go_terms"] == ["GO:0000001"]
         assert row["background_protein"] == "prot_A"
         assert row["annotated_protein"] == "subj_X"
+        assert row["evalue"] is None
+        assert row["pident"] is None
+
+    def test_evalue_pident_populated_from_hits(self, tmp_path: Path) -> None:
+        """evalue and pident are written when protein_to_subject_hits is provided."""
+        annotations = [
+            make_annotation(
+                "PEPTIDE",
+                is_annotated=True,
+                lca_tax_id=9606,
+                taxonomy_nodes={9606, 1},
+                background_proteins={"prot_A"},
+            ),
+        ]
+        peptide_to_proteins = {"PEPTIDE": {"prot_A"}}
+        protein_to_subjects = {"prot_A": {"subj_X"}}
+        hit = HomologyHit(
+            query_id="prot_A", subject_id="subj_X",
+            evalue=1e-20, bitscore=300.0, pident=95.5, qcov=100.0, alnlen=200,
+        )
+        protein_to_subject_hits = {"prot_A": {"subj_X": hit}}
+
+        output = tmp_path / "peptide_mapping.parquet"
+        write_peptide_mapping_parquet(
+            annotations, peptide_to_proteins, protein_to_subjects, output,
+            protein_to_subject_hits,
+        )
+
+        df = pl.read_parquet(output)
+        assert len(df) == 1
+        row = df.row(0, named=True)
+        assert row["evalue"] == pytest.approx(1e-20)
+        assert row["pident"] == pytest.approx(95.5)
 
     def test_annotated_peptide_two_background_proteins(self, tmp_path: Path) -> None:
         """Annotated peptide with two background proteins → two rows."""
@@ -125,6 +159,8 @@ class TestWritePeptideMappingParquet:
             "peptide_go_terms",
             "background_protein",
             "annotated_protein",
+            "evalue",
+            "pident",
         ]
 
     def test_schema_column_dtypes(self, tmp_path: Path) -> None:
@@ -138,6 +174,8 @@ class TestWritePeptideMappingParquet:
         assert df.dtypes[2] == pl.List(pl.Utf8)
         assert df.dtypes[3] == pl.Utf8
         assert df.dtypes[4] == pl.Utf8
+        assert df.dtypes[5] == pl.Float64
+        assert df.dtypes[6] == pl.Float64
 
     def test_empty_lca_tax_ids(self, tmp_path: Path) -> None:
         """Peptide with no taxonomy nodes writes an empty list for peptide_lca_tax_ids."""
@@ -220,4 +258,6 @@ class TestWritePeptideMappingParquet:
             "peptide_go_terms",
             "background_protein",
             "annotated_protein",
+            "evalue",
+            "pident",
         ]

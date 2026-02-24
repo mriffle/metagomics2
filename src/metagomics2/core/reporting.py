@@ -318,6 +318,7 @@ def write_peptide_mapping_parquet(
     peptide_to_proteins: dict[str, set[str]],
     protein_to_subjects: dict[str, set[str]],
     output_path: Path,
+    protein_to_subject_hits: "dict[str, dict[str, Any]] | None" = None,
 ) -> None:
     """Write peptide_mapping.parquet.
 
@@ -330,18 +331,24 @@ def write_peptide_mapping_parquet(
         peptide_go_terms: List[Utf8]
         background_protein: Utf8
         annotated_protein: Utf8
+        evalue: Float64 (nullable)
+        pident: Float64 (nullable)
 
     Args:
         annotations: List of PeptideAnnotation objects
         peptide_to_proteins: Mapping from peptide sequence to background protein IDs
         protein_to_subjects: Mapping from background protein ID to annotated subject IDs
         output_path: Path to write the Parquet file
+        protein_to_subject_hits: Optional mapping from background protein ID to
+            {subject_id: HomologyHit} for evalue/pident lookup
     """
     rows_peptide: list[str] = []
     rows_lca_tax_ids: list[list[int]] = []
     rows_go_terms: list[list[str]] = []
     rows_bg_protein: list[str] = []
     rows_ann_protein: list[str] = []
+    rows_evalue: list[float | None] = []
+    rows_pident: list[float | None] = []
 
     for ann in annotations:
         if not ann.is_annotated:
@@ -353,12 +360,16 @@ def write_peptide_mapping_parquet(
         bg_proteins = peptide_to_proteins.get(ann.peptide, set())
         for bg_protein in sorted(bg_proteins):
             subjects = protein_to_subjects.get(bg_protein, set())
+            subject_hits = (protein_to_subject_hits or {}).get(bg_protein, {})
             for subject in sorted(subjects):
+                hit = subject_hits.get(subject)
                 rows_peptide.append(ann.peptide)
                 rows_lca_tax_ids.append(lca_tax_ids)
                 rows_go_terms.append(go_terms_sorted)
                 rows_bg_protein.append(bg_protein)
                 rows_ann_protein.append(subject)
+                rows_evalue.append(hit.evalue if hit is not None else None)
+                rows_pident.append(hit.pident if hit is not None else None)
 
     schema = {
         "peptide": pl.Utf8,
@@ -366,6 +377,8 @@ def write_peptide_mapping_parquet(
         "peptide_go_terms": pl.List(pl.Utf8),
         "background_protein": pl.Utf8,
         "annotated_protein": pl.Utf8,
+        "evalue": pl.Float64,
+        "pident": pl.Float64,
     }
 
     if rows_peptide:
@@ -376,6 +389,8 @@ def write_peptide_mapping_parquet(
                 "peptide_go_terms": rows_go_terms,
                 "background_protein": rows_bg_protein,
                 "annotated_protein": rows_ann_protein,
+                "evalue": rows_evalue,
+                "pident": rows_pident,
             },
             schema=schema,
         )

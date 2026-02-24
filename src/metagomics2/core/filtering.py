@@ -140,6 +140,37 @@ def filter_all_hits(
     return result
 
 
+def filter_all_hits_with_hits(
+    hits_by_query: dict[str, list[HomologyHit]],
+    policy: FilterPolicy,
+) -> dict[str, dict[str, HomologyHit]]:
+    """Filter hits for all query proteins, returning accepted HomologyHit objects.
+
+    Like filter_all_hits but preserves the full HomologyHit (including evalue,
+    pident, bitscore) for each accepted (query, subject) pair.
+
+    Args:
+        hits_by_query: Dictionary mapping query_id to list of hits
+        policy: The filter policy
+
+    Returns:
+        Dictionary mapping query_id to a dict of {subject_id: HomologyHit}
+        for all accepted hits.
+    """
+    result: dict[str, dict[str, HomologyHit]] = {}
+
+    for query_id, hits in hits_by_query.items():
+        filter_result = filter_hits_for_query(hits, policy)
+        if filter_result.accepted_subjects:
+            subject_to_hit: dict[str, HomologyHit] = {}
+            for h in hits:
+                if h.subject_id in filter_result.accepted_subjects:
+                    subject_to_hit[h.subject_id] = h
+            result[query_id] = subject_to_hit
+
+    return result
+
+
 def parse_blast_tabular(
     lines: list[str],
     columns: list[str] | None = None,
