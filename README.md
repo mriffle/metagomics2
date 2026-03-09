@@ -16,20 +16,16 @@ Metagomics 2 maps peptides to background proteins, performs homology searches ag
 
 ## Installation
 
-### Using Docker (Recommended)
+### Use the Published Docker Image
 
 ```bash
-# Build the image
-docker build -t metagomics2 .
+docker pull ghcr.io/mriffle/taxafasta:latest
 
-# Create your local Docker Compose file
-cp docker-compose.example.yml docker-compose.yml
-
-# Run with docker compose
-docker compose up -d
+# Or pull a specific release
+docker pull ghcr.io/mriffle/taxafasta:0.1.0
 ```
 
-### Local Development
+### Local Python Installation
 
 ```bash
 # Create virtual environment
@@ -39,42 +35,105 @@ source venv/bin/activate  # Linux/Mac
 
 # Install with dev dependencies
 pip install -e ".[dev]"
+```
 
-# Run tests
-pytest
+### Build the Docker Image Locally
+
+```bash
+docker build -t metagomics2 .
+```
+
+### Run the Web Interface with Docker Compose
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d
 ```
 
 ## Usage
 
-### CLI Mode
+### Show CLI Help
 
 ```bash
-# Uses bundled reference data (GO and NCBI taxonomy)
-metagomics2 run \
-  --fasta background.fasta \
-  --peptides peptides.tsv \
-  --outdir results/ \
-  --db uniprot_sprot.dmnd \
-  --annotations-db uniprot_sprot.annotations.db \
-  --max-evalue 1e-5 \
-  --min-pident 80
+# Local Python installation
+metagomics2 --help
 
-# Or specify custom reference data
+# Published Docker image
+docker run --rm ghcr.io/mriffle/taxafasta:latest --help
+
+# Specific Docker image version
+docker run --rm ghcr.io/mriffle/taxafasta:0.1.0 --help
+```
+
+### Run the CLI with a Local Python Installation
+
+When running outside Docker, provide paths to your reference data unless you have arranged bundled reference files at `/app/reference`.
+
+```bash
 metagomics2 run \
   --fasta background.fasta \
   --peptides peptides.tsv \
   --outdir results/ \
+  --db /path/to/uniprot_sprot.dmnd \
+  --annotations-db /path/to/uniprot_sprot.annotations.db \
   --go /path/to/go.obo \
   --taxonomy /path/to/taxonomy/ \
-  --db uniprot_sprot.dmnd \
-  --annotations-db uniprot_sprot.annotations.db \
   --max-evalue 1e-5 \
   --min-pident 80
 ```
 
+### Run the CLI with the Docker Image
+
+The Docker image bundles GO and NCBI taxonomy reference data at `/app/reference`, so you can omit `--go` and `--taxonomy` unless you want to override them.
+
+```bash
+docker run --rm \
+  -v "$PWD:/work" \
+  ghcr.io/mriffle/taxafasta:latest run \
+  --fasta /work/background.fasta \
+  --peptides /work/peptides.tsv \
+  --outdir /work/results \
+  --db /work/databases/uniprot_sprot.dmnd \
+  --annotations-db /work/databases/uniprot_sprot.annotations.db \
+  --max-evalue 1e-5 \
+  --min-pident 80
+```
+
+To run a specific released version instead of `latest`, replace the image tag:
+
+```bash
+docker run --rm \
+  -v "$PWD:/work" \
+  ghcr.io/mriffle/taxafasta:0.1.0 run \
+  --fasta /work/background.fasta \
+  --peptides /work/peptides.tsv \
+  --outdir /work/results \
+  --db /work/databases/uniprot_sprot.dmnd \
+  --annotations-db /work/databases/uniprot_sprot.annotations.db
+```
+
+To override the bundled reference data, mount the files and pass `--go` and `--taxonomy` explicitly:
+
+```bash
+docker run --rm \
+  -v "$PWD:/work" \
+  ghcr.io/mriffle/taxafasta:latest run \
+  --fasta /work/background.fasta \
+  --peptides /work/peptides.tsv \
+  --outdir /work/results \
+  --db /work/databases/uniprot_sprot.dmnd \
+  --annotations-db /work/databases/uniprot_sprot.annotations.db \
+  --go /work/reference/go.obo \
+  --taxonomy /work/reference/taxonomy/ \
+  --max-evalue 1e-5 \
+  --min-pident 80
+```
+
+Use `--peptides` multiple times to process more than one peptide list in a single run.
+
 Both `--db` and `--annotations-db` are required. See [Annotated Databases](#annotated-databases) for how to build these files.
 
-### Web Mode
+### Run the Web Interface Locally
 
 ```bash
 # Start the server
