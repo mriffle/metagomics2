@@ -3,6 +3,21 @@ set -e
 
 echo "Starting Metagomics 2 v${METAGOMICS_VERSION:-unknown}"
 
+ if [ "$#" -gt 0 ]; then
+     case "$1" in
+         metagomics2)
+             shift
+             exec metagomics2 "$@"
+             ;;
+         run|version|-*)
+             exec metagomics2 "$@"
+             ;;
+         *)
+             exec "$@"
+             ;;
+     esac
+ fi
+
 # Start the background worker
 echo "Starting worker..."
 python -m metagomics2.worker.worker &

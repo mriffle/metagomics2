@@ -11,7 +11,7 @@ RUN npm run build
 FROM python:3.11-slim
 
 # Version argument - can be overridden at build time
-ARG VERSION=2.0.0
+ARG VERSION=0.1.0
 
 LABEL maintainer="Metagomics Team"
 LABEL description="Metagomics 2 - Metaproteomics annotation and aggregation tool"
