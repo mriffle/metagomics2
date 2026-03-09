@@ -22,8 +22,11 @@ Metagomics 2 maps peptides to background proteins, performs homology searches ag
 # Build the image
 docker build -t metagomics2 .
 
-# Run with docker-compose
-docker-compose up -d
+# Create your local Docker Compose file
+cp docker-compose.example.yml docker-compose.yml
+
+# Run with docker compose
+docker compose up -d
 ```
 
 ### Local Development
@@ -196,6 +199,16 @@ For each peptide list, the following files are generated:
 
 ## Configuration
 
+### Docker Compose
+
+The repository tracks `docker-compose.example.yml` as the default template.
+Copy it to `docker-compose.yml` before running Docker locally so you can keep machine-specific changes out of git:
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d
+```
+
 ### Filter Parameters
 
 These parameters control how DIAMOND homology hits are filtered before
@@ -245,7 +258,7 @@ metagomics2/
 │   └── fixtures/       # Test data
 ├── frontend/           # React frontend
 ├── Dockerfile
-└── docker-compose.yml
+└── docker-compose.example.yml
 ```
 
 ## Testing

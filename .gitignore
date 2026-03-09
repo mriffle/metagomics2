@@ -97,3 +97,6 @@ _data/
 
 # Default local databases directory
 _databases/
+
+# Local Docker Compose override
+docker-compose.yml
