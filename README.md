@@ -19,10 +19,10 @@ Metagomics 2 maps peptides to background proteins, performs homology searches ag
 ### Use the Published Docker Image
 
 ```bash
-docker pull ghcr.io/mriffle/taxafasta:latest
+docker pull ghcr.io/mriffle/metagomics2:latest
 
 # Or pull a specific release
-docker pull ghcr.io/mriffle/taxafasta:0.1.0
+docker pull ghcr.io/mriffle/metagomics2:0.1.0
 ```
 
 ### Local Python Installation
@@ -59,10 +59,10 @@ docker compose up -d
 metagomics2 --help
 
 # Published Docker image
-docker run --rm ghcr.io/mriffle/taxafasta:latest --help
+docker run --rm ghcr.io/mriffle/metagomics2:latest --help
 
 # Specific Docker image version
-docker run --rm ghcr.io/mriffle/taxafasta:0.1.0 --help
+docker run --rm ghcr.io/mriffle/metagomics2:0.1.0 --help
 ```
 
 ### Run the CLI with a Local Python Installation
@@ -89,7 +89,7 @@ The Docker image bundles GO and NCBI taxonomy reference data at `/app/reference`
 ```bash
 docker run --rm \
   -v "$PWD:/work" \
-  ghcr.io/mriffle/taxafasta:latest run \
+  ghcr.io/mriffle/metagomics2:latest run \
   --fasta /work/background.fasta \
   --peptides /work/peptides.tsv \
   --outdir /work/results \
@@ -104,7 +104,7 @@ To run a specific released version instead of `latest`, replace the image tag:
 ```bash
 docker run --rm \
   -v "$PWD:/work" \
-  ghcr.io/mriffle/taxafasta:0.1.0 run \
+  ghcr.io/mriffle/metagomics2:0.1.0 run \
   --fasta /work/background.fasta \
   --peptides /work/peptides.tsv \
   --outdir /work/results \
@@ -117,7 +117,7 @@ To override the bundled reference data, mount the files and pass `--go` and `--t
 ```bash
 docker run --rm \
   -v "$PWD:/work" \
-  ghcr.io/mriffle/taxafasta:latest run \
+  ghcr.io/mriffle/metagomics2:latest run \
   --fasta /work/background.fasta \
   --peptides /work/peptides.tsv \
   --outdir /work/results \
