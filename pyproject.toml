@@ -47,7 +47,7 @@ dev = [
 
 [project.scripts]
 metagomics2 = "metagomics2.cli:main"
-metagomics2-build-annotations = "scripts.build_annotations_db:main"
+metagomics2-build-annotations = "metagomics2.scripts.build_annotations_db:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metagomics2"]

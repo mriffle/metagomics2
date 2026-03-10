@@ -240,6 +240,18 @@ python scripts/build_annotations_db.py \
     --output /path/to/databases/uniprot_sprot.annotations.db
 ```
 
+Or using the published Docker image:
+
+```bash
+docker run --rm \
+  -v "$PWD:/work" \
+  ghcr.io/mriffle/metagomics2:latest \
+  metagomics2-build-annotations \
+    --fasta /work/uniprot_sprot.fasta.gz \
+    --gaf /work/goa_uniprot_all.gaf.gz \
+    --output /work/databases/uniprot_sprot.annotations.db
+```
+
 Both `.gz` and plain text inputs are supported. The build script automatically filters the GAF file to only include accessions present in the FASTA, and excludes negative annotations (Qualifier contains "NOT") and ND evidence codes.
 
 ### Step 4: Configure the Databases

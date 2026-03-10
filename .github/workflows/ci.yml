@@ -42,3 +42,5 @@ jobs:
         run: docker build -t metagomics2-ci:${{ github.sha }} --build-arg VERSION=ci-${{ github.sha }} .
       - name: Run CLI help smoke test
         run: docker run --rm metagomics2-ci:${{ github.sha }} --help
+      - name: Run build-annotations help smoke test
+        run: docker run --rm metagomics2-ci:${{ github.sha }} metagomics2-build-annotations --help

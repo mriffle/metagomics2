@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from scripts.build_annotations_db import build_annotations_db
+from metagomics2.scripts.build_annotations_db import build_annotations_db
 
 
 _FASTA_CONTENT = """\
