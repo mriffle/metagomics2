@@ -181,14 +181,13 @@ Metagomics 2 bundles Gene Ontology (GO) and NCBI Taxonomy reference data in the 
 
 ### Bundled Versions
 - **Gene Ontology**: 2024-01-17 (OBO format)
-- **NCBI Taxonomy**: 2024-01-15 (taxonomy dump)
+- **NCBI Taxonomy**: Derived from the upstream `Last-Modified` header for `taxdump.tar.gz`, with a fallback to the UTC fetch date during `docker build`
 
 ### Custom Versions
-Build with specific versions:
+Build with a specific GO version:
 ```bash
 docker build \
   --build-arg GO_VERSION=2024-03-01 \
-  --build-arg NCBI_TAXONOMY_DATE=2024-02-28 \
   -t metagomics2:custom .
 ```
 

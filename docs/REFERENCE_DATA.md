@@ -18,7 +18,7 @@ The Docker image includes:
 - **Location**: `/app/reference/taxonomy/`
 - **Files**: `nodes.dmp`, `names.dmp`, and other taxonomy dump files
 - **Format**: NCBI taxonomy dump
-- **Version**: Specified via `NCBI_TAXONOMY_DATE` build arg (default: 2024-01-15)
+- **Version**: Derived from the upstream `Last-Modified` header for `taxdump.tar.gz`, with a fallback to the UTC fetch date during `docker build`
 - **Source**: https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
 
 ## Version Tracking
@@ -26,6 +26,8 @@ The Docker image includes:
 Each reference directory contains a `VERSION` file with:
 - Version/date identifier
 - Source URL
+- `last_modified` metadata from the upstream response when available
+- `fetched` metadata for the UTC date the file was downloaded during the image build
 
 Example `/app/reference/go/VERSION`:
 ```
@@ -55,12 +57,11 @@ When a job runs in web mode, the pipeline creates a snapshot of reference data:
 
 ## Building with Custom Versions
 
-To build the Docker image with specific reference data versions:
+To build the Docker image with a specific GO reference version:
 
 ```bash
 docker build \
   --build-arg GO_VERSION=2024-03-01 \
-  --build-arg NCBI_TAXONOMY_DATE=2024-02-28 \
   -t metagomics2:custom .
 ```
 
@@ -153,14 +154,14 @@ The `run_manifest.json` includes:
 To reproduce a job's results:
 
 1. Use the same Docker image tag (contains same reference versions)
-2. Or rebuild with the same `GO_VERSION` and `NCBI_TAXONOMY_DATE` build args
+2. Or rebuild with the same `GO_VERSION` and verify the manifest's reference file hashes and taxonomy metadata
 3. The manifest's reference file hashes can verify exact versions used
 
 ## Updating Reference Data
 
 To update bundled reference data:
 
-1. Update `GO_VERSION` and/or `NCBI_TAXONOMY_DATE` in Dockerfile
+1. Update `GO_VERSION` in `Dockerfile` if needed and rebuild to fetch the latest taxonomy dump metadata
 2. Rebuild the Docker image
 3. Tag with version: `metagomics2:v0.1.0-go2024.03-ncbi2024.02`
 4. Document reference versions in release notes

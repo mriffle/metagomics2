@@ -553,7 +553,7 @@ Opens the SQLite database in immutable mode (`?immutable=1`). Batch queries (res
 
 ### Bundled in Docker Image
 - **Gene Ontology OBO**: `/app/reference/go/go.obo` (version specified by `GO_VERSION` build arg)
-- **NCBI Taxonomy dump**: `/app/reference/taxonomy/` (`nodes.dmp`, `names.dmp`, etc., specified by `NCBI_TAXONOMY_DATE` build arg)
+- **NCBI Taxonomy dump**: `/app/reference/taxonomy/` (`nodes.dmp`, `names.dmp`, etc., with version metadata derived from the upstream `Last-Modified` header and a UTC fetch-date fallback during Docker build)
 
 ### Format Support
 - **GO**: OBO format (parsed by `core/obo_parser.py`) or JSON

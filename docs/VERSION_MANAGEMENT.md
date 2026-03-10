@@ -37,7 +37,6 @@ docker build --build-arg VERSION=1.0.0 -t metagomics2:v1.0.0 .
 docker build \
   --build-arg VERSION=1.0.0 \
   --build-arg GO_VERSION=2024-03-01 \
-  --build-arg NCBI_TAXONOMY_DATE=2024-02-28 \
   -t metagomics2:v1.0.0 .
 ```
 
@@ -50,7 +49,6 @@ services:
       args:
         VERSION: 1.0.0
         GO_VERSION: 2024-03-01
-        NCBI_TAXONOMY_DATE: 2024-02-28
 ```
 
 ## Version Display
@@ -101,9 +99,9 @@ The version is automatically included in all output manifests:
 ```
 
 This ensures that:
-- ✅ Every analysis can be traced to the exact software version
-- ✅ Results are reproducible with the same version
-- ✅ Version changes can be tracked in analysis history
+- Every analysis can be traced to the exact software version
+- Results are reproducible with the same version
+- Version changes can be tracked in analysis history
 
 ## Version Consistency
 
@@ -142,15 +140,14 @@ Follow [Semantic Versioning](https://semver.org/):
 Recommended tagging scheme:
 - `metagomics2:latest` - Latest stable release
 - `metagomics2:v1.0.0` - Specific version
-- `metagomics2:v1.0.0-go2024.03-ncbi2024.02` - Version with reference data versions
+- `metagomics2:v1.0.0-go2024.03` - Version with reference data versions
 
 Example:
 ```bash
 docker build \
   --build-arg VERSION=1.0.0 \
   --build-arg GO_VERSION=2024-03-01 \
-  --build-arg NCBI_TAXONOMY_DATE=2024-02-28 \
-  -t metagomics2:v1.0.0-go2024.03-ncbi2024.02 \
+  -t metagomics2:v1.0.0-go2024.03 \
   -t metagomics2:v1.0.0 \
   -t metagomics2:latest \
   .

@@ -44,7 +44,6 @@ COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # Download and install reference data
 ARG GO_VERSION=2026-01-23
-ARG NCBI_TAXONOMY_DATE=2026-03-10
 
 # Download Gene Ontology OBO file
 RUN mkdir -p /app/reference/go && \
@@ -53,13 +52,11 @@ RUN mkdir -p /app/reference/go && \
     echo "${GO_VERSION}" > /app/reference/go/VERSION && \
     echo "source=http://purl.obolibrary.org/obo/go/releases/${GO_VERSION}/go.obo" >> /app/reference/go/VERSION
 
+COPY docker/scripts/fetch_ncbi_taxonomy.sh /usr/local/bin/fetch_ncbi_taxonomy.sh
+RUN chmod +x /usr/local/bin/fetch_ncbi_taxonomy.sh
+
 # Download NCBI Taxonomy dump
-RUN mkdir -p /app/reference/taxonomy && \
-    wget -q https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz && \
-    tar -xzf taxdump.tar.gz -C /app/reference/taxonomy && \
-    rm taxdump.tar.gz && \
-    echo "${NCBI_TAXONOMY_DATE}" > /app/reference/taxonomy/VERSION && \
-    echo "source=https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz" >> /app/reference/taxonomy/VERSION
+RUN /usr/local/bin/fetch_ncbi_taxonomy.sh /app/reference/taxonomy
 
 # Create data directory for persistent storage
 RUN mkdir -p /data/jobs /data/databases /data/reference
