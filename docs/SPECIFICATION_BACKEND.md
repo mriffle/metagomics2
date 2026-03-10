@@ -63,7 +63,7 @@ These directives **must** be followed for all backend development:
 │   - db/database.py    (SQLite job tracking)                     │
 │   - models/job.py     (Pydantic models)                         │
 │   - notifications/    (email on job completion)                 │
-│   - scripts/          (build_annotations_db.py)                 │
+│   - scripts/          (build_annotations_db.py — thin wrapper)  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -101,13 +101,15 @@ src/metagomics2/
 │   └── email.py                 # SMTP email notifications
 ├── pipeline/
 │   └── runner.py                # Pipeline orchestration (PipelineRunner, PipelineConfig)
+├── scripts/
+│   └── build_annotations_db.py  # Build companion .annotations.db (installed package module)
 ├── server/
 │   └── app.py                   # FastAPI application (REST API + SPA serving)
 └── worker/
     └── worker.py                # Background worker (poll-based job processing)
 
 scripts/
-└── build_annotations_db.py      # Build companion .annotations.db from UniProt FASTA + GOA GAF
+└── build_annotations_db.py      # Thin wrapper — delegates to metagomics2.scripts.build_annotations_db
 
 tests/
 ├── conftest.py                  # Shared fixtures (fixtures_dir, small_taxonomy, small_go, etc.)
@@ -506,9 +508,21 @@ Metagomics 2 uses a **two-file system** for each annotated database:
 1. **`.dmnd`**: DIAMOND-formatted protein database (built with `diamond makedb`)
 2. **`.annotations.db`**: Companion SQLite database mapping accessions to taxonomy IDs and GO terms
 
-### Building the Annotations Database (`scripts/build_annotations_db.py`)
+### Building the Annotations Database (`metagomics2.scripts.build_annotations_db`)
 
-Entry point: `metagomics2-build-annotations` (defined in `pyproject.toml`).
+Entry point: `metagomics2-build-annotations` (defined in `pyproject.toml`). The build logic lives in the installed package at `src/metagomics2/scripts/build_annotations_db.py`. A thin wrapper at `scripts/build_annotations_db.py` delegates to this module for convenience when running directly with `python scripts/build_annotations_db.py`.
+
+The entry point is available in the Docker image, so annotations databases can be built without a local Python installation:
+
+```bash
+docker run --rm \
+  -v "$PWD:/work" \
+  ghcr.io/mriffle/metagomics2:latest \
+  metagomics2-build-annotations \
+    --fasta /work/uniprot_sprot.fasta.gz \
+    --gaf /work/goa_uniprot_all.gaf.gz \
+    --output /work/databases/uniprot_sprot.annotations.db
+```
 
 **Inputs**:
 - UniProt FASTA file (plain or `.gz`): Accession and taxonomy ID extracted from headers (`OX=` field)
@@ -563,7 +577,9 @@ The `--go` and `--taxonomy` flags allow using custom reference data files instea
 
 ### Entrypoint (`docker-entrypoint.sh`)
 
-- If arguments are provided: runs CLI mode (passes through to `metagomics2` command)
+- If arguments are provided:
+  - `metagomics2`, `run`, `version`, or flags (`-*`): passes through to the `metagomics2` CLI
+  - Any other command (e.g., `metagomics2-build-annotations`): executed directly via `exec "$@"`
 - If no arguments: starts the **worker** as a background process, then starts the **web server** (uvicorn) in the foreground. Traps SIGTERM/SIGINT to cleanly shut down both processes.
 
 ### Docker Compose (`docker-compose.example.yml`)
@@ -649,7 +665,7 @@ Build system: **Hatchling**. Python ≥ 3.10 required.
 Runs on every push:
 1. **Python tests**: Creates venv, installs `.[dev]`, runs `pytest tests/`
 2. **Frontend tests**: Builds `frontend-builder` Docker target, runs `tsc --noEmit` and `vitest run`
-3. **Docker smoke test**: Builds full image, runs `--help` command
+3. **Docker smoke test**: Builds full image, runs `--help` command and `metagomics2-build-annotations --help`
 
 ### Test Configuration (`pyproject.toml`)
 
@@ -697,7 +713,7 @@ Key test files and what they verify:
 | `test_input_sanitization.py` | Multiple | Input validation, path traversal prevention |
 | `test_email_notification.py` | `notifications/email.py` | Email message building, SMTP mocking |
 | `test_email_validation.py` | `models/job.py` | Email field validation |
-| `test_build_annotations_db.py` | `scripts/build_annotations_db.py` | Annotations DB build process |
+| `test_build_annotations_db.py` | `metagomics2/scripts/build_annotations_db.py` | Annotations DB build process |
 | `test_accession_parsing.py` | `core/diamond.py` | UniProt accession extraction from DIAMOND IDs |
 | `test_write_peptide_mapping_parquet.py` | `core/reporting.py` | Parquet output schema and content |
 
@@ -887,7 +903,7 @@ After successful completion (with cleanup enabled), `inputs/` and `work/` are de
 Runs on every push:
 1. Python tests: venv → install → `pytest tests/`
 2. Frontend tests: Docker `frontend-builder` target → `tsc --noEmit` → `vitest run`
-3. Docker smoke test: full image build → `--help` command
+3. Docker smoke test: full image build → `--help` command, `metagomics2-build-annotations --help`
 
 ### Docker Image Release (`.github/workflows/release-docker-image.yml`)
 Triggered on GitHub release publish:
