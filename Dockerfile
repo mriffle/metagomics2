@@ -44,7 +44,7 @@ COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 # Download and install reference data
 ARG GO_VERSION=2026-01-23
-ARG NCBI_TAXONOMY_DATE=2026-02-97
+ARG NCBI_TAXONOMY_DATE=2026-03-10
 
 # Download Gene Ontology OBO file
 RUN mkdir -p /app/reference/go && \
