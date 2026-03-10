@@ -133,14 +133,44 @@ Use `--peptides` multiple times to process more than one peptide list in a singl
 
 Both `--db` and `--annotations-db` are required. See [Annotated Databases](#annotated-databases) for how to build these files.
 
-### Run the Web Interface Locally
+### Run the Web Interface with Docker Compose
+
+The simplest way to run the web interface locally is with Docker Compose. Make sure you have configured your `.env` and `config/databases.json` first (see [Configuration](#configuration)).
+
+```bash
+# Copy the example files if you haven't already
+cp docker-compose.example.yml docker-compose.yml
+cp .env.example .env
+cp config/databases.example.json config/databases.json
+
+# Edit .env and config/databases.json for your setup, then start
+docker compose up -d
+```
+
+The web interface will be available at http://localhost:8000. Docker Compose automatically starts both the web server and the background worker. To view logs:
+
+```bash
+docker compose logs -f
+```
+
+To stop the service:
+
+```bash
+docker compose down
+```
+
+### Run the Web Interface without Docker
+
+If you have a local Python installation and want to run without Docker, start the server and worker separately. You must set `METAGOMICS_CONFIG_DIR` (or place a `config/databases.json` in the working directory) and `METAGOMICS_DATA_DIR` so the config loader can find your settings.
 
 ```bash
 # Start the server
-uvicorn metagomics2.server.app:app --host 0.0.0.0 --port 8000
+METAGOMICS_CONFIG_DIR=./config METAGOMICS_DATA_DIR=./_data \
+  uvicorn metagomics2.server.app:app --host 0.0.0.0 --port 8000
 
 # In another terminal, start the worker
-python -m metagomics2.worker.worker
+METAGOMICS_CONFIG_DIR=./config METAGOMICS_DATA_DIR=./_data \
+  python -m metagomics2.worker.worker
 ```
 
 Then open http://localhost:8000 in your browser.
@@ -212,14 +242,25 @@ python scripts/build_annotations_db.py \
 
 Both `.gz` and plain text inputs are supported. The build script automatically filters the GAF file to only include accessions present in the FASTA, and excludes negative annotations (Qualifier contains "NOT") and ND evidence codes.
 
-### Step 4: Configure the Environment
+### Step 4: Configure the Databases
 
-In your `.env` file, set `METAGOMICS_DATABASES_DIR` to the directory containing the database files, and `METAGOMICS_DATABASES` to a JSON array describing each database:
+Create a `databases.json` file inside your config directory (default `./config`). The repository includes an example at `config/databases.example.json`:
 
 ```bash
-METAGOMICS_DATABASES_DIR=/path/to/databases
+cp config/databases.example.json config/databases.json
+```
 
-METAGOMICS_DATABASES=[{"name": "UniProt SwissProt", "description": "Reviewed UniProt entries", "path": "uniprot_sprot.dmnd", "annotations": "uniprot_sprot.annotations.db"}]
+Edit `config/databases.json` to list your databases:
+
+```json
+[
+  {
+    "name": "UniProt SwissProt 2024_01",
+    "description": "Reviewed UniProt entries (SwissProt)",
+    "path": "uniprot_sprot.dmnd",
+    "annotations": "uniprot_sprot.annotations.db"
+  }
+]
 ```
 
 Each entry in the JSON array has the following fields:
@@ -230,6 +271,12 @@ Each entry in the JSON array has the following fields:
 | `description` | Yes | Short description shown as tooltip |
 | `path` | Yes | Filename of the `.dmnd` file (relative to `METAGOMICS_DATABASES_DIR`) |
 | `annotations` | Yes | Filename of the `.annotations.db` file (relative to `METAGOMICS_DATABASES_DIR`) |
+
+Also set `METAGOMICS_DATABASES_DIR` in your `.env` to point to the directory containing the database files:
+
+```bash
+METAGOMICS_DATABASES_DIR=/path/to/databases
+```
 
 The service will refuse to start if no databases are configured.
 
@@ -258,15 +305,92 @@ For each peptide list, the following files are generated:
 
 ## Configuration
 
+Metagomics 2 uses a hybrid configuration system:
+
+- **Environment variables / `.env`** — simple scalar values such as paths, thread counts, passwords, and feature flags.
+- **JSON config files** — structured data such as database definitions and server settings.
+
+All configuration is loaded and validated once at startup by a central config module (`src/metagomics2/config.py`). The rest of the application works with a clean, validated settings object.
+
+### Quick Start
+
+```bash
+# 1. Copy example files
+cp .env.example .env
+cp config/databases.example.json config/databases.json
+cp config/server.example.json config/server.json   # optional
+
+# 2. Edit .env and config/databases.json for your setup
+
+# 3. Start with Docker Compose
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d
+```
+
+### Environment Variables (`.env`)
+
+The `.env` file holds simple scalar settings. Key variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `METAGOMICS_DATA_DIR` | `/data` | Persistent data directory (jobs, SQLite DB) |
+| `METAGOMICS_DATABASES_DIR` | `/databases` | Directory containing `.dmnd` and `.annotations.db` files |
+| `METAGOMICS_CONFIG_DIR` | `./config` | Directory containing JSON config files |
+| `METAGOMICS_THREADS` | `4` | CPU threads for DIAMOND |
+| `METAGOMICS_ADMIN_PASSWORD` | *(empty)* | Password for the admin dashboard |
+| `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Max upload size in MB |
+| `METAGOMICS_CLEANUP_ON_SUCCESS` | `true` | Delete intermediate files after successful jobs |
+| `METAGOMICS_CLEANUP_ON_FAILURE` | `true` | Delete intermediate files after failed jobs |
+| `SMTP_HOST` | *(empty)* | SMTP server for email notifications (leave empty to disable) |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USERNAME` | *(empty)* | SMTP username |
+| `SMTP_PASSWORD` | *(empty)* | SMTP password |
+| `SMTP_FROM` | *(empty)* | Sender address for notifications |
+| `SITE_URL` | *(empty)* | Public URL for job links in emails |
+
+See `.env.example` for a fully commented template.
+
+### JSON Config Files
+
+Structured settings live in JSON files inside `METAGOMICS_CONFIG_DIR` (default `./config`).
+
+#### `databases.json` (required)
+
+A JSON array listing the annotated databases available for homology search. See [Annotated Databases](#annotated-databases) for how to build these files and [Step 4](#step-4-configure-the-databases) for the format.
+
+Example: `config/databases.example.json`
+
+#### `server.json` (optional)
+
+Server-specific structured settings such as allowed CORS origins.
+
+Example: `config/server.example.json`
+
+```json
+{
+  "allowed_origins": ["https://metagomics.example.com"]
+}
+```
+
+If omitted, CORS allows all origins (`["*"]`).
+
 ### Docker Compose
 
 The repository tracks `docker-compose.example.yml` as the default template.
-Copy it to `docker-compose.yml` before running Docker locally so you can keep machine-specific changes out of git:
+Copy it to `docker-compose.yml` before running Docker locally:
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml
 docker compose up -d
 ```
+
+The compose file mounts three host directories into the container:
+
+| Host path | Container path | Description |
+|-----------|---------------|-------------|
+| `METAGOMICS_DATA_DIR` | `/data` | Persistent data |
+| `METAGOMICS_DATABASES_DIR` | `/databases` | DIAMOND databases (read-only) |
+| `METAGOMICS_CONFIG_DIR` | `/config` | JSON config files (read-only) |
 
 ### Filter Parameters
 
@@ -293,29 +417,34 @@ tie-aware `top_k` ranking selects which hits to keep.
 
 ```
 metagomics2/
+├── config/                       # Example config files
+│   ├── databases.example.json    #   Database definitions
+│   └── server.example.json       #   Server settings
 ├── src/metagomics2/
-│   ├── core/           # Core algorithms
-│   │   ├── peptides.py     # Peptide parsing
-│   │   ├── fasta.py        # FASTA parsing
-│   │   ├── matching.py     # Aho-Corasick matching
-│   │   ├── filtering.py    # Hit filtering
-│   │   ├── taxonomy.py     # Taxonomy + LCA
-│   │   ├── go.py           # GO DAG + closure
-│   │   ├── annotation.py   # Peptide annotation
-│   │   ├── aggregation.py  # Quantity aggregation
-│   │   └── reporting.py    # CSV/manifest output
-│   ├── pipeline/       # Pipeline orchestration
-│   ├── server/         # FastAPI server
-│   ├── worker/         # Background worker
-│   ├── db/             # SQLite operations
-│   ├── models/         # Pydantic models
-│   └── cli.py          # CLI entry point
+│   ├── config.py          # Centralized config loader
+│   ├── core/              # Core algorithms
+│   │   ├── peptides.py        # Peptide parsing
+│   │   ├── fasta.py           # FASTA parsing
+│   │   ├── matching.py        # Aho-Corasick matching
+│   │   ├── filtering.py       # Hit filtering
+│   │   ├── taxonomy.py        # Taxonomy + LCA
+│   │   ├── go.py              # GO DAG + closure
+│   │   ├── annotation.py      # Peptide annotation
+│   │   ├── aggregation.py     # Quantity aggregation
+│   │   └── reporting.py       # CSV/manifest output
+│   ├── pipeline/          # Pipeline orchestration
+│   ├── server/            # FastAPI server
+│   ├── worker/            # Background worker
+│   ├── db/                # SQLite operations
+│   ├── models/            # Pydantic models
+│   └── cli.py             # CLI entry point
 ├── tests/
-│   ├── unit/           # Unit tests
-│   ├── property/       # Property-based tests
-│   ├── integration/    # Integration tests
-│   └── fixtures/       # Test data
-├── frontend/           # React frontend
+│   ├── unit/              # Unit tests
+│   ├── property/          # Property-based tests
+│   ├── integration/       # Integration tests
+│   └── fixtures/          # Test data
+├── frontend/              # React frontend
+├── .env.example           # Environment variable template
 ├── Dockerfile
 └── docker-compose.example.yml
 ```

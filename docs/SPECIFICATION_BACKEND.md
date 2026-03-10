@@ -74,6 +74,7 @@ These directives **must** be followed for all backend development:
 ```
 src/metagomics2/
 ├── __init__.py                  # Version (__version__ from env or default)
+├── config.py                    # Centralized config loader (env vars + JSON files → Settings)
 ├── cli.py                       # CLI entry point (argparse)
 ├── core/                        # Core algorithms (pure logic, no I/O side effects beyond file read/write)
 │   ├── aggregation.py           # Quantity roll-up into taxonomy/GO nodes
@@ -405,15 +406,18 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 
 The server provides a REST API and serves the built frontend SPA.
 
-**Configuration** (environment variables):
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `METAGOMICS_DATA_DIR` | `/data` | Persistent data directory |
-| `METAGOMICS_ADMIN_PASSWORD` | *(empty)* | Admin panel password |
-| `METAGOMICS_DATABASES` | `[]` | JSON array of annotated database configs |
-| `METAGOMICS_DATABASES_DIR` | `/databases` | Directory containing .dmnd and .annotations.db files |
-| `METAGOMICS_THREADS` | `4` | DIAMOND thread count |
-| `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Max upload size |
+**Configuration**: The server loads all settings through the centralized config module (`config.py`). At import time it calls `get_settings()`, which reads environment variables for scalar values and JSON config files for structured data (database definitions, allowed origins). See Section 16 for the full environment variable reference.
+
+Key settings consumed by the server:
+| Setting | Source | Description |
+|---------|--------|-------------|
+| `data_dir` | `METAGOMICS_DATA_DIR` env var | Persistent data directory |
+| `admin_password` | `METAGOMICS_ADMIN_PASSWORD` env var | Admin panel password |
+| `databases` | `databases.json` config file | List of annotated database entries |
+| `databases_dir` | `METAGOMICS_DATABASES_DIR` env var | Directory containing .dmnd and .annotations.db files |
+| `threads` | `METAGOMICS_THREADS` env var | DIAMOND thread count |
+| `max_upload_mb` | `METAGOMICS_MAX_UPLOAD_MB` env var | Max upload size |
+| `allowed_origins` | `server.json` config file | CORS allowed origins (default: `["*"]`) |
 
 **API Endpoints**:
 | Method | Path | Auth | Description |
@@ -459,14 +463,14 @@ The worker runs as a separate process (started by `docker-entrypoint.sh`). It us
 7. Clean up intermediate files (`inputs/`, `work/` directories) based on config
 8. Sleep `POLL_INTERVAL` (default 5s) and repeat
 
-**Worker configuration** (environment variables):
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `METAGOMICS_POLL_INTERVAL` | `5` | Seconds between queue polls |
-| `METAGOMICS_CLEANUP_ON_SUCCESS` | `true` | Delete inputs/work after success |
-| `METAGOMICS_CLEANUP_ON_FAILURE` | `true` | Delete inputs/work after failure |
-| `SMTP_HOST`, `SMTP_PORT`, etc. | *(empty)* | Email notification config |
-| `SITE_URL` | *(empty)* | Base URL for job links in emails |
+**Worker configuration**: The worker also loads settings via `get_settings()` from the centralized config module. Key settings consumed:
+| Setting | Source | Description |
+|---------|--------|-------------|
+| `poll_interval` | `METAGOMICS_POLL_INTERVAL` env var | Seconds between queue polls |
+| `cleanup_on_success` | `METAGOMICS_CLEANUP_ON_SUCCESS` env var | Delete inputs/work after success |
+| `cleanup_on_failure` | `METAGOMICS_CLEANUP_ON_FAILURE` env var | Delete inputs/work after failure |
+| `smtp.*` | `SMTP_HOST`, `SMTP_PORT`, etc. env vars | Email notification config |
+| `site_url` | `SITE_URL` env var | Base URL for job links in emails |
 
 ### 9.3 Job Database (`db/database.py`)
 
@@ -566,8 +570,9 @@ The `--go` and `--taxonomy` flags allow using custom reference data files instea
 
 Single service with:
 - Port mapping: `8000:8000`
-- Volumes: data directory and databases directory (read-only)
-- Environment variables for all configuration
+- Volumes: data directory, databases directory (read-only), and config directory (read-only)
+- Environment variables for scalar configuration (paths, threads, passwords)
+- Structured configuration (database definitions, server settings) loaded from JSON files mounted at `/config`
 
 ---
 
@@ -784,16 +789,46 @@ This enables full reproducibility: given the same inputs, same software version,
 
 ---
 
-## 16. Environment Variables Reference
+## 16. Configuration System
+
+Metagomics 2 uses a hybrid configuration model:
+
+- **Environment variables / `.env`** — simple scalar values (paths, thread counts, passwords, feature flags)
+- **JSON config files** — structured data (database definitions, server settings)
+
+All configuration is loaded and validated once at startup by the centralized config module (`config.py`). The module exposes a `get_settings()` function that returns an immutable `Settings` dataclass. Both the server and worker call this at module-import time.
+
+### Config Module (`config.py`)
+
+Key components:
+- `Settings` — Frozen dataclass holding all validated runtime settings
+- `DatabaseEntry` — Frozen dataclass for a single annotated database (`name`, `description`, `path`, `annotations`)
+- `SmtpSettings` — Frozen dataclass for SMTP configuration
+- `load_settings()` — Reads env vars and JSON files, validates, returns `Settings`
+- `get_settings()` / `set_settings()` / `reset_settings()` — Singleton management
+
+### JSON Config Files
+
+Stored in `METAGOMICS_CONFIG_DIR` (default `./config`, `/config` in Docker):
+
+- **`databases.json`** (required) — JSON array of database entries. Each entry must have `name`, `description`, and `path`; `annotations` is optional. The server refuses to start if no databases are configured.
+- **`server.json`** (optional) — JSON object with server settings such as `allowed_origins` (list of strings for CORS).
+
+Example files are provided at `config/databases.example.json` and `config/server.example.json`.
+
+### Legacy Fallback
+
+If no `databases.json` file exists, the config loader falls back to the `METAGOMICS_DATABASES` environment variable (a JSON string). This preserves backward compatibility but is deprecated in favor of the JSON config file.
+
+### Environment Variables Reference
 
 | Variable | Default | Used By | Description |
 |----------|---------|---------|-------------|
 | `METAGOMICS_DATA_DIR` | `/data` | Server, Worker | Base directory for persistent storage |
 | `METAGOMICS_DATABASES_DIR` | `/databases` | Server, Worker | Directory containing .dmnd and .annotations.db files |
-| `METAGOMICS_DATABASES` | `[]` | Server, Worker | JSON array of database configs. **Required** (server refuses to start without it). Each entry: `{"name": "...", "description": "...", "path": "file.dmnd", "annotations": "file.annotations.db"}` |
+| `METAGOMICS_CONFIG_DIR` | `./config` | Server, Worker | Directory containing JSON config files (`databases.json`, `server.json`) |
 | `METAGOMICS_ADMIN_PASSWORD` | *(empty)* | Server | Admin panel password |
 | `METAGOMICS_THREADS` | `4` | Server, Worker | DIAMOND thread count |
-| `METAGOMICS_WORKERS` | `1` | Docker Compose | Number of workers (informational) |
 | `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Server | Maximum upload file size in MB |
 | `METAGOMICS_POLL_INTERVAL` | `5` | Worker | Seconds between job queue polls |
 | `METAGOMICS_CLEANUP_ON_SUCCESS` | `true` | Worker | Delete inputs/work after successful job |

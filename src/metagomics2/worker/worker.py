@@ -1,13 +1,12 @@
 """Background worker for processing jobs."""
 
-import json
 import logging
-import os
 import shutil
 import signal
 import time
 from pathlib import Path
 
+from metagomics2.config import get_settings
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.db.database import Database
 from metagomics2.models.job import JobStatus, PeptideListStatus
@@ -16,36 +15,29 @@ from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pi
 
 logger = logging.getLogger(__name__)
 
-# Configuration from environment
-DATA_DIR = Path(os.environ.get("METAGOMICS_DATA_DIR", "/data"))
-JOBS_DIR = DATA_DIR / "jobs"
-DB_PATH = DATA_DIR / "metagomics2.db"
+# Load validated settings from centralized config
+_cfg = get_settings()
 
-# Worker settings
-POLL_INTERVAL = int(os.environ.get("METAGOMICS_POLL_INTERVAL", "5"))
-THREADS = int(os.environ.get("METAGOMICS_THREADS", "4"))
-DATABASES_DIR = Path(os.environ.get("METAGOMICS_DATABASES_DIR", "/databases"))
+JOBS_DIR = _cfg.jobs_dir
+DB_PATH = _cfg.db_path
+POLL_INTERVAL = _cfg.poll_interval
+THREADS = _cfg.threads
+DATABASES_DIR = _cfg.databases_dir
+DATABASES: list[dict] = _cfg.databases_as_dicts
 
-# Parse annotated databases configuration from JSON env var
-_databases_raw = os.environ.get("METAGOMICS_DATABASES", "[]")
-try:
-    DATABASES: list[dict] = json.loads(_databases_raw)
-except (json.JSONDecodeError, TypeError):
-    DATABASES = []
-
-# Email notification settings
+# Email notification settings (from centralized config)
 SMTP_CONFIG = SmtpConfig(
-    host=os.environ.get("SMTP_HOST", ""),
-    port=int(os.environ.get("SMTP_PORT", "587")),
-    username=os.environ.get("SMTP_USERNAME", ""),
-    password=os.environ.get("SMTP_PASSWORD", ""),
-    from_address=os.environ.get("SMTP_FROM", ""),
+    host=_cfg.smtp.host,
+    port=_cfg.smtp.port,
+    username=_cfg.smtp.username,
+    password=_cfg.smtp.password,
+    from_address=_cfg.smtp.from_address,
 )
-SITE_URL = os.environ.get("SITE_URL", "")
+SITE_URL = _cfg.site_url
 
 # Cleanup settings
-CLEANUP_ON_SUCCESS = os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true").lower() == "true"
-CLEANUP_ON_FAILURE = os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true").lower() == "true"
+CLEANUP_ON_SUCCESS = _cfg.cleanup_on_success
+CLEANUP_ON_FAILURE = _cfg.cleanup_on_failure
 
 
 class Worker:

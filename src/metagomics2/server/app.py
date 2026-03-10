@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from metagomics2 import __version__
+from metagomics2.config import get_settings
 from metagomics2.db.database import Database
 from metagomics2.models.job import (
     JobCreate,
@@ -26,35 +27,25 @@ from metagomics2.models.job import (
     JobStatus,
 )
 
-# Configuration from environment
-DATA_DIR = Path(os.environ.get("METAGOMICS_DATA_DIR", "/data"))
-JOBS_DIR = DATA_DIR / "jobs"
-DB_PATH = DATA_DIR / "metagomics2.db"
-ADMIN_PASSWORD = os.environ.get("METAGOMICS_ADMIN_PASSWORD", "")
-DIAMOND_VERSION = os.environ.get("DIAMOND_VERSION", "")
-THREADS = int(os.environ.get("METAGOMICS_THREADS", "4"))
-DATABASES_DIR = Path(os.environ.get("METAGOMICS_DATABASES_DIR", "/databases"))
-MAX_UPLOAD_MB = int(os.environ.get("METAGOMICS_MAX_UPLOAD_MB", "1024"))
-MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+# Load validated settings from centralized config
+_cfg = get_settings()
+
+DATA_DIR = _cfg.data_dir
+JOBS_DIR = _cfg.jobs_dir
+DB_PATH = _cfg.db_path
+ADMIN_PASSWORD = _cfg.admin_password
+DIAMOND_VERSION = _cfg.diamond_version
+THREADS = _cfg.threads
+DATABASES_DIR = _cfg.databases_dir
+MAX_UPLOAD_MB = _cfg.max_upload_mb
+MAX_UPLOAD_BYTES = _cfg.max_upload_bytes
+DATABASES: list[dict] = _cfg.databases_as_dicts
 
 # Chunk size for streaming file writes (1 MB)
 _WRITE_CHUNK_SIZE = 1024 * 1024
 
-# Parse annotated databases configuration from JSON env var
-_databases_raw = os.environ.get("METAGOMICS_DATABASES", "[]")
-try:
-    DATABASES: list[dict] = json.loads(_databases_raw)
-except (json.JSONDecodeError, TypeError):
-    DATABASES = []
-
-if not DATABASES:
-    raise RuntimeError(
-        "No annotated databases configured. Set METAGOMICS_DATABASES in your "
-        "environment to a JSON array with at least one database entry. "
-        'Example: METAGOMICS_DATABASES=\'[{"name": "UniProt SwissProt", '
-        '"description": "Reviewed entries", "path": "uniprot_sprot.dmnd", '
-        '"annotations": "uniprot_sprot.annotations.db"}]\''
-    )
+# Allowed CORS origins from config
+_ALLOWED_ORIGINS = _cfg.allowed_origins
 
 # Admin session tokens (in-memory, cleared on restart)
 _admin_tokens: set[str] = set()
@@ -72,7 +63,7 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

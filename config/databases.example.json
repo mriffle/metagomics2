@@ -1,0 +1,8 @@
+[
+  {
+    "name": "UniProt SwissProt 2024_01",
+    "description": "Reviewed UniProt entries (SwissProt)",
+    "path": "uniprot_sprot.dmnd",
+    "annotations": "uniprot_sprot.annotations.db"
+  }
+]

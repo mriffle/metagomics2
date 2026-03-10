@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+import metagomics2.config as config_module
 from metagomics2.db.database import Database
 from metagomics2.models.job import JobParams, JobStatus, PeptideListStatus
 
@@ -17,6 +18,16 @@ from metagomics2.models.job import JobParams, JobStatus, PeptideListStatus
 def test_db(tmp_path: Path):
     """Create a test database."""
     return Database(tmp_path / "test.db")
+
+
+def _setup_config_dir(tmp_path: Path, databases=None):
+    """Write a databases.json config file and return the config dir."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    if databases is None:
+        databases = [{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]
+    (config_dir / "databases.json").write_text(json.dumps(databases))
+    return config_dir
 
 
 @pytest.fixture
@@ -28,12 +39,14 @@ def client(tmp_path: Path, test_db):
     and reload the module to get a fresh app with tmp_path-based paths.
     """
     (tmp_path / "jobs").mkdir(exist_ok=True)
+    config_dir = _setup_config_dir(tmp_path)
 
     with patch.dict(os.environ, {
         "METAGOMICS_DATA_DIR": str(tmp_path),
         "METAGOMICS_ADMIN_PASSWORD": "testpass",
-        "METAGOMICS_DATABASES": json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]),
+        "METAGOMICS_CONFIG_DIR": str(config_dir),
     }):
+        config_module.reset_settings()
         import metagomics2.server.app as app_module
         importlib.reload(app_module)
 
@@ -43,6 +56,8 @@ def client(tmp_path: Path, test_db):
 
         from fastapi.testclient import TestClient
         yield TestClient(app_module.app)
+
+    config_module.reset_settings()
 
 
 class TestHealthCheck:
@@ -240,13 +255,15 @@ class TestUploadSizeLimit:
     def test_fasta_exceeding_limit_rejected(self, tmp_path: Path, test_db):
         """A FASTA file exceeding MAX_UPLOAD_MB should be rejected with 413."""
         (tmp_path / "jobs").mkdir(exist_ok=True)
+        config_dir = _setup_config_dir(tmp_path)
 
         with patch.dict(os.environ, {
             "METAGOMICS_DATA_DIR": str(tmp_path),
             "METAGOMICS_ADMIN_PASSWORD": "testpass",
-            "METAGOMICS_DATABASES": json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]),
+            "METAGOMICS_CONFIG_DIR": str(config_dir),
             "METAGOMICS_MAX_UPLOAD_MB": "1",  # 1 MB limit
         }):
+            config_module.reset_settings()
             import metagomics2.server.app as app_module
             importlib.reload(app_module)
             app_module.db = test_db
@@ -274,13 +291,15 @@ class TestUploadSizeLimit:
     def test_fasta_within_limit_accepted(self, tmp_path: Path, test_db):
         """A FASTA file within MAX_UPLOAD_MB should be accepted."""
         (tmp_path / "jobs").mkdir(exist_ok=True)
+        config_dir = _setup_config_dir(tmp_path)
 
         with patch.dict(os.environ, {
             "METAGOMICS_DATA_DIR": str(tmp_path),
             "METAGOMICS_ADMIN_PASSWORD": "testpass",
-            "METAGOMICS_DATABASES": json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]),
+            "METAGOMICS_CONFIG_DIR": str(config_dir),
             "METAGOMICS_MAX_UPLOAD_MB": "1",  # 1 MB limit
         }):
+            config_module.reset_settings()
             import metagomics2.server.app as app_module
             importlib.reload(app_module)
             app_module.db = test_db

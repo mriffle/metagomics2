@@ -64,12 +64,17 @@ RUN mkdir -p /app/reference/taxonomy && \
 # Create data directory for persistent storage
 RUN mkdir -p /data/jobs /data/databases /data/reference
 
+# Copy default config files (users mount their own at /config)
+COPY config/databases.example.json /config/databases.json
+COPY config/server.example.json /config/server.json
+
 # Copy entrypoint script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Set environment variables
 ENV METAGOMICS_DATA_DIR=/data
+ENV METAGOMICS_CONFIG_DIR=/config
 ENV PYTHONUNBUFFERED=1
 ENV METAGOMICS_VERSION=${VERSION}
 ENV DIAMOND_VERSION=${DIAMOND_VERSION}

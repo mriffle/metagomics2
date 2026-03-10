@@ -100,3 +100,7 @@ _databases/
 
 # Local Docker Compose override
 docker-compose.yml
+
+# User config files (examples are tracked; actual configs are local)
+config/databases.json
+config/server.json
