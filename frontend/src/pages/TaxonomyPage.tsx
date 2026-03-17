@@ -190,9 +190,9 @@ export default function TaxonomyPage() {
     return (
       <div className="text-center py-12">
         <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Error</h2>
-        <p className="text-gray-600">{error}</p>
-        <Link to={`/job/${jobId}`} className="mt-4 inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Error</h2>
+        <p className="text-gray-600 dark:text-gray-400">{error}</p>
+        <Link to={`/job/${jobId}`} className="mt-4 inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300">
           <ArrowLeft className="w-4 h-4" /> Back to Job
         </Link>
       </div>
@@ -206,15 +206,15 @@ export default function TaxonomyPage() {
         <div className="flex items-center gap-4">
           <Link
             to={`/job/${jobId}`}
-            className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            className="inline-flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Job
           </Link>
-          <h1 className="text-xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
             Taxonomy Visualization
           </h1>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             {listFilename || listId} · {canonicalNodes.length} terms ({allNodes.length} total)
           </span>
         </div>
@@ -240,7 +240,7 @@ export default function TaxonomyPage() {
       {/* Main content: chart + details pane */}
       <div className="flex flex-1 min-h-0 gap-3">
         {/* Chart */}
-        <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <div className="flex-1 min-h-0 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
           <div ref={chartContainerRef} className="w-full h-full">
             <TaxonomyChart
               nodes={filteredNodes}

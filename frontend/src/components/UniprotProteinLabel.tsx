@@ -11,20 +11,20 @@ interface TooltipContentProps {
 function TooltipContent({ info, accession }: TooltipContentProps) {
   return (
     <div className="text-xs space-y-1">
-      <div className="flex items-center gap-1.5 font-semibold text-gray-900">
+      <div className="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-gray-100">
         {info.reviewed
           ? <ShieldCheck className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
           : <ShieldAlert className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
         <span>{info.reviewed ? 'Swiss-Prot (reviewed)' : 'TrEMBL (unreviewed)'}</span>
       </div>
-      <div className="text-gray-800 leading-snug">{info.fullName}</div>
+      <div className="text-gray-800 dark:text-gray-200 leading-snug">{info.fullName}</div>
       {info.gene && (
-        <div className="text-gray-500">Gene: <span className="font-mono text-gray-700">{info.gene}</span></div>
+        <div className="text-gray-500 dark:text-gray-400">Gene: <span className="font-mono text-gray-700 dark:text-gray-300">{info.gene}</span></div>
       )}
       {info.organism && (
-        <div className="text-gray-500 italic">{info.organism}</div>
+        <div className="text-gray-500 dark:text-gray-400 italic">{info.organism}</div>
       )}
-      <div className="pt-0.5 text-indigo-600 font-mono">{accession}</div>
+      <div className="pt-0.5 text-indigo-600 dark:text-indigo-400 font-mono">{accession}</div>
     </div>
   )
 }
@@ -79,7 +79,7 @@ export default function UniprotProteinLabel({ rawId }: UniprotProteinLabelProps)
         href={uniprotUrl(accession)}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-mono text-xs text-emerald-700 hover:text-emerald-900 hover:underline break-all"
+        className="font-mono text-xs text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300 hover:underline break-all"
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         onClick={e => e.stopPropagation()}
@@ -98,7 +98,7 @@ export default function UniprotProteinLabel({ rawId }: UniprotProteinLabelProps)
       {showTooltip && hasInfo && (
         <div
           ref={tooltipRef}
-          className="fixed z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3 pointer-events-none"
+          className="fixed z-50 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg dark:shadow-indigo-500/10 p-3 pointer-events-none"
           style={{ left: tooltipPos.left, top: tooltipPos.top }}
         >
           <TooltipContent info={info as UniprotInfo} accession={accession} />

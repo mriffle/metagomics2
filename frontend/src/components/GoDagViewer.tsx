@@ -3,6 +3,8 @@ import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import cytoscapeSvg from 'cytoscape-svg'
 import type { GoTermNode, MetricKey } from '../pages/GoDagPage'
+import { useTheme } from '../ThemeContext'
+import { GO_DAG } from '../utils/colors'
 
 // Register extensions
 cytoscape.use(dagre)
@@ -28,16 +30,28 @@ function blendRgb(a: number[], b: number[], t: number): number[] {
 }
 
 // Generate a 5-stop color ramp from near-white through baseColor to a darkened version
-function generateColorStops(baseHex: string): number[][] {
+function generateColorStops(baseHex: string, isDark = false): number[][] {
   const base = hexToRgb(baseHex)
-  const white = [255, 255, 255]
-  const dark = blendRgb(base, [0, 0, 0], 0.6)
+  const c = isDark ? GO_DAG.dark : GO_DAG.light
+  if (isDark) {
+    const dim = blendRgb(base, c.colorRampDim, c.colorRampDimBlend)
+    const bright = blendRgb(base, c.colorRampDark, 0.3)
+    return [
+      dim,
+      blendRgb(dim, base, 0.4),
+      base,
+      blendRgb(base, bright, 0.5),
+      bright,
+    ]
+  }
+  const white = c.colorRampDim
+  const dark = blendRgb(base, c.colorRampDark, 0.6)
   return [
-    blendRgb(white, base, 0.07),  // very light tint
-    blendRgb(white, base, 0.25),  // light
-    blendRgb(white, base, 0.55),  // mid
-    base,                          // full color
-    dark,                          // darkened
+    blendRgb(white, base, c.colorRampDimBlend),
+    blendRgb(white, base, 0.25),
+    blendRgb(white, base, 0.55),
+    base,
+    dark,
   ]
 }
 
@@ -60,8 +74,9 @@ function interpolateColor(t: number, stops: number[][]): string {
   return `rgb(${r},${g},${b})`
 }
 
-function textColorForBg(t: number): string {
-  return t > 0.5 ? '#ffffff' : '#1e1b4b'
+function textColorForBg(t: number, isDark = false): string {
+  const c = isDark ? GO_DAG.dark : GO_DAG.light
+  return t > c.textThreshold ? c.textDark : c.textLight
 }
 
 function getMetricValue(node: GoTermNode, metric: MetricKey): number {
@@ -105,6 +120,8 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
   const tooltipRef = useRef<HTMLDivElement>(null)
   const onNodeClickRef = useRef(onNodeClick)
   onNodeClickRef.current = onNodeClick
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [tooltip, setTooltip] = useState<{
     x: number
     y: number
@@ -185,7 +202,8 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
 
     const elements = buildElements()
     const normalized = normalizeValues(nodes, metric)
-    const stops = generateColorStops(baseColor)
+    const stops = generateColorStops(baseColor, isDark)
+    const colors = isDark ? GO_DAG.dark : GO_DAG.light
 
     // Build a lookup for quick access
     const nodeMap = new Map<string, GoTermNode>()
@@ -208,19 +226,20 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
             'font-size': '12px',
             'text-wrap': 'wrap',
             'text-max-width': '140px',
-            'border-width': 1,
-            'border-color': '#94a3b8',
-            'background-color': '#e2e8f0',
-            'color': '#1e1b4b',
+            'border-width': colors.nodeBorderWidth,
+            'border-color': colors.nodeBorderColor,
+            'background-color': colors.nodeBgColor,
+            'color': colors.nodeTextColor,
             'min-zoomed-font-size': 4,
+            ...(colors.nodeShadow ? { 'shadow-blur': colors.nodeShadow.blur, 'shadow-color': colors.nodeShadow.color, 'shadow-offset-x': 0, 'shadow-offset-y': 0, 'shadow-opacity': 1 } : {}),
           } as any,
         },
         {
           selector: 'edge',
           style: {
             'width': 1,
-            'line-color': '#cbd5e1',
-            'target-arrow-color': '#cbd5e1',
+            'line-color': colors.edgeColor,
+            'target-arrow-color': colors.edgeColor,
             'target-arrow-shape': 'triangle',
             'arrow-scale': 0.6,
             'curve-style': 'bezier',
@@ -235,16 +254,17 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
         {
           selector: 'node.highlighted',
           style: {
-            'border-width': 2,
-            'border-color': '#4338ca',
+            'border-width': colors.highlightBorderWidth,
+            'border-color': colors.highlightBorderColor,
+            ...(colors.highlightShadow ? { 'shadow-blur': colors.highlightShadow.blur, 'shadow-color': colors.highlightShadow.color, 'shadow-offset-x': 0, 'shadow-offset-y': 0, 'shadow-opacity': 1 } : {}),
           } as any,
         },
         {
           selector: 'edge.highlighted',
           style: {
             'width': 2,
-            'line-color': '#818cf8',
-            'target-arrow-color': '#818cf8',
+            'line-color': colors.highlightEdgeColor,
+            'target-arrow-color': colors.highlightEdgeColor,
           } as any,
         },
       ],
@@ -265,15 +285,37 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
     cy.nodes().forEach((ele) => {
       const t = normalized.get(ele.id()) ?? 0
       ele.style('background-color', interpolateColor(t, stops))
-      ele.style('color', textColorForBg(t))
+      ele.style('color', textColorForBg(t, isDark))
     })
 
-    // Hover: show tooltip and highlight connected edges
+    // Collect all ancestor nodes + edges from a starting node up to the root(s)
+    function collectAncestors(startNode: cytoscape.NodeSingular): { nodes: cytoscape.NodeCollection; edges: cytoscape.EdgeCollection } {
+      let ancestorNodes = cy.collection() as cytoscape.NodeCollection
+      let ancestorEdges = cy.collection() as cytoscape.EdgeCollection
+      const visited = new Set<string>()
+      const queue = [startNode]
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        if (visited.has(current.id())) continue
+        visited.add(current.id())
+        ancestorNodes = ancestorNodes.union(current) as cytoscape.NodeCollection
+        // Incoming edges come from parent nodes (source=parent, target=current)
+        const incoming = current.incomers('edge')
+        ancestorEdges = ancestorEdges.union(incoming) as cytoscape.EdgeCollection
+        incoming.forEach((edge: cytoscape.EdgeSingular) => {
+          const src = edge.source()
+          if (!visited.has(src.id())) queue.push(src)
+        })
+      }
+      return { nodes: ancestorNodes, edges: ancestorEdges }
+    }
+
+    // Hover: show tooltip and highlight entire ancestor path to root
     cy.on('mouseover', 'node', (evt) => {
       const node = evt.target
-      node.addClass('highlighted')
-      node.connectedEdges().addClass('highlighted')
-      node.neighborhood('node').addClass('highlighted')
+      const { nodes: ancestorNodes, edges: ancestorEdges } = collectAncestors(node)
+      ancestorNodes.addClass('highlighted')
+      ancestorEdges.addClass('highlighted')
 
       const goNode = nodeMap.get(node.id())
       if (goNode) {
@@ -282,11 +324,9 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       }
     })
 
-    cy.on('mouseout', 'node', (evt) => {
-      const node = evt.target
-      node.removeClass('highlighted')
-      node.connectedEdges().removeClass('highlighted')
-      node.neighborhood('node').removeClass('highlighted')
+    cy.on('mouseout', 'node', () => {
+      cy.nodes().removeClass('highlighted')
+      cy.edges().removeClass('highlighted')
       setTooltip(null)
     })
 
@@ -313,7 +353,7 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       cy.destroy()
       cyRef.current = null
     }
-  }, [nodes, buildElements, baseColor])
+  }, [nodes, buildElements, baseColor, isDark])
 
   // Update colors when metric or baseColor changes (without re-layout)
   useEffect(() => {
@@ -321,25 +361,26 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
     if (!cy || nodes.length === 0) return
 
     const normalized = normalizeValues(nodes, metric)
-    const stops = generateColorStops(baseColor)
+    const stops = generateColorStops(baseColor, isDark)
     cy.batch(() => {
       cy.nodes().forEach((ele) => {
         const t = normalized.get(ele.id()) ?? 0
         ele.style('background-color', interpolateColor(t, stops))
-        ele.style('color', textColorForBg(t))
+        ele.style('color', textColorForBg(t, isDark))
       })
     })
-  }, [metric, nodes, baseColor])
+  }, [metric, nodes, baseColor, isDark])
 
   // Export PNG handler — exposed via ref or callback
   useEffect(() => {
     // Attach export function to the container element for parent access
     const el = containerRef.current
+    const exportBg = (isDark ? GO_DAG.dark : GO_DAG.light).exportBg
     if (el) {
       (el as any).__exportPng = () => {
         const cy = cyRef.current
         if (!cy) return
-        const png = cy.png({ full: true, scale: 2, bg: '#ffffff' })
+        const png = cy.png({ full: true, scale: 2, bg: exportBg })
         const link = document.createElement('a')
         link.href = png
         link.download = 'go_dag.png'
@@ -348,7 +389,7 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       ;(el as any).__exportSvg = () => {
         const cy = cyRef.current
         if (!cy) return
-        const svgContent = (cy as any).svg({ full: true, scale: 1, bg: '#ffffff' })
+        const svgContent = (cy as any).svg({ full: true, scale: 1, bg: exportBg })
         const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' })
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
@@ -362,7 +403,7 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
 
   if (nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
         No GO terms in this namespace.
       </div>
     )
@@ -376,40 +417,40 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
       {tooltip && (
         <div
           ref={tooltipRef}
-          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm pointer-events-none"
+          className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg dark:shadow-indigo-500/10 p-3 text-sm pointer-events-none"
           style={{
             left: tooltipPos.left,
             top: tooltipPos.top,
             maxWidth: 320,
           }}
         >
-          <p className="font-mono text-xs text-gray-500 mb-1">{tooltip.node.id}</p>
-          <p className="font-semibold text-gray-900 mb-2">{tooltip.node.name}</p>
+          <p className="font-mono text-xs text-gray-500 dark:text-gray-400 mb-1">{tooltip.node.id}</p>
+          <p className="font-semibold text-gray-900 dark:text-gray-100 mb-2">{tooltip.node.name}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <span className="text-gray-600">Quantity:</span>
-            <span className="font-medium text-right">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
-            <span className="text-gray-600">Ratio (Total):</span>
-            <span className="font-medium text-right">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
+            <span className="text-gray-600 dark:text-gray-400">Quantity:</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
+            <span className="text-gray-600 dark:text-gray-400">Ratio (Total):</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
             {filterLabel && tooltip.node.fractionOfTaxon != null && (
               <>
-                <span className="text-gray-600">Fraction of Taxon:</span>
-                <span className="font-medium text-right">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Fraction of Taxon:</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
               </>
             )}
             {filterLabel && tooltip.node.fractionOfGo != null && (
               <>
-                <span className="text-gray-600">Fraction of GO:</span>
-                <span className="font-medium text-right">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Fraction of GO:</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
               </>
             )}
             {!filterLabel && (
               <>
-                <span className="text-gray-600">Ratio (Annotated):</span>
-                <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Ratio (Annotated):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
               </>
             )}
-            <span className="text-gray-600"># Peptides:</span>
-            <span className="font-medium text-right">{tooltip.node.nPeptides}</span>
+            <span className="text-gray-600 dark:text-gray-400"># Peptides:</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.nPeptides}</span>
           </div>
         </div>
       )}

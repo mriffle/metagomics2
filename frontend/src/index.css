@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Centralized color tokens as CSS custom properties.
+ * JavaScript constants live in utils/colors.ts; these mirror the same
+ * values for elements styled purely through CSS (e.g. body background).
+ *
+ * Taxonomy palettes and Cytoscape node colors are consumed directly
+ * from utils/colors.ts because they require programmatic blending.
+ */
+
+:root {
+  /* Surface / text */
+  --color-bg:          #f9fafb;   /* gray-50  */
+  --color-text:        #111827;   /* gray-900 */
+
+  /* GO DAG node glow */
+  --dag-glow-color:    transparent;
+  --dag-glow-blur:     0px;
+}
+
+.dark {
+  --color-bg:          #030712;   /* gray-950 */
+  --color-text:        #f3f4f6;   /* gray-100 */
+
+  --dag-glow-color:    rgba(99, 102, 241, 0.4);
+  --dag-glow-blur:     12px;
+}
+
 body {
-  @apply bg-gray-50 text-gray-900;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  @apply transition-colors duration-200;
+}
+
+/* Smooth transitions for dark mode */
+*, *::before, *::after {
+  transition-property: background-color, border-color;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }

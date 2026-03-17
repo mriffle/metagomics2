@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Clock, CheckCircle, XCircle, Loader2, AlertCircle } from 'lucide-react'
+import { STATUS_BADGE_CLASSES, STATUS_BADGE_DEFAULT } from '../utils/colors'
 
 interface Job {
   job_id: string
@@ -18,13 +19,6 @@ const statusIcons: Record<string, React.ReactNode> = {
   failed: <XCircle className="w-5 h-5 text-red-500" />,
 }
 
-const statusColors: Record<string, string> = {
-  uploaded: 'bg-gray-100 text-gray-800',
-  queued: 'bg-yellow-100 text-yellow-800',
-  running: 'bg-blue-100 text-blue-800',
-  completed: 'bg-green-100 text-green-800',
-  failed: 'bg-red-100 text-red-800',
-}
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -121,7 +115,7 @@ export default function HomePage() {
                     {new Date(job.created_at).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[job.status]}`}>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE_CLASSES[job.status] ?? STATUS_BADGE_DEFAULT}`}>
                       {statusIcons[job.status]}
                       {job.status}
                     </span>

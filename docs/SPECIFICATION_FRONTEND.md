@@ -26,7 +26,8 @@ These directives **must** be followed for all frontend development:
   docker build --target frontend-builder -t metagomics2-frontend-test .
   docker run --rm metagomics2-frontend-test npx vitest run
   ```
-- **TailwindCSS for styling**: Use Tailwind utility classes. No custom CSS files beyond `index.css` (which only imports Tailwind directives).
+- **TailwindCSS for styling**: Use Tailwind utility classes with `dark:` variants for dark mode. No custom CSS files beyond `index.css` (which imports Tailwind directives and defines CSS custom properties for theme tokens).
+- **Dark mode support is mandatory**: All new UI elements must include `dark:` Tailwind variants. Visualization colors consumed by Cytoscape/Plotly JavaScript APIs must be defined in `utils/colors.ts` (the centralized color constants module), not inline. See Section 11 for the full dark mode architecture.
 - **Lucide React for icons**: Use `lucide-react` for all icons. Do not add other icon libraries.
 - **Write tests for new utility functions**: All parsers and data transformation functions in `utils/` have corresponding test files. Maintain this pattern.
 
@@ -65,16 +66,19 @@ frontend/
 ├── vite.config.ts                     # Vite + Vitest config (proxy, test env)
 ├── tsconfig.json                      # TypeScript config (strict, ES2020, react-jsx)
 ├── tsconfig.node.json                 # TypeScript config for Vite config file
-├── tailwind.config.js                 # Tailwind content paths
+├── tailwind.config.js                 # Tailwind content paths + darkMode: 'class'
 ├── postcss.config.js                  # PostCSS plugins (tailwindcss, autoprefixer)
 └── src/
-    ├── main.tsx                       # React entry: BrowserRouter + App
+    ├── main.tsx                       # React entry: ThemeProvider + BrowserRouter + App
     ├── App.tsx                        # Route definitions + Layout wrapper
-    ├── index.css                      # Tailwind directives only
+    ├── ThemeContext.tsx                # Theme provider, context, and useTheme hook (light/dark)
+    ├── index.css                      # Tailwind directives + CSS custom properties for theme tokens
     ├── test-setup.ts                  # Vitest setup (imports jest-dom matchers)
     ├── plotly.d.ts                    # Type declarations for plotly.js-dist-min, react-plotly.js/factory
     ├── cytoscape-dagre.d.ts           # Type declaration for cytoscape-dagre
     ├── cytoscape-svg.d.ts             # Type declaration for cytoscape-svg
+    ├── __tests__/
+    │   └── ThemeContext.test.tsx       # Tests for ThemeContext/ThemeProvider
     ├── pages/
     │   ├── NewJobPage.tsx             # Job submission form
     │   ├── JobPage.tsx                # Job status, progress, results, downloads
@@ -83,7 +87,8 @@ frontend/
     │   ├── AdminPage.tsx              # Admin login + job list dashboard
     │   └── HomePage.tsx               # Recent jobs list (currently unused in routing)
     ├── components/
-    │   ├── Layout.tsx                 # App shell: header, nav, footer, version display
+    │   ├── Layout.tsx                 # App shell: header, nav, footer, theme toggle, version display
+    │   ├── ThemeToggle.tsx            # Light/dark mode toggle switch (Sun/Moon icons)
     │   ├── GoDagViewer.tsx            # Cytoscape-based GO DAG renderer
     │   ├── GoDagControls.tsx          # GO DAG controls (namespace, metric, filter, export)
     │   ├── TaxonomyChart.tsx          # Plotly-based taxonomy chart renderer
@@ -92,12 +97,14 @@ frontend/
     │   ├── Autocomplete.tsx           # Reusable autocomplete/search input
     │   ├── UniprotProteinLabel.tsx    # UniProt accession link with hover tooltip
     │   └── __tests__/
-    │       └── PeptideDetailsPane.test.tsx
+    │       ├── PeptideDetailsPane.test.tsx
+    │       └── ThemeToggle.test.tsx    # Tests for ThemeToggle component
     └── utils/
         ├── csvParser.ts               # RFC-compliant CSV line parser
         ├── taxonomyParser.ts          # Taxonomy CSV parsing, canonical rank filtering, placeholder insertion
         ├── goParser.ts                # GO terms CSV parsing
         ├── comboParser.ts             # GO-taxonomy combo CSV parsing and reshaping
+        ├── colors.ts                  # Centralized light/dark mode color constants for visualizations and badges
         ├── duckdb.ts                  # DuckDB-WASM singleton initialization and Parquet registration
         ├── uniprot.ts                 # UniProt accession extraction, URL building, REST API info fetching
         └── __tests__/
@@ -238,9 +245,21 @@ Lists recent jobs (polls `GET /api/jobs` every 5 seconds). Contains a custom inl
 
 App shell wrapping all pages. Fetches version from `GET /api/version` on mount.
 
-- **Header**: Logo (Lucide `Dna` icon) + "Metagomics 2" link to `/`, version badge, "Admin" nav link
+- **Header**: Logo (Lucide `Dna` icon) + "Metagomics 2" link to `/`, version badge, `ThemeToggle` switch, "Admin" nav link
 - **Main**: `max-w-7xl` centered content area
 - **Footer**: App name + version
+
+All Layout elements use `dark:` Tailwind variants for dark mode styling (e.g., `bg-white dark:bg-gray-900`).
+
+### 7.1a ThemeToggle (`components/ThemeToggle.tsx`)
+
+Pill-shaped toggle switch for switching between light and dark mode. Rendered in the Layout header between the version badge and the Admin link.
+
+- Uses Lucide `Sun` and `Moon` icons
+- Sliding knob animates left/right via CSS `translate-x` transition
+- Background icons indicate the inactive mode at reduced opacity
+- Accessible `aria-label` updates based on current state ("Switch to dark mode" / "Switch to light mode")
+- Calls `toggleTheme()` from `useTheme()` context hook on click
 
 ### 7.2 GoDagViewer (`components/GoDagViewer.tsx`)
 
@@ -248,8 +267,8 @@ Renders the GO DAG using Cytoscape.js with the `dagre` layout.
 
 **Key behaviors**:
 - **Layout**: Top-to-bottom DAG using `dagre` layout engine with `tight-tree` ranker
-- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. 5-stop color ramp from near-white through `baseColor` to darkened version.
-- **Hover**: Highlights node + connected edges + neighbors. Shows a fixed-position tooltip with node details (ID, name, quantity, ratios, fractions).
+- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. 5-stop color ramp whose endpoints are determined by the current theme (defined in `GO_DAG` constants from `utils/colors.ts`). In dark mode, nodes have a subtle indigo glow via Cytoscape `shadow-*` styles.
+- **Hover**: BFS traversal highlights the hovered node and **all ancestor nodes and edges up to the root** (not just immediate neighbors), using `cy.incomers('edge')` recursively. Shows a fixed-position tooltip with node details (ID, name, quantity, ratios, fractions). Tooltip styling adapts to dark mode.
 - **Tooltip positioning**: Uses `useLayoutEffect` to reposition within viewport bounds, flipping horizontally/vertically if overflowing.
 - **Click**: Notifies parent via `onNodeClick(nodeId)`. Background click clears selection.
 - **Export**: PNG via `cy.png()`, SVG via `cy.svg()`. Functions are attached to the container DOM element for parent access (`__exportPng`, `__exportSvg`).
@@ -277,7 +296,7 @@ Renders taxonomy data using Plotly.js via `react-plotly.js/factory`.
 - **Icicle**: Vertical partition chart with pathbar.
 - **Sankey**: Flow diagram with explicit x-position columns for each rank. Semi-transparent link colors. No click/hover handlers (Sankey has built-in Plotly hover).
 
-**Coloring strategy**: Each domain (top-level taxon below root) gets a distinct color from `DOMAIN_PALETTE` (10 colorblind-friendly colors). Nodes are progressively lightened based on depth relative to their domain ancestor. Root is white.
+**Coloring strategy**: Each domain (top-level taxon below root) gets a distinct color from the domain palette defined in `utils/colors.ts`. In light mode, `DOMAIN_PALETTE_LIGHT` provides medium-saturation colorblind-friendly colors that are progressively lightened at depth. In dark mode, `DOMAIN_PALETTE_DARK` provides vivid high-saturation neon colors with minimal depth-based washout, and `textfont.color` is set to dark (`#111827`) for contrast against bright backgrounds. Root is white in light mode, dark gray (`rgb(17,24,39)`) in dark mode. All chart-specific color values (root, fallback, line separators, text, pathbar text) are read from `TAX_CHART` and `SANKEY` constants in `utils/colors.ts`.
 
 **Hover tooltip**: Custom fixed-position tooltip (same pattern as GoDagViewer) showing tax ID, name, rank, quantity, ratios, fractions.
 
@@ -433,6 +452,25 @@ UniProt protein annotation utilities.
 
 **Accession regex**: Matches standard UniProt formats: `[OPQ][0-9][A-Z0-9]{3}[0-9]` or `[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}` with optional isoform suffix (`-\d+`).
 
+### 8.7 colors (`utils/colors.ts`)
+
+Centralized color definitions for light and dark mode. All visualization colors consumed by Cytoscape.js and Plotly.js APIs are defined here as TypeScript constants rather than in CSS, because these libraries require colors passed as JavaScript values to their programmatic APIs (they render to `<canvas>`/SVG, not DOM elements styled by CSS classes).
+
+**Exported constants**:
+
+| Constant | Purpose |
+|----------|---------|
+| `DOMAIN_PALETTE_LIGHT` | Light-mode taxonomy domain palette (10 colorblind-friendly colors as `number[][]`) |
+| `DOMAIN_PALETTE_DARK` | Dark-mode taxonomy domain palette (10 vivid neon colors as `number[][]`) |
+| `TAX_CHART` | Taxonomy chart colors keyed by `light`/`dark` (root color, fallback color, line separator color, inside-text color, pathbar text color) |
+| `GO_DAG` | GO DAG Cytoscape colors keyed by `light`/`dark` (node border width/color, background, text color, shadow/glow parameters, edge color, highlight border/edge/shadow, color ramp blend parameters, text threshold, export background) |
+| `SANKEY` | Sankey-specific node line colors keyed by `light`/`dark` |
+| `PLOTLY_LAYOUT` | Plotly layout font colors keyed by `light`/`dark` |
+| `STATUS_BADGE_CLASSES` | `Record<string, string>` mapping status names (`uploaded`, `queued`, `pending`, `running`, `completed`, `done`, `failed`) to Tailwind class strings with both light and `dark:` variants |
+| `STATUS_BADGE_DEFAULT` | Fallback badge class string for unknown status values |
+
+**Design rationale**: Cytoscape and Plotly render to `<canvas>` or their own SVG, bypassing DOM CSS styling entirely. Colors must be passed as JS values to their APIs. Additionally, taxonomy domain colors require runtime blending (computed per-node based on domain ancestry and depth), which cannot be expressed as static CSS classes. Status badge classes are Tailwind strings composed dynamically in JSX template literals, so they are also stored as JS constants. Keeping all of these in one module ensures a single source of truth for the dark mode color palette.
+
 ---
 
 ## 9. API Communication
@@ -473,12 +511,57 @@ Three `.d.ts` files provide TypeScript type definitions for libraries that lack 
 
 ## 11. Styling
 
-- **Framework**: TailwindCSS 3.4 with default configuration
-- **Global styles**: Only `@tailwind base/components/utilities` + `body { @apply bg-gray-50 text-gray-900 }`
-- **Color scheme**: Indigo primary (`indigo-600`), gray neutrals, semantic status colors (green=success, red=error, yellow=queued, blue=running)
-- **Layout**: `max-w-7xl` centered container, responsive padding
-- **Component patterns**: White cards with `border border-gray-200 rounded-lg`, consistent spacing
-- **No custom CSS classes**: Everything uses Tailwind utility classes inline
+### Framework
+
+TailwindCSS 3.4 with **class-based dark mode** (`darkMode: 'class'` in `tailwind.config.js`).
+
+### Dark Mode Architecture
+
+The application supports light and dark themes with a user-toggleable switch:
+
+1. **`ThemeContext.tsx`**: React context + provider that manages the current theme (`'light' | 'dark'`). Persists the user's preference to `localStorage` under the key `metagomics-theme`. On mount, reads the stored preference (defaults to `light`). The provider adds/removes the `dark` CSS class on `document.documentElement`, which activates all `dark:` Tailwind variants.
+
+2. **`ThemeProvider`** wraps the entire app in `main.tsx` (above `BrowserRouter`), making `useTheme()` available to all components.
+
+3. **`ThemeToggle`** (`components/ThemeToggle.tsx`): A pill-shaped toggle switch rendered in the Layout header. Uses Lucide `Sun` and `Moon` icons. The knob slides left/right with a CSS transition, and background icons indicate the inactive mode. Has an accessible `aria-label` that updates based on current state.
+
+4. **Tailwind `dark:` variants**: Every UI element that has a light-mode color also specifies a `dark:` variant (e.g., `bg-white dark:bg-gray-900`, `text-gray-900 dark:text-gray-100`, `border-gray-200 dark:border-gray-700`).
+
+5. **CSS custom properties** (`index.css`): Surface/text colors and DAG glow parameters are defined as CSS variables in `:root` and `.dark` selectors, consumed by `body` and global styles.
+
+6. **Centralized JS color constants** (`utils/colors.ts`): All colors consumed programmatically by Cytoscape.js and Plotly.js are defined here (see Section 8.7). Components import light/dark color sets and select based on `useTheme()`.
+
+### Color Scheme
+
+| Element | Light Mode | Dark Mode |
+|---------|-----------|-----------|
+| **Page background** | `gray-50` (#f9fafb) | `gray-950` (#030712) |
+| **Cards/panels** | `white` | `gray-900` |
+| **Primary text** | `gray-900` | `gray-100` |
+| **Secondary text** | `gray-600` | `gray-400` |
+| **Borders** | `gray-200` | `gray-700` |
+| **Primary accent** | `indigo-600` | `indigo-400` |
+| **Links** | `indigo-600` | `indigo-400` |
+| **Error** | `red-50` bg / `red-700` text | `red-900/30` bg / `red-400` text |
+| **Status badges** | Semantic `100`-level bg / `800`-level text | Semantic `500/20` bg / `300`-level text with `ring-1` border |
+| **Inputs/selects** | `white` bg / `gray-300` border | `gray-800` bg / `gray-600` border |
+| **Tooltips** | `white` bg / `gray-300` border | `gray-800` bg / `gray-600` border with subtle indigo shadow |
+| **Taxonomy palettes** | Medium-saturation colorblind-friendly (`DOMAIN_PALETTE_LIGHT`) | Vivid neon high-saturation (`DOMAIN_PALETTE_DARK`) |
+| **Taxonomy text** | Auto (Plotly default) | Dark `#111827` for contrast on bright backgrounds |
+| **GO DAG nodes** | Light tint backgrounds, gray borders | Indigo-bordered with glow shadow, vivid color ramp |
+| **GO DAG edges** | `gray-300` | `gray-600`, highlighted ancestors in `indigo-300` |
+
+### Layout
+
+`max-w-7xl` centered container, responsive padding.
+
+### Component Patterns
+
+Cards use `bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg`. Consistent spacing via Tailwind utilities.
+
+### Global Transitions
+
+`index.css` applies `transition-property: background-color, border-color` to all elements for smooth dark mode transitions (150ms ease).
 
 ---
 
@@ -567,6 +650,8 @@ Setup file (`test-setup.ts`): Imports `@testing-library/jest-dom` for DOM matche
 | `utils/__tests__/goParser.test.ts` | `goParser.ts` | Empty/header-only/single/multiple rows, semicolon-delimited parents, empty parents, whitespace trimming, quoted names with commas, non-numeric defaults, short rows, high precision, Windows line endings |
 | `utils/__tests__/comboParser.test.ts` | `comboParser.ts` | `parseComboCsv`: empty/header-only/single/multiple rows, empty parents, short rows. `comboRowsToTaxonNodes`: filtering by GO ID, field mapping, non-existent GO term. `comboRowsToGoTermNodes`: filtering by tax ID, field mapping, non-existent tax ID. |
 | `components/__tests__/PeptideDetailsPane.test.tsx` | `PeptideDetailsPane` | Placeholder when no selection, loading state, correct peptide hierarchy rendering, "no peptides found" message, expand/collapse peptide rows, expand background protein to show annotated proteins, selection info in header (tax IDs and GO IDs). Mocks DuckDB via `vi.mock`. |
+| `__tests__/ThemeContext.test.tsx` | `ThemeContext` | Default light theme, reads stored theme from localStorage, toggles light↔dark, persists to localStorage on toggle, ignores invalid stored values and defaults to light, adds/removes `dark` class on `document.documentElement` |
+| `components/__tests__/ThemeToggle.test.tsx` | `ThemeToggle` | Renders accessible button with correct aria-label, toggles to dark mode on click, toggles back to light on second click, starts in dark mode when localStorage has dark preference |
 
 ### Writing New Tests
 
@@ -651,6 +736,12 @@ onNodeClickRef.current = onNodeClick
 
 ### UniProt Cache + In-Flight Deduplication
 `uniprot.ts` maintains two module-level maps (`cache` and `inFlight`) to avoid duplicate API calls for the same accession.
+
+### Theme-Aware Visualization Colors
+Both `GoDagViewer` and `TaxonomyChart` consume the current theme via `useTheme()` and select the appropriate color set from the centralized `utils/colors.ts` module. Because Cytoscape and Plotly render to canvas/SVG (not the DOM), their colors cannot use CSS `dark:` variants and must be passed programmatically. The `isDark` boolean is included in `useMemo`/`useEffect` dependency arrays so visualizations re-render when the user toggles theme.
+
+### Ancestor Path Highlighting (GO DAG)
+On node hover, `GoDagViewer` performs a BFS traversal via `cy.incomers('edge')` to collect all ancestor nodes and edges up to root nodes, then applies the `highlighted` CSS class to the entire path. On mouseout, all highlights are cleared in a single `cy.nodes().removeClass()` / `cy.edges().removeClass()` call rather than tracking which elements were highlighted.
 
 ---
 

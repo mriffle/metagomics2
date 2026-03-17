@@ -89,13 +89,13 @@ export default function GoDagControls({
               className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                 ns === selectedNamespace
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
               {namespaceLabels[ns] || ns}
             </button>
           ))}
-          <span className="ml-2 text-xs text-gray-500">
+          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
             {filteredNodeCount === totalNodeCount
               ? `${filteredNodeCount} terms`
               : `${filteredNodeCount} / ${totalNodeCount} terms`}
@@ -106,11 +106,11 @@ export default function GoDagControls({
         <div className="flex items-center gap-3">
           {/* Metric selector */}
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-600 font-medium">Color by:</label>
+            <label className="text-xs text-gray-600 dark:text-gray-400 font-medium">Color by:</label>
             <select
               value={selectedMetric}
               onChange={(e) => onMetricChange(e.target.value as MetricKey)}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               {(filterLabel ? [...BASE_METRIC_OPTIONS, ...FILTER_METRIC_OPTIONS] : BASE_METRIC_OPTIONS).map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -122,7 +122,7 @@ export default function GoDagControls({
 
           {/* Color legend — click to change color */}
           <div className="flex items-center gap-1 relative">
-            <span className="text-xs text-gray-500">Low</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Low</span>
             <div
               className="w-20 h-3 rounded cursor-pointer ring-offset-1 hover:ring-2 hover:ring-gray-300 transition-shadow"
               style={{
@@ -138,14 +138,14 @@ export default function GoDagControls({
               onChange={(e) => onBaseColorChange?.(e.target.value)}
               className="sr-only"
             />
-            <span className="text-xs text-gray-500">High</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">High</span>
           </div>
 
           {/* Export */}
           {onExportPng && (
             <button
               onClick={onExportPng}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded transition-colors"
             >
               <Download className="w-3 h-3" />
               PNG
@@ -154,7 +154,7 @@ export default function GoDagControls({
           {onExportSvg && (
             <button
               onClick={onExportSvg}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded transition-colors"
             >
               <Download className="w-3 h-3" />
               SVG
@@ -166,8 +166,8 @@ export default function GoDagControls({
       {/* Taxonomy filter row */}
       {taxonOptions && taxonOptions.length > 0 && onTaxonChange && (
         <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="w-3.5 h-3.5 text-gray-500" />
-          <span className="text-xs text-gray-600 font-medium">Filter by taxon:</span>
+          <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+          <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Filter by taxon:</span>
           <Autocomplete
             options={taxonOptions}
             value={selectedTaxon || ''}
@@ -175,7 +175,7 @@ export default function GoDagControls({
             placeholder="Search taxonomy..."
           />
           {selectedTaxon && (
-            <span className="text-xs text-indigo-600 font-medium">
+            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
               Showing GO terms for taxon {selectedTaxon}
             </span>
           )}
@@ -184,8 +184,8 @@ export default function GoDagControls({
 
       {/* Bottom row: abundance cutoff filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-3.5 h-3.5 text-gray-500" />
-        <span className="text-xs text-gray-600 font-medium">Min ratio (total):</span>
+        <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+        <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Min ratio (total):</span>
         {CUTOFF_PRESETS.map((preset) => (
           <button
             key={preset.value}
@@ -193,7 +193,7 @@ export default function GoDagControls({
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
               minRatioTotal === preset.value
                 ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
             {preset.label}
@@ -206,17 +206,17 @@ export default function GoDagControls({
             onChange={(e) => setCustomCutoff(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCustomCutoff()}
             placeholder="%"
-            className="w-14 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-14 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
           <button
             onClick={handleCustomCutoff}
-            className="px-1.5 py-0.5 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+            className="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded transition-colors"
           >
             Set
           </button>
         </div>
         {minRatioTotal > 0 && !CUTOFF_PRESETS.some(p => p.value === minRatioTotal) && (
-          <span className="text-xs text-indigo-600 font-medium">
+          <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
             {(minRatioTotal * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%
           </span>
         )}

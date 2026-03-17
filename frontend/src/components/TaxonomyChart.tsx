@@ -3,30 +3,28 @@ import createPlotlyComponent from 'react-plotly.js/factory'
 import Plotly from 'plotly.js-dist-min'
 import type { TaxonNode } from '../utils/taxonomyParser'
 import type { ChartType } from '../pages/TaxonomyPage'
+import { useTheme } from '../ThemeContext'
+import { DOMAIN_PALETTE_LIGHT, DOMAIN_PALETTE_DARK, TAX_CHART, SANKEY, PLOTLY_LAYOUT } from '../utils/colors'
 
 const Plot = createPlotlyComponent(Plotly)
 
-// Categorical palette for domains — visually distinct, colorblind-friendly
-const DOMAIN_PALETTE = [
-  [59, 130, 246],   // blue-500
-  [16, 185, 129],   // emerald-500
-  [245, 158, 11],   // amber-500
-  [239, 68, 68],    // red-500
-  [139, 92, 246],   // violet-500
-  [236, 72, 153],   // pink-500
-  [14, 165, 233],   // sky-500
-  [234, 179, 8],    // yellow-500
-  [168, 85, 247],   // purple-500
-  [20, 184, 166],   // teal-500
-]
 
 /**
  * Blend a domain base color toward white based on depth ratio.
  * depth 0 (domain itself) = full color, depth 1 (species) = lightest.
  */
-function domainColorAtDepth(base: number[], depthRatio: number): string {
+function domainColorAtDepth(base: number[], depthRatio: number, isDark = false): string {
   const t = Math.max(0, Math.min(1, depthRatio))
-  // Blend from base color (t=0) toward a very light tint (t=1)
+  if (isDark) {
+    // Dark mode: keep colors vivid and bright. Slight shift toward lighter tint at depth.
+    // Range [0, 0.30] — minimal washout, stays saturated and neon.
+    const shift = t * 0.30
+    const r = Math.round(base[0] + (255 - base[0]) * shift)
+    const g = Math.round(base[1] + (255 - base[1]) * shift)
+    const b = Math.round(base[2] + (255 - base[2]) * shift)
+    return `rgb(${r},${g},${b})`
+  }
+  // Light mode: blend from base color toward a very light tint
   const lightness = 0.35 + t * 0.55  // range [0.35, 0.90] — never fully white
   const r = Math.round(base[0] + (255 - base[0]) * lightness)
   const g = Math.round(base[1] + (255 - base[1]) * lightness)
@@ -44,6 +42,8 @@ interface TaxonomyChartProps {
 export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeClick }: TaxonomyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
   const [tooltip, setTooltip] = useState<{
     x: number
     y: number
@@ -118,8 +118,9 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
     }
     const domainList = Array.from(domainIds)
     const domainColorMap = new Map<string, number[]>()
+    const palette = isDark ? DOMAIN_PALETTE_DARK : DOMAIN_PALETTE_LIGHT
     domainList.forEach((id, i) => {
-      domainColorMap.set(id, DOMAIN_PALETTE[i % DOMAIN_PALETTE.length])
+      domainColorMap.set(id, palette[i % palette.length])
     })
 
     // Rank depth for lightness gradient
@@ -137,23 +138,24 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
       ranks.push(node.rank)
       customdata.push(node)
 
+      const tc = isDark ? TAX_CHART.dark : TAX_CHART.light
       if (node.rank === 'root') {
-        colors.push('rgb(255,255,255)')
+        colors.push(tc.rootColor)
       } else {
         const domainId = getDomainAncestor(node)
         const base = domainId ? domainColorMap.get(domainId) : undefined
         if (base) {
           const depth = RANK_DEPTH[node.rank] ?? 0
           const depthRatio = depth / maxDepth
-          colors.push(domainColorAtDepth(base, depthRatio))
+          colors.push(domainColorAtDepth(base, depthRatio, isDark))
         } else {
-          colors.push('rgb(229,231,235)')  // gray-200 fallback
+          colors.push(tc.fallbackColor)
         }
       }
     }
 
     return { ids, labels, parents, values, colors, ranks, customdata }
-  }, [nodes])
+  }, [nodes, isDark])
 
   // Keep nodeMap in a ref so hover callbacks don't need it as a dependency
   const nodeMapRef = useRef(nodeMap)
@@ -227,10 +229,11 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
           x: nodeX,
           pad: 20,
           thickness: 15,
-          line: { color: '#888', width: 0.5 },
+          line: { color: isDark ? SANKEY.dark.nodeLineColor : SANKEY.light.nodeLineColor, width: 0.5 },
         },
         link: { source, target, value, color: linkColor },
         valueformat: value.some(v => v > 9999) ? '.3e' : ',.2f',
+        textfont: { color: isDark ? TAX_CHART.dark.textColor : TAX_CHART.light.textColor },
       }]
     }
 
@@ -242,38 +245,39 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
       values: plotData.values,
       marker: {
         colors: plotData.colors,
-        line: { width: chartType === 'sunburst' ? 0.5 : 1, color: '#ffffff' },
+        line: { width: chartType === 'sunburst' ? 0.5 : 1, color: isDark ? TAX_CHART.dark.lineColor : TAX_CHART.light.lineColor },
       },
       branchvalues: 'total',
       hoverinfo: 'none',
       textinfo: 'label',
-      textfont: { size: chartType === 'sunburst' ? 11 : 12 },
+      textfont: { size: chartType === 'sunburst' ? 11 : 12, color: isDark ? TAX_CHART.dark.textColor : TAX_CHART.light.textColor },
       insidetextorientation: 'auto',
       maxdepth: -1,
     }
     if (chartType === 'treemap') {
       trace.tiling = { packing: 'squarify', pad: 2 }
-      trace.pathbar = { visible: true, textfont: { size: 12 } }
+      trace.pathbar = { visible: true, textfont: { size: 12, color: isDark ? TAX_CHART.dark.pathbarTextColor : TAX_CHART.light.pathbarTextColor } }
     }
     if (chartType === 'icicle') {
       trace.tiling = { orientation: 'v' }
-      trace.pathbar = { visible: true, textfont: { size: 12 } }
+      trace.pathbar = { visible: true, textfont: { size: 12, color: isDark ? TAX_CHART.dark.pathbarTextColor : TAX_CHART.light.pathbarTextColor } }
     }
     return [trace]
-  }, [plotData, chartType])
+  }, [plotData, chartType, isDark])
 
   const plotlyLayout = useMemo(() => {
     const layout: any = {
       margin: { t: chartType === 'sunburst' ? 10 : 20, b: 10, l: 10, r: 10 },
       paper_bgcolor: 'transparent',
-      font: { family: 'Inter, system-ui, sans-serif' },
+      plot_bgcolor: 'transparent',
+      font: { family: 'Inter, system-ui, sans-serif', color: isDark ? PLOTLY_LAYOUT.dark.fontColor : PLOTLY_LAYOUT.light.fontColor },
       autosize: true,
     }
     if (chartType === 'sunburst') {
       layout.sunburstcolorway = []
     }
     return layout
-  }, [chartType])
+  }, [chartType, isDark])
 
   const plotlyConfig = useMemo(() => ({
     responsive: true,
@@ -307,7 +311,7 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
 
   if (!plotlyData || nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
         No taxonomy data available.
       </div>
     )
@@ -330,41 +334,41 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
       {tooltip && chartType !== 'sankey' && (
         <div
           ref={tooltipRef}
-          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm pointer-events-none"
+          className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg dark:shadow-indigo-500/10 p-3 text-sm pointer-events-none"
           style={{
             left: tooltipPos.left,
             top: tooltipPos.top,
             maxWidth: 320,
           }}
         >
-          <p className="font-mono text-xs text-gray-500 mb-1">Tax ID: {tooltip.node.taxId}</p>
-          <p className="font-semibold text-gray-900 mb-1">{tooltip.node.name}</p>
-          <p className="text-xs text-gray-500 mb-2 capitalize">{tooltip.node.rank}</p>
+          <p className="font-mono text-xs text-gray-500 dark:text-gray-400 mb-1">Tax ID: {tooltip.node.taxId}</p>
+          <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{tooltip.node.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 capitalize">{tooltip.node.rank}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <span className="text-gray-600">Quantity:</span>
-            <span className="font-medium text-right">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
-            <span className="text-gray-600">Ratio (Total):</span>
-            <span className="font-medium text-right">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
+            <span className="text-gray-600 dark:text-gray-400">Quantity:</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.quantity > 9999 ? tooltip.node.quantity.toExponential(3) : tooltip.node.quantity.toFixed(2)}</span>
+            <span className="text-gray-600 dark:text-gray-400">Ratio (Total):</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.ratioTotal * 100).toFixed(4)}%</span>
             {filterLabel && tooltip.node.fractionOfTaxon != null && (
               <>
-                <span className="text-gray-600">Fraction of Taxon:</span>
-                <span className="font-medium text-right">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Fraction of Taxon:</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfTaxon * 100).toFixed(4)}%</span>
               </>
             )}
             {filterLabel && tooltip.node.fractionOfGo != null && (
               <>
-                <span className="text-gray-600">Fraction of GO:</span>
-                <span className="font-medium text-right">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Fraction of GO:</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
               </>
             )}
             {!filterLabel && (
               <>
-                <span className="text-gray-600">Ratio (Annotated):</span>
-                <span className="font-medium text-right">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Ratio (Annotated):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.ratioAnnotated * 100).toFixed(4)}%</span>
               </>
             )}
-            <span className="text-gray-600"># Peptides:</span>
-            <span className="font-medium text-right">{tooltip.node.nPeptides}</span>
+            <span className="text-gray-600 dark:text-gray-400"># Peptides:</span>
+            <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.nPeptides}</span>
           </div>
         </div>
       )}

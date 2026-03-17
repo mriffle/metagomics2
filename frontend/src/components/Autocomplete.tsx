@@ -120,12 +120,12 @@ export default function Autocomplete({
           onFocus={() => { if (inputText && !value) setIsOpen(true) }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-56 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-56 text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         {(inputText || value) && (
           <button
             onClick={handleClear}
-            className="ml-1 p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
+            className="ml-1 p-0.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             title="Clear filter"
           >
             <X className="w-3.5 h-3.5" />
@@ -136,7 +136,7 @@ export default function Autocomplete({
       {isOpen && filtered.length > 0 && (
         <ul
           ref={listRef}
-          className="absolute z-50 mt-1 w-80 max-h-60 overflow-auto bg-white border border-gray-200 rounded-md shadow-lg"
+          className="absolute z-50 mt-1 w-80 max-h-60 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg dark:shadow-indigo-500/10"
         >
           {filtered.map((opt, idx) => (
             <li
@@ -145,8 +145,8 @@ export default function Autocomplete({
               onMouseEnter={() => setHighlightIndex(idx)}
               className={`px-3 py-1.5 text-xs cursor-pointer ${
                 idx === highlightIndex
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-700 hover:bg-gray-50'
+                  ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
               {opt.label}
