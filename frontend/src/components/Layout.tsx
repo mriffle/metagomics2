@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Dna } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import MetagomicsLogo from './MetagomicsLogo'
 import ThemeToggle from './ThemeToggle'
 
 interface LayoutProps {
@@ -23,8 +23,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link to="/" className="flex items-center gap-2 text-xl font-bold text-indigo-600 dark:text-indigo-400">
-              <Dna className="w-8 h-8" />
-              <span>Metagomics 2</span>
+              <MetagomicsLogo className="h-10 w-auto" />
               {version && <span className="text-sm font-normal text-gray-500 dark:text-gray-400">v{version}</span>}
             </Link>
             <nav className="flex items-center gap-4">
