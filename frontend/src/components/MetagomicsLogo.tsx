@@ -13,7 +13,7 @@ export default function MetagomicsLogo({ className }: { className?: string }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 310 48"
+      viewBox="0 0 270 48"
       className={className}
       aria-label="Metagomics 2 logo"
       role="img"
