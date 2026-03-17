@@ -217,7 +217,7 @@ function JobList({ token, onLogout }: { token: string; onLogout: () => void }) {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {job.progress_total > 0 ? (
-                      <span>{job.progress_done} / {job.progress_total}</span>
+                      <span>{Math.round((job.progress_done / job.progress_total) * 100)}%</span>
                     ) : (
                       <span>-</span>
                     )}

@@ -169,7 +169,7 @@ Displays job status, parameters, progress, and results.
 **Sections**:
 - **Header**: Status icon, job ID (monospace), "Change Hash" button, creation time
 - **Parameters**: Inline display of FASTA filename, database, filter params
-- **Progress bar**: Shown for `running`/`queued` jobs. Shows `current_step` and `progress_done / progress_total`
+- **Progress bar**: Shown for `running`/`queued` jobs. Shows `current_step` (left) and overall completion percentage (right). Progress uses a weighted milestone system (0–1000 scale) that reflects all pipeline stages — initialization, peptide matching, homology search, filtering, and per-list processing — not just peptide list completion. See the backend spec's `PipelineProgress` section for milestone weights.
 - **Error message**: Shown for `failed` jobs
 - **Peptide Lists**: Each list shows filename, peptide count, match count, status badge
 - **Per-list results** (when `completed`):

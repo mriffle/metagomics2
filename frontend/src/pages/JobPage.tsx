@@ -210,7 +210,7 @@ export default function JobPage() {
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
               <span>{job.current_step || 'Processing...'}</span>
-              <span>{job.progress_done} / {job.progress_total} peptide lists</span>
+              <span>{progressPercent}%</span>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
               <div

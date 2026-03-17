@@ -25,7 +25,8 @@ def setup_logging(verbose: bool = False) -> None:
 
 def progress_callback(progress: PipelineProgress) -> None:
     """Print progress updates to stderr."""
-    msg = f"[{progress.completed_peptide_lists}/{progress.total_peptide_lists}] {progress.current_stage}"
+    pct = (progress.progress_done * 100) // progress.progress_total if progress.progress_total else 0
+    msg = f"[{pct:3d}%] {progress.current_stage}"
     if progress.current_list_id:
         msg += f" ({progress.current_list_id})"
     print(msg, file=sys.stderr)

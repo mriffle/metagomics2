@@ -99,8 +99,8 @@ class Worker:
             def progress_callback(progress: PipelineProgress) -> None:
                 self.db.update_job_progress(
                     job_id,
-                    progress.completed_peptide_lists,
-                    progress.total_peptide_lists,
+                    progress.progress_done,
+                    progress.progress_total,
                     progress.current_stage,
                 )
 

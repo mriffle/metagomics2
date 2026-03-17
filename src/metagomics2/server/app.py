@@ -276,7 +276,7 @@ async def create_job(
 
     # Queue the job
     db.update_job_status(job_id, JobStatus.QUEUED)
-    db.update_job_progress(job_id, 0, len(peptides))
+    db.update_job_progress(job_id, 0, 1000)
 
     return JobCreateResponse(job_id=job_id, status=JobStatus.QUEUED)
 

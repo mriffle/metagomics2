@@ -320,6 +320,33 @@ class PipelineConfig:
     mock_subject_annotations_path: Path | None = None  # Testing only
 ```
 
+### `PipelineProgress` (`pipeline/runner.py`)
+```python
+@dataclass
+class PipelineProgress:
+    total_peptide_lists: int = 0
+    completed_peptide_lists: int = 0
+    current_stage: str = ""
+    current_list_id: str = ""
+    progress_done: int = 0          # Weighted progress (0–1000)
+    progress_total: int = 1000      # Always 1000
+```
+
+Progress uses a **weighted milestone system** (0–1000 scale) so the progress bar reflects overall pipeline progress, not just peptide list completion. Each stage has a fixed milestone value based on its typical runtime weight:
+
+| Stage | Milestone | % |
+|-------|-----------|---|
+| Initializing | 0 → 50 | 0–5% |
+| Parsing peptide lists | 50 → 80 | 5–8% |
+| Matching peptides | 80 → 130 | 8–13% |
+| Writing subset FASTA | 130 → 150 | 13–15% |
+| Homology search (DIAMOND) | 150 → 650 | 15–65% |
+| Filtering hits | 650 → 670 | 65–67% |
+| Loading subject annotations | 670 → 750 | 67–75% |
+| Per-list processing | 750 → 1000 | 75–100% |
+
+DIAMOND is weighted heaviest (~50%) as it is typically the longest-running step. Per-list processing (annotation, aggregation, reporting) is divided evenly among peptide lists within the 750–1000 range.
+
 ---
 
 ## 7. Core Algorithms

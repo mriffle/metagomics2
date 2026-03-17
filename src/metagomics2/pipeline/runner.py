@@ -90,6 +90,21 @@ class PipelineConfig:
     mock_subject_annotations_path: Path | None = None
 
 
+# Weighted progress milestones (out of 1000) for each pipeline stage.
+# DIAMOND homology search is weighted heaviest as it is typically the
+# longest-running step.
+_PROGRESS_TOTAL = 1000
+_PROGRESS_INITIALIZING = 50
+_PROGRESS_PARSING = 80
+_PROGRESS_MATCHING = 130
+_PROGRESS_SUBSET_FASTA = 150
+_PROGRESS_HOMOLOGY = 650
+_PROGRESS_FILTERING = 670
+_PROGRESS_SUBJECT_ANNOTATIONS = 750
+_PROGRESS_PER_LIST_START = 750
+_PROGRESS_PER_LIST_END = 1000
+
+
 @dataclass
 class PipelineProgress:
     """Progress tracking for pipeline execution."""
@@ -98,6 +113,8 @@ class PipelineProgress:
     completed_peptide_lists: int = 0
     current_stage: str = ""
     current_list_id: str = ""
+    progress_done: int = 0
+    progress_total: int = _PROGRESS_TOTAL
 
 
 @dataclass
@@ -161,10 +178,12 @@ class PipelineRunner:
         self.ref_snapshot_dir: Path | None = None
         self.ref_metadata: dict[str, str] = {}
 
-    def _update_progress(self, stage: str, list_id: str = "") -> None:
+    def _update_progress(self, stage: str, list_id: str = "", progress_done: int | None = None) -> None:
         """Update and report progress."""
         self.progress.current_stage = stage
         self.progress.current_list_id = list_id
+        if progress_done is not None:
+            self.progress.progress_done = progress_done
         if self.progress_callback:
             self.progress_callback(self.progress)
         logger.info(f"Stage: {stage}" + (f" (list: {list_id})" if list_id else ""))
@@ -179,13 +198,13 @@ class PipelineRunner:
         
         try:
             # Stage 0: Initialize (load FASTA, reference data)
-            self._update_progress("Initializing")
+            self._update_progress("Initializing", progress_done=0)
             self._initialize()
 
             self.progress.total_peptide_lists = len(self.config.peptide_list_paths)
 
             # Stage 1: Parse all peptide lists
-            self._update_progress("Parsing peptide lists")
+            self._update_progress("Parsing peptide lists", progress_done=_PROGRESS_INITIALIZING)
             for i, peptide_list_path in enumerate(self.config.peptide_list_paths):
                 list_id = f"list_{i:03d}"
                 peptides = parse_peptide_list(peptide_list_path)
@@ -193,32 +212,46 @@ class PipelineRunner:
                 logger.info(f"Parsed {len(peptides)} peptides from {peptide_list_path.name}")
 
             # Stage 2: Match all peptides against background proteome
-            self._update_progress("Matching peptides to background proteome")
+            self._update_progress("Matching peptides to background proteome", progress_done=_PROGRESS_PARSING)
             self._match_all_peptides()
 
             # Stage 3: Write subset FASTA of hit proteins (for future DIAMOND search)
-            self._update_progress("Writing subset FASTA")
+            self._update_progress("Writing subset FASTA", progress_done=_PROGRESS_MATCHING)
             self._write_subset_fasta()
 
             # Stage 4: Homology search (placeholder for DIAMOND)
             if not self.config.mock_hits_path:
                 self._run_homology_search()
+            else:
+                self.progress.progress_done = _PROGRESS_FILTERING
 
             # Stage 4b: Load subject annotations from companion DB
             if not self.config.mock_subject_annotations_path:
                 self._load_subject_annotations()
+            else:
+                self.progress.progress_done = _PROGRESS_SUBJECT_ANNOTATIONS
 
             # Stage 5+: Per-list annotation, aggregation, reporting
+            n_lists = self.progress.total_peptide_lists
+            per_list_budget = _PROGRESS_PER_LIST_END - _PROGRESS_PER_LIST_START
             for i, peptide_list_path in enumerate(self.config.peptide_list_paths):
                 list_id = f"list_{i:03d}"
+                list_start = _PROGRESS_PER_LIST_START + (per_list_budget * i) // max(n_lists, 1)
+                self._update_progress(
+                    f"Processing peptide list {i + 1}/{n_lists}",
+                    list_id,
+                    progress_done=list_start,
+                )
                 result = self._process_peptide_list(peptide_list_path, list_id)
                 peptide_list_results.append(result)
                 self.progress.completed_peptide_lists = i + 1
+                list_done = _PROGRESS_PER_LIST_START + (per_list_budget * (i + 1)) // max(n_lists, 1)
                 self._update_progress(
-                    f"Completed {i + 1}/{self.progress.total_peptide_lists} peptide lists"
+                    f"Completed {i + 1}/{n_lists} peptide lists",
+                    progress_done=list_done,
                 )
 
-            self._update_progress("Pipeline completed")
+            self._update_progress("Pipeline completed", progress_done=_PROGRESS_TOTAL)
 
             return PipelineResult(
                 success=True,
@@ -349,7 +382,7 @@ class PipelineRunner:
             logger.warning("No homology search results, skipping subject annotation lookup")
             return
 
-        self._update_progress("Loading subject annotations")
+        self._update_progress("Loading subject annotations", progress_done=_PROGRESS_FILTERING)
 
         # Collect all unique subject IDs across all background proteins
         all_subject_ids: set[str] = set()
@@ -445,7 +478,7 @@ class PipelineRunner:
         against an annotated database. Populates self.protein_to_subjects:
             background_protein_id -> set of annotated DB accessions
         """
-        self._update_progress("Homology search")
+        self._update_progress("Homology search", progress_done=_PROGRESS_SUBSET_FASTA)
 
         if not self.config.annotated_db_path:
             raise ValueError(
@@ -476,7 +509,7 @@ class PipelineRunner:
         )
 
         # Apply filter policy (pident, evalue thresholds, top_k ranking, etc.)
-        self._update_progress("Filtering homology hits")
+        self._update_progress("Filtering homology hits", progress_done=_PROGRESS_HOMOLOGY)
         self.protein_to_subjects = filter_all_hits(
             diamond_result.hits_by_query, self.config.filter_policy
         )

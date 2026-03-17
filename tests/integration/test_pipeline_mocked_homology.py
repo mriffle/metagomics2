@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
+from metagomics2.pipeline.runner import (
+    PipelineConfig,
+    PipelineProgress,
+    _PROGRESS_PER_LIST_END,
+    _PROGRESS_PER_LIST_START,
+    _PROGRESS_TOTAL,
+    run_pipeline,
+)
 
 
 class TestPipelineMockedHomology:
@@ -193,7 +200,7 @@ class TestPipelineMockedHomology:
         fixtures_dir: Path,
         tmp_path: Path,
     ):
-        """Verify progress callback is invoked."""
+        """Verify progress callback is invoked with weighted progress."""
         progress_updates: list[PipelineProgress] = []
 
         def callback(progress: PipelineProgress) -> None:
@@ -203,6 +210,8 @@ class TestPipelineMockedHomology:
                     completed_peptide_lists=progress.completed_peptide_lists,
                     current_stage=progress.current_stage,
                     current_list_id=progress.current_list_id,
+                    progress_done=progress.progress_done,
+                    progress_total=progress.progress_total,
                 )
             )
 
@@ -226,6 +235,123 @@ class TestPipelineMockedHomology:
         stages = [p.current_stage for p in progress_updates]
         assert any("Initializing" in s for s in stages)
         assert any("completed" in s.lower() for s in stages)
+
+        # progress_total should always be _PROGRESS_TOTAL (1000)
+        for p in progress_updates:
+            assert p.progress_total == _PROGRESS_TOTAL
+
+        # First update should start at 0, last should reach _PROGRESS_TOTAL
+        assert progress_updates[0].progress_done == 0
+        assert progress_updates[-1].progress_done == _PROGRESS_TOTAL
+
+        # progress_done should be monotonically non-decreasing
+        for i in range(1, len(progress_updates)):
+            assert progress_updates[i].progress_done >= progress_updates[i - 1].progress_done, (
+                f"progress_done decreased from {progress_updates[i - 1].progress_done} "
+                f"to {progress_updates[i].progress_done} at stage "
+                f"'{progress_updates[i].current_stage}'"
+            )
+
+    def test_progress_covers_all_stages(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify progress updates cover pre-list and per-list stages."""
+        progress_updates: list[PipelineProgress] = []
+
+        def callback(progress: PipelineProgress) -> None:
+            progress_updates.append(
+                PipelineProgress(
+                    total_peptide_lists=progress.total_peptide_lists,
+                    completed_peptide_lists=progress.completed_peptide_lists,
+                    current_stage=progress.current_stage,
+                    current_list_id=progress.current_list_id,
+                    progress_done=progress.progress_done,
+                    progress_total=progress.progress_total,
+                )
+            )
+
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        result = run_pipeline(config, progress_callback=callback)
+        assert result.success
+
+        stages = [p.current_stage for p in progress_updates]
+
+        # Pre-list stages should all appear
+        assert any("Initializing" in s for s in stages)
+        assert any("Parsing" in s for s in stages)
+        assert any("Matching" in s for s in stages)
+        assert any("subset FASTA" in s for s in stages)
+
+        # Per-list stages should appear
+        assert any("Processing peptide list" in s for s in stages)
+        assert any("Completed" in s for s in stages)
+
+        # Pre-list stages should have progress_done < _PROGRESS_PER_LIST_START
+        pre_list = [p for p in progress_updates if "Initializing" in p.current_stage]
+        assert all(p.progress_done < _PROGRESS_PER_LIST_START for p in pre_list)
+
+    def test_progress_multiple_lists_divides_evenly(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify per-list progress is divided evenly among multiple lists."""
+        progress_updates: list[PipelineProgress] = []
+
+        def callback(progress: PipelineProgress) -> None:
+            progress_updates.append(
+                PipelineProgress(
+                    total_peptide_lists=progress.total_peptide_lists,
+                    completed_peptide_lists=progress.completed_peptide_lists,
+                    current_stage=progress.current_stage,
+                    current_list_id=progress.current_list_id,
+                    progress_done=progress.progress_done,
+                    progress_total=progress.progress_total,
+                )
+            )
+
+        peptide_path = fixtures_dir / "peptides" / "small_peptides.tsv"
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[peptide_path, peptide_path, peptide_path],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        result = run_pipeline(config, progress_callback=callback)
+        assert result.success
+
+        # progress_done must be monotonically non-decreasing
+        for i in range(1, len(progress_updates)):
+            assert progress_updates[i].progress_done >= progress_updates[i - 1].progress_done
+
+        # Final progress should reach _PROGRESS_TOTAL
+        assert progress_updates[-1].progress_done == _PROGRESS_TOTAL
+
+        # Each "Completed" update should be strictly higher than the previous one
+        completed = [p for p in progress_updates if "Completed" in p.current_stage]
+        assert len(completed) == 3
+        for i in range(1, len(completed)):
+            assert completed[i].progress_done > completed[i - 1].progress_done
+
+        # The per-list progress should span from _PROGRESS_PER_LIST_START to _PROGRESS_PER_LIST_END
+        per_list_starts = [p for p in progress_updates if "Processing peptide list" in p.current_stage]
+        assert per_list_starts[0].progress_done == _PROGRESS_PER_LIST_START
+        assert completed[-1].progress_done == _PROGRESS_PER_LIST_END
 
     def test_multiple_peptide_lists(
         self,
