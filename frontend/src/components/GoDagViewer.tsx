@@ -74,9 +74,24 @@ function interpolateColor(t: number, stops: number[][]): string {
   return `rgb(${r},${g},${b})`
 }
 
-function textColorForBg(t: number, isDark = false): string {
+/**
+ * Choose a readable text color based on the actual background color's luminance.
+ * Uses WCAG relative-luminance formula instead of the abstract ramp position.
+ */
+function textColorForBg(bgColorStr: string, isDark = false): string {
   const c = isDark ? GO_DAG.dark : GO_DAG.light
-  return t > c.textThreshold ? c.textDark : c.textLight
+  // Parse "rgb(r,g,b)" produced by interpolateColor
+  const m = bgColorStr.match(/rgb\((\d+),(\d+),(\d+)\)/)
+  if (!m) return c.textLight
+  const [r, g, b] = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])]
+  // sRGB → linear channel
+  const toLinear = (v: number) => {
+    const s = v / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  }
+  const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+  // Threshold ~0.35 works well: light backgrounds get dark text, dark backgrounds get light text
+  return luminance > 0.35 ? c.textDark : c.textLight
 }
 
 function getMetricValue(node: GoTermNode, metric: MetricKey): number {
@@ -284,8 +299,9 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
     // Apply colors based on metric
     cy.nodes().forEach((ele) => {
       const t = normalized.get(ele.id()) ?? 0
-      ele.style('background-color', interpolateColor(t, stops))
-      ele.style('color', textColorForBg(t, isDark))
+      const bgColor = interpolateColor(t, stops)
+      ele.style('background-color', bgColor)
+      ele.style('color', textColorForBg(bgColor, isDark))
     })
 
     // Collect all ancestor nodes + edges from a starting node up to the root(s)
@@ -365,8 +381,9 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
     cy.batch(() => {
       cy.nodes().forEach((ele) => {
         const t = normalized.get(ele.id()) ?? 0
-        ele.style('background-color', interpolateColor(t, stops))
-        ele.style('color', textColorForBg(t, isDark))
+        const bgColor = interpolateColor(t, stops)
+        ele.style('background-color', bgColor)
+        ele.style('color', textColorForBg(bgColor, isDark))
       })
     })
   }, [metric, nodes, baseColor, isDark])

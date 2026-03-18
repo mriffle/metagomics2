@@ -267,7 +267,7 @@ Renders the GO DAG using Cytoscape.js with the `dagre` layout.
 
 **Key behaviors**:
 - **Layout**: Top-to-bottom DAG using `dagre` layout engine with `tight-tree` ranker
-- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. 5-stop color ramp whose endpoints are determined by the current theme (defined in `GO_DAG` constants from `utils/colors.ts`). In dark mode, nodes have a subtle indigo glow via Cytoscape `shadow-*` styles.
+- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. 5-stop color ramp whose endpoints are determined by the current theme (defined in `GO_DAG` constants from `utils/colors.ts`). In dark mode, nodes have a subtle indigo glow via Cytoscape `shadow-*` styles. Node text color is chosen by computing the WCAG relative luminance of the actual interpolated background color and selecting light or dark text for contrast (defined as `textLight`/`textDark` in the `GO_DAG` constants).
 - **Hover**: BFS traversal highlights the hovered node and **all ancestor nodes and edges up to the root** (not just immediate neighbors), using `cy.incomers('edge')` recursively. Shows a fixed-position tooltip with node details (ID, name, quantity, ratios, fractions). Tooltip styling adapts to dark mode.
 - **Tooltip positioning**: Uses `useLayoutEffect` to reposition within viewport bounds, flipping horizontally/vertically if overflowing.
 - **Click**: Notifies parent via `onNodeClick(nodeId)`. Background click clears selection.
@@ -463,7 +463,7 @@ Centralized color definitions for light and dark mode. All visualization colors 
 | `DOMAIN_PALETTE_LIGHT` | Light-mode taxonomy domain palette (10 colorblind-friendly colors as `number[][]`) |
 | `DOMAIN_PALETTE_DARK` | Dark-mode taxonomy domain palette (10 vivid neon colors as `number[][]`) |
 | `TAX_CHART` | Taxonomy chart colors keyed by `light`/`dark` (root color, fallback color, line separator color, inside-text color, pathbar text color) |
-| `GO_DAG` | GO DAG Cytoscape colors keyed by `light`/`dark` (node border width/color, background, text color, shadow/glow parameters, edge color, highlight border/edge/shadow, color ramp blend parameters, text threshold, export background) |
+| `GO_DAG` | GO DAG Cytoscape colors keyed by `light`/`dark` (node border width/color, background, text color, shadow/glow parameters, edge color, highlight border/edge/shadow, color ramp blend parameters, light/dark text colors for contrast, export background) |
 | `SANKEY` | Sankey-specific node line colors keyed by `light`/`dark` |
 | `PLOTLY_LAYOUT` | Plotly layout font colors keyed by `light`/`dark` |
 | `STATUS_BADGE_CLASSES` | `Record<string, string>` mapping status names (`uploaded`, `queued`, `pending`, `running`, `completed`, `done`, `failed`) to Tailwind class strings with both light and `dark:` variants |
