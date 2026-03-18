@@ -397,6 +397,8 @@ These invariants are checked by `validate_aggregation_invariants()` and verified
 
 Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 
+> **System dependency:** The CLI requires the [DIAMOND](https://github.com/bbuchfink/diamond) sequence aligner to be installed and available on `PATH` for the homology search stage. DIAMOND is a standalone C++ tool and is **not** included in the Python package. The Docker image bundles DIAMOND automatically, but a local `pip install` requires the user to install DIAMOND separately (e.g., via Conda/Bioconda or a GitHub release binary). Without it, the pipeline will raise a `DiamondError` at runtime.
+
 ### Commands
 - `metagomics2 run` — Run the annotation pipeline
 - `metagomics2 version` — Show version
@@ -648,6 +650,14 @@ Build system: **Hatchling**. Python ≥ 3.10 required.
 | `freezegun` | Time mocking |
 | `ruff` | Linter and formatter |
 | `mypy` | Static type checking |
+
+### System Dependencies (not included in Python package)
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| [DIAMOND](https://github.com/bbuchfink/diamond) | Protein homology search (`blastp`) | `conda install -c bioconda diamond` or [GitHub releases](https://github.com/bbuchfink/diamond/releases) |
+
+DIAMOND is invoked as a subprocess (`subprocess.run(["diamond", "blastp", ...])`) by `core/diamond.py`. The Docker image installs DIAMOND during the build, so this is only a concern for local `pip install` usage.
 
 ### Version Management
 - `pyproject.toml` defines the base version (e.g., `0.1.0`)

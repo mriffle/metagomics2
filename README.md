@@ -37,6 +37,18 @@ source venv/bin/activate  # Linux/Mac
 pip install -e ".[dev]"
 ```
 
+> **Note:** The Python package does not include the [DIAMOND](https://github.com/bbuchfink/diamond) sequence aligner. To run the full annotation pipeline (homology search) outside Docker, you must install DIAMOND separately and ensure the `diamond` binary is on your `PATH`. For example:
+>
+> ```bash
+> # Via Conda/Bioconda
+> conda install -c bioconda diamond
+>
+> # Or download a release binary from GitHub
+> # https://github.com/bbuchfink/diamond/releases
+> ```
+>
+> Without DIAMOND installed, the pipeline will fail at the homology search stage. The Docker image includes DIAMOND automatically.
+
 ### Build the Docker Image Locally
 
 ```bash
@@ -67,7 +79,7 @@ docker run --rm ghcr.io/mriffle/metagomics2:0.1.0 --help
 
 ### Run the CLI with a Local Python Installation
 
-When running outside Docker, provide paths to your reference data unless you have arranged bundled reference files at `/app/reference`.
+When running outside Docker, you must have [DIAMOND](https://github.com/bbuchfink/diamond) installed and on your `PATH` (see [Local Python Installation](#local-python-installation)). You must also provide paths to your reference data unless you have arranged bundled reference files at `/app/reference`.
 
 ```bash
 metagomics2 run \
