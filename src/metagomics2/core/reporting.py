@@ -228,7 +228,9 @@ def write_go_taxonomy_combo_csv(
 
     Columns: tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name,
              go_namespace, parent_go_ids, quantity, fraction_of_taxon,
-             fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides
+             fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides,
+             pvalue_go_for_taxon, pvalue_taxon_for_go,
+             qvalue_go_for_taxon, qvalue_taxon_for_go
 
     Args:
         combos: Dictionary mapping (tax_id, go_id) to ComboAggregate
@@ -261,6 +263,10 @@ def write_go_taxonomy_combo_csv(
             "ratio_total_taxon",
             "ratio_total_go",
             "n_peptides",
+            "pvalue_go_for_taxon",
+            "pvalue_taxon_for_go",
+            "qvalue_go_for_taxon",
+            "qvalue_taxon_for_go",
         ])
 
         for combo in sorted_combos:
@@ -310,6 +316,10 @@ def write_go_taxonomy_combo_csv(
                 f"{combo.ratio_total_taxon:.10f}",
                 f"{combo.ratio_total_go:.10f}",
                 combo.n_peptides,
+                f"{combo.pvalue_go_for_taxon:.10g}" if combo.pvalue_go_for_taxon is not None else "",
+                f"{combo.pvalue_taxon_for_go:.10g}" if combo.pvalue_taxon_for_go is not None else "",
+                f"{combo.qvalue_go_for_taxon:.10g}" if combo.qvalue_go_for_taxon is not None else "",
+                f"{combo.qvalue_taxon_for_go:.10g}" if combo.qvalue_taxon_for_go is not None else "",
             ])
 
 

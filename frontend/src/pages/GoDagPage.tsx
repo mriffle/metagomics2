@@ -11,7 +11,7 @@ import { parseComboCsv, comboRowsToGoTermNodes } from '../utils/comboParser'
 import type { AutocompleteOption } from '../components/Autocomplete'
 
 export type { GoTermNode } from '../utils/goParser'
-export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides' | 'fractionOfTaxon' | 'fractionOfGo'
+export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides' | 'fractionOfTaxon' | 'fractionOfGo' | 'qvalueGoForTaxon'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   biological_process: 'Biological Process',

@@ -102,13 +102,25 @@ function getMetricValue(node: GoTermNode, metric: MetricKey): number {
     case 'nPeptides': return node.nPeptides
     case 'fractionOfTaxon': return node.fractionOfTaxon ?? 0
     case 'fractionOfGo': return node.fractionOfGo ?? 0
+    case 'qvalueGoForTaxon': return node.qvalueGoForTaxon ?? 1
   }
 }
 
 function normalizeValues(nodes: GoTermNode[], metric: MetricKey): Map<string, number> {
   const useLog = metric === 'quantity' || metric === 'nPeptides'
+  const isQvalue = metric === 'qvalueGoForTaxon'
   const values = nodes.map(n => getMetricValue(n, metric))
-  const transformed = useLog ? values.map(v => Math.log1p(v)) : values
+
+  let transformed: number[]
+  if (isQvalue) {
+    // Invert: low q-value = high color intensity via -log10(q + eps)
+    const eps = 1e-10
+    transformed = values.map(v => -Math.log10(Math.max(v, eps)))
+  } else if (useLog) {
+    transformed = values.map(v => Math.log1p(v))
+  } else {
+    transformed = values
+  }
 
   const min = Math.min(...transformed)
   const max = Math.max(...transformed)
@@ -458,6 +470,12 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
               <>
                 <span className="text-gray-600 dark:text-gray-400">Fraction of GO:</span>
                 <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.qvalueGoForTaxon != null && (
+              <>
+                <span className="text-gray-600 dark:text-gray-400">Q-value (GO for Taxon):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.qvalueGoForTaxon < 0.001 ? tooltip.node.qvalueGoForTaxon.toExponential(3) : tooltip.node.qvalueGoForTaxon.toFixed(4)}</span>
               </>
             )}
             {!filterLabel && (

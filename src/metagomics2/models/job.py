@@ -53,6 +53,10 @@ class JobParams(BaseModel):
     go_edge_types: str = "is_a,part_of"
     go_include_self: bool = True
 
+    # Enrichment analysis
+    compute_enrichment_pvalues: bool = False
+    enrichment_iterations: int = 1000
+
     @field_validator("max_evalue")
     @classmethod
     def validate_max_evalue(cls, v: float | None) -> float | None:
@@ -104,6 +108,15 @@ class JobParams(BaseModel):
             return v
         if v < 1:
             raise ValueError("top_k must be at least 1")
+        return v
+
+    @field_validator("enrichment_iterations")
+    @classmethod
+    def validate_enrichment_iterations(cls, v: int) -> int:
+        if v < 100:
+            raise ValueError("enrichment_iterations must be at least 100")
+        if v > 10000:
+            raise ValueError("enrichment_iterations must be at most 10000")
         return v
 
     @field_validator("db_choice")

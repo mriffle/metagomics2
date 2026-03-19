@@ -227,6 +227,12 @@ class ComboAggregate:
     ratio_total_taxon: float = 0.0
     ratio_total_go: float = 0.0
 
+    # Enrichment p-values and q-values (populated by enrichment module)
+    pvalue_go_for_taxon: float | None = None
+    pvalue_taxon_for_go: float | None = None
+    qvalue_go_for_taxon: float | None = None
+    qvalue_taxon_for_go: float | None = None
+
 
 def aggregate_go_taxonomy_combos(
     annotations: list[PeptideAnnotation],

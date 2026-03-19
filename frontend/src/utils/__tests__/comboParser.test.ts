@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parseComboCsv, comboRowsToTaxonNodes, comboRowsToGoTermNodes } from '../comboParser'
 
 const HEADER = 'tax_id,tax_name,tax_rank,parent_tax_id,go_id,go_name,go_namespace,parent_go_ids,quantity,fraction_of_taxon,fraction_of_go,ratio_total_taxon,ratio_total_go,n_peptides'
+const HEADER_WITH_ENRICHMENT = HEADER + ',pvalue_go_for_taxon,pvalue_taxon_for_go,qvalue_go_for_taxon,qvalue_taxon_for_go'
 
 describe('parseComboCsv', () => {
   it('returns empty array for empty input', () => {
@@ -65,6 +66,32 @@ describe('parseComboCsv', () => {
     const rows = parseComboCsv(csv)
     expect(rows).toHaveLength(1)
   })
+
+  it('parses enrichment columns when present', () => {
+    const csv = `${HEADER_WITH_ENRICHMENT}\n30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002;GO:0000003,10.0,0.5,0.8,0.12,0.04,3,0.005,0.01,0.05,0.1`
+    const rows = parseComboCsv(csv)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].pvalueGoForTaxon).toBe(0.005)
+    expect(rows[0].pvalueTaxonForGo).toBe(0.01)
+    expect(rows[0].qvalueGoForTaxon).toBe(0.05)
+    expect(rows[0].qvalueTaxonForGo).toBe(0.1)
+  })
+
+  it('handles empty enrichment columns gracefully', () => {
+    const csv = `${HEADER_WITH_ENRICHMENT}\n30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002;GO:0000003,10.0,0.5,0.8,0.12,0.04,3,,,,`
+    const rows = parseComboCsv(csv)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].pvalueGoForTaxon).toBeUndefined()
+    expect(rows[0].qvalueGoForTaxon).toBeUndefined()
+  })
+
+  it('handles CSV without enrichment columns (backward compat)', () => {
+    const csv = `${HEADER}\n30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002;GO:0000003,10.0,0.5,0.8,0.12,0.04,3`
+    const rows = parseComboCsv(csv)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].pvalueGoForTaxon).toBeUndefined()
+    expect(rows[0].qvalueTaxonForGo).toBeUndefined()
+  })
 })
 
 describe('comboRowsToTaxonNodes', () => {
@@ -99,6 +126,17 @@ describe('comboRowsToTaxonNodes', () => {
     const nodes = comboRowsToTaxonNodes(rows, 'GO:9999999')
     expect(nodes).toHaveLength(0)
   })
+
+  it('passes q-values through when present', () => {
+    const enrichedRows = parseComboCsv([
+      HEADER_WITH_ENRICHMENT,
+      '30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002,10.0,0.5,0.8,0.12,0.04,3,0.005,0.01,0.05,0.1',
+    ].join('\n'))
+    const nodes = comboRowsToTaxonNodes(enrichedRows, 'GO:0000004')
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].qvalueTaxonForGo).toBe(0.1)
+    expect(nodes[0].qvalueGoForTaxon).toBe(0.05)
+  })
 })
 
 describe('comboRowsToGoTermNodes', () => {
@@ -132,5 +170,16 @@ describe('comboRowsToGoTermNodes', () => {
   it('returns empty for non-existent tax ID', () => {
     const nodes = comboRowsToGoTermNodes(rows, '999')
     expect(nodes).toHaveLength(0)
+  })
+
+  it('passes q-values through when present', () => {
+    const enrichedRows = parseComboCsv([
+      HEADER_WITH_ENRICHMENT,
+      '30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002,10.0,0.5,0.8,0.12,0.04,3,0.005,0.01,0.05,0.1',
+    ].join('\n'))
+    const nodes = comboRowsToGoTermNodes(enrichedRows, '30')
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].qvalueGoForTaxon).toBe(0.05)
+    expect(nodes[0].qvalueTaxonForGo).toBe(0.1)
   })
 })

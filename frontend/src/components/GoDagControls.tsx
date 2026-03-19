@@ -43,6 +43,7 @@ const BASE_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
 const FILTER_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
   { value: 'fractionOfTaxon', label: 'Fraction of Taxon' },
   { value: 'fractionOfGo', label: 'Fraction of GO' },
+  { value: 'qvalueGoForTaxon', label: 'Q-value (GO for Taxon)' },
 ]
 
 export default function GoDagControls({

@@ -223,6 +223,8 @@ class Worker:
             job_dir=job_dir,  # Enable reference snapshot creation
             go_edge_types=set(params.go_edge_types.split(",")),
             go_include_self=params.go_include_self,
+            compute_enrichment_pvalues=params.compute_enrichment_pvalues,
+            enrichment_iterations=params.enrichment_iterations,
         )
 
 

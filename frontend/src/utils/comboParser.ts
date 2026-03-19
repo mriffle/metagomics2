@@ -17,6 +17,10 @@ export interface ComboRow {
   ratioTotalTaxon: number
   ratioTotalGo: number
   nPeptides: number
+  pvalueGoForTaxon?: number
+  pvalueTaxonForGo?: number
+  qvalueGoForTaxon?: number
+  qvalueTaxonForGo?: number
 }
 
 /**
@@ -38,7 +42,7 @@ export function parseComboCsv(text: string): ComboRow[] {
       ratioTotalTaxon, ratioTotalGo, nPeptides,
     ] = fields
 
-    rows.push({
+    const row: ComboRow = {
       taxId: taxId.trim(),
       taxName: taxName.trim(),
       taxRank: taxRank.trim(),
@@ -55,7 +59,15 @@ export function parseComboCsv(text: string): ComboRow[] {
       ratioTotalTaxon: parseFloat(ratioTotalTaxon) || 0,
       ratioTotalGo: parseFloat(ratioTotalGo) || 0,
       nPeptides: parseInt(nPeptides, 10) || 0,
-    })
+    }
+
+    // Parse optional enrichment columns (indices 14-17)
+    if (fields.length > 14 && fields[14].trim()) row.pvalueGoForTaxon = parseFloat(fields[14])
+    if (fields.length > 15 && fields[15].trim()) row.pvalueTaxonForGo = parseFloat(fields[15])
+    if (fields.length > 16 && fields[16].trim()) row.qvalueGoForTaxon = parseFloat(fields[16])
+    if (fields.length > 17 && fields[17].trim()) row.qvalueTaxonForGo = parseFloat(fields[17])
+
+    rows.push(row)
   }
   return rows
 }
@@ -85,6 +97,8 @@ export function comboRowsToTaxonNodes(rows: ComboRow[], goId: string): TaxonNode
     nPeptides: row.nPeptides,
     fractionOfTaxon: row.fractionOfTaxon,
     fractionOfGo: row.fractionOfGo,
+    qvalueTaxonForGo: row.qvalueTaxonForGo,
+    qvalueGoForTaxon: row.qvalueGoForTaxon,
   }))
 }
 
@@ -113,5 +127,7 @@ export function comboRowsToGoTermNodes(rows: ComboRow[], taxId: string): GoTermN
     nPeptides: row.nPeptides,
     fractionOfTaxon: row.fractionOfTaxon,
     fractionOfGo: row.fractionOfGo,
+    qvalueGoForTaxon: row.qvalueGoForTaxon,
+    qvalueTaxonForGo: row.qvalueTaxonForGo,
   }))
 }

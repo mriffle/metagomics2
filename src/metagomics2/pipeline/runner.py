@@ -17,6 +17,7 @@ from metagomics2.core.aggregation import (
     aggregate_peptide_annotations,
     validate_aggregation_invariants,
 )
+from metagomics2.core.enrichment import compute_enrichment_pvalues
 from metagomics2.core.annotation import (
     PeptideAnnotation,
     SubjectAnnotation,
@@ -84,6 +85,10 @@ class PipelineConfig:
 
     # Annotations database path (companion SQLite for taxonomy/GO lookup)
     annotations_db_path: Path | None = None
+
+    # Enrichment analysis settings
+    compute_enrichment_pvalues: bool = False
+    enrichment_iterations: int = 1000
 
     # Mock mode for testing (bypasses actual homology search)
     mock_hits_path: Path | None = None
@@ -618,6 +623,26 @@ class PipelineRunner:
         # Write GO-taxonomy combo CSV
         if self.taxonomy_tree and self.go_dag and annotations:
             combos = aggregate_go_taxonomy_combos(annotations, aggregation)
+
+            # Optionally compute enrichment p-values
+            if self.config.compute_enrichment_pvalues:
+                self._update_progress("Computing enrichment p-values", list_id)
+                # Build GO namespace mapping for aspect-stratified shuffling
+                go_namespaces: dict[str, str] | None = None
+                if self.go_dag:
+                    go_namespaces = {
+                        go_id: term.namespace
+                        for go_id, term in self.go_dag.terms.items()
+                    }
+                compute_enrichment_pvalues(
+                    annotations,
+                    aggregation,
+                    combos,
+                    iterations=self.config.enrichment_iterations,
+                    threads=self.config.threads,
+                    go_namespaces=go_namespaces,
+                )
+
             write_go_taxonomy_combo_csv(
                 combos,
                 self.taxonomy_tree,

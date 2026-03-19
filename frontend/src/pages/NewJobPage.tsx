@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, FileText, Settings, Loader2, AlertCircle, HelpCircle } from 'lucide-react'
+import { Upload, FileText, Settings, Loader2, AlertCircle, HelpCircle, FlaskConical } from 'lucide-react'
 
 function Tooltip({ text }: { text: string }) {
   return (
@@ -49,6 +49,8 @@ export default function NewJobPage() {
   const [minPident, setMinPident] = useState('80')
   const [topK, setTopK] = useState('1')
   const [notificationEmail, setNotificationEmail] = useState('')
+  const [computeEnrichment, setComputeEnrichment] = useState(false)
+  const [enrichmentIterations, setEnrichmentIterations] = useState('1000')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -80,6 +82,13 @@ export default function NewJobPage() {
       if (topK) params.top_k = parseInt(topK)
       const emailTrimmed = notificationEmail.trim()
       if (emailTrimmed) params.notification_email = emailTrimmed
+      if (computeEnrichment) {
+        params.compute_enrichment_pvalues = true
+        const iters = parseInt(enrichmentIterations)
+        if (!isNaN(iters) && iters >= 100 && iters <= 10000) {
+          params.enrichment_iterations = iters
+        }
+      }
 
       formData.append('params', JSON.stringify(params))
 
@@ -276,6 +285,54 @@ export default function NewJobPage() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
+          </div>
+        </div>
+
+        {/* Enrichment Analysis */}
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+            <FlaskConical className="w-5 h-5" />
+            Enrichment Analysis
+          </h2>
+
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="compute-enrichment"
+                checked={computeEnrichment}
+                onChange={(e) => setComputeEnrichment(e.target.checked)}
+                className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 rounded"
+              />
+              <div>
+                <label htmlFor="compute-enrichment" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center cursor-pointer">
+                  Calculate enrichment p-values
+                  <Tooltip text="Uses Monte Carlo randomization to test whether GO terms are unusually enriched or depleted within specific taxa. Adds p-values and BH-adjusted q-values to the GO × taxonomy cross-tabulation report. This is compute-intensive and will increase job runtime." />
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Adds significance testing to GO × taxonomy combinations
+                </p>
+              </div>
+            </div>
+
+            {computeEnrichment && (
+              <div className="ml-7">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                  Monte Carlo Iterations
+                  <Tooltip text="Number of randomization iterations. More iterations give more precise p-values but take longer. 1,000 is suitable for routine analysis; use 10,000 for high-resolution significance." />
+                </label>
+                <input
+                  type="number"
+                  min="100"
+                  max="10000"
+                  step="100"
+                  value={enrichmentIterations}
+                  onChange={(e) => setEnrichmentIterations(e.target.value)}
+                  className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Range: 100 – 10,000</p>
+              </div>
+            )}
           </div>
         </div>
 

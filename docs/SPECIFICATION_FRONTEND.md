@@ -147,6 +147,8 @@ The job submission form. Fetches server configuration on mount (`GET /api/config
 - `dbChoice: string` — Selected annotated database path
 - `maxEvalue, minPident, topK: string` — Filter parameters (text inputs)
 - `notificationEmail: string` — Optional email for notifications
+- `computeEnrichment: boolean` — Whether to compute Monte Carlo enrichment p-values
+- `enrichmentIterations: string` — Number of Monte Carlo iterations (100–10000, default 1000)
 
 **Submission flow**:
 1. Validates FASTA and peptide files are selected
@@ -198,7 +200,7 @@ Interactive Gene Ontology DAG visualization.
 - `GoDagViewer` — Cytoscape.js graph renderer
 - `PeptideDetailsPane` — peptide drill-down (shown when a GO node is clicked)
 
-**Metric options**: `quantity`, `ratioTotal`, `ratioAnnotated`, `nPeptides`, plus `fractionOfTaxon` and `fractionOfGo` when a taxon filter is active.
+**Metric options**: `quantity`, `ratioTotal`, `ratioAnnotated`, `nPeptides`, plus `fractionOfTaxon`, `fractionOfGo`, and `qvalueGoForTaxon` when a taxon filter is active. The `qvalueGoForTaxon` metric uses inverted `-log10(q)` normalization so that low q-values (significant) appear as intense colors.
 
 ### 6.4 TaxonomyPage (`pages/TaxonomyPage.tsx`)
 
@@ -375,7 +377,7 @@ Used by all other parsers to handle fields that may contain commas (e.g., specie
 ### 8.2 taxonomyParser (`utils/taxonomyParser.ts`)
 
 **Types**:
-- `TaxonNode` — `{ taxId, name, rank, parentTaxId, quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo? }`
+- `TaxonNode` — `{ taxId, name, rank, parentTaxId, quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo?, qvalueTaxonForGo?, qvalueGoForTaxon? }`
 - `CanonicalRank` — `'root' | 'domain' | 'kingdom' | 'phylum' | 'class' | 'order' | 'family' | 'genus' | 'species'`
 
 **Constants**:
@@ -407,7 +409,7 @@ parseTaxonomyCsv → filterCanonicalRanks → validateCanonicalHierarchy → fil
 ### 8.3 goParser (`utils/goParser.ts`)
 
 **Types**:
-- `GoTermNode` — `{ id, name, namespace, parentIds: string[], quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo? }`
+- `GoTermNode` — `{ id, name, namespace, parentIds: string[], quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo?, qvalueGoForTaxon?, qvalueTaxonForGo? }`
 
 **Functions**:
 - `parseGoTermsCsv(text)` — Parse `go_terms.csv` into `GoTermNode[]`. Parent IDs are semicolon-delimited.
@@ -417,7 +419,7 @@ parseTaxonomyCsv → filterCanonicalRanks → validateCanonicalHierarchy → fil
 Handles the `go_taxonomy_combo.csv` cross-tabulation data for cross-filtering.
 
 **Types**:
-- `ComboRow` — `{ taxId, taxName, taxRank, parentTaxId, goId, goName, goNamespace, parentGoIds, quantity, fractionOfTaxon, fractionOfGo, ratioTotalTaxon, ratioTotalGo, nPeptides }`
+- `ComboRow` — `{ taxId, taxName, taxRank, parentTaxId, goId, goName, goNamespace, parentGoIds, quantity, fractionOfTaxon, fractionOfGo, ratioTotalTaxon, ratioTotalGo, nPeptides, pvalueGoForTaxon?, pvalueTaxonForGo?, qvalueGoForTaxon?, qvalueTaxonForGo? }`
 
 **Functions**:
 | Function | Purpose |

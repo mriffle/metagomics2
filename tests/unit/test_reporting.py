@@ -557,6 +557,8 @@ class TestWriteGoTaxonomyComboCSV:
             "tax_id", "tax_name", "tax_rank", "parent_tax_id",
             "go_id", "go_name", "go_namespace", "parent_go_ids",
             "quantity", "fraction_of_taxon", "fraction_of_go", "n_peptides",
+            "pvalue_go_for_taxon", "pvalue_taxon_for_go",
+            "qvalue_go_for_taxon", "qvalue_taxon_for_go",
         ]
         for col in expected_cols:
             assert col in reader.fieldnames
@@ -630,6 +632,49 @@ class TestWriteGoTaxonomyComboCSV:
         assert rows[1]["go_id"] == "GO:0000002"
         assert rows[2]["tax_id"] == "30"
         assert rows[2]["go_id"] == "GO:0000004"
+
+    def test_enrichment_values_written(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        """Verify enrichment p-values and q-values are written when populated."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combo = make_combo(30, "GO:0000004", 10.0, 1, 0.5, 0.8)
+        combo.pvalue_go_for_taxon = 0.005
+        combo.pvalue_taxon_for_go = 0.01
+        combo.qvalue_go_for_taxon = 0.05
+        combo.qvalue_taxon_for_go = 0.10
+        combos = {(30, "GO:0000004"): combo}
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert float(row["pvalue_go_for_taxon"]) == pytest.approx(0.005)
+        assert float(row["pvalue_taxon_for_go"]) == pytest.approx(0.01)
+        assert float(row["qvalue_go_for_taxon"]) == pytest.approx(0.05)
+        assert float(row["qvalue_taxon_for_go"]) == pytest.approx(0.10)
+
+    def test_enrichment_values_empty_when_none(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
+        """Verify enrichment columns are empty strings when not computed."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combos = {
+            (30, "GO:0000004"): make_combo(30, "GO:0000004", 10.0, 1),
+        }
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv(combos, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["pvalue_go_for_taxon"] == ""
+        assert row["pvalue_taxon_for_go"] == ""
+        assert row["qvalue_go_for_taxon"] == ""
+        assert row["qvalue_taxon_for_go"] == ""
 
     def test_empty_combos(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
         """Empty combos produce header-only CSV."""

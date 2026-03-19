@@ -113,6 +113,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         taxonomy_data_path=Path(args.taxonomy) if args.taxonomy else None,
         go_edge_types=set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a", "part_of"},
         go_include_self=not args.go_exclude_self,
+        compute_enrichment_pvalues=args.enrichment_pvalues,
+        enrichment_iterations=args.enrichment_iterations,
         mock_hits_path=Path(args.mock_hits) if args.mock_hits else None,
         mock_subject_annotations_path=Path(args.mock_annotations) if args.mock_annotations else None,
     )
@@ -248,6 +250,20 @@ def create_parser() -> argparse.ArgumentParser:
         "--go-exclude-self",
         action="store_true",
         help="Exclude GO terms themselves from closure",
+    )
+
+    # Enrichment analysis options
+    enrich_group = run_parser.add_argument_group("Enrichment analysis")
+    enrich_group.add_argument(
+        "--enrichment-pvalues",
+        action="store_true",
+        help="Compute Monte Carlo enrichment p-values for GO × taxonomy combos",
+    )
+    enrich_group.add_argument(
+        "--enrichment-iterations",
+        type=int,
+        default=1000,
+        help="Number of Monte Carlo iterations for enrichment (default: 1000, max: 10000)",
     )
 
     # Testing/mock options

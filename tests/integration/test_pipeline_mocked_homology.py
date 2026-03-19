@@ -380,6 +380,190 @@ class TestPipelineMockedHomology:
         assert (tmp_path / "results" / "list_001").exists()
 
 
+    def test_enrichment_pvalues_in_combo_csv(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify enrichment columns appear in combo CSV when enabled."""
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+            compute_enrichment_pvalues=True,
+            enrichment_iterations=200,
+        )
+
+        result = run_pipeline(config)
+        assert result.success
+
+        combo_path = tmp_path / "results" / "list_000" / "go_taxonomy_combo.csv"
+        assert combo_path.exists()
+
+        with open(combo_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) > 0
+
+        # Check enrichment columns exist in header
+        assert "pvalue_go_for_taxon" in rows[0]
+        assert "pvalue_taxon_for_go" in rows[0]
+        assert "qvalue_go_for_taxon" in rows[0]
+        assert "qvalue_taxon_for_go" in rows[0]
+
+        # Check values are populated and valid
+        for row in rows:
+            pval_go = row["pvalue_go_for_taxon"]
+            pval_tax = row["pvalue_taxon_for_go"]
+            qval_go = row["qvalue_go_for_taxon"]
+            qval_tax = row["qvalue_taxon_for_go"]
+
+            if pval_go:
+                p = float(pval_go)
+                assert 0 < p <= 1.0
+            if pval_tax:
+                p = float(pval_tax)
+                assert 0 < p <= 1.0
+            if qval_go:
+                q = float(qval_go)
+                assert 0 < q <= 1.0
+            if qval_tax:
+                q = float(qval_tax)
+                assert 0 < q <= 1.0
+
+    def test_progress_includes_enrichment_stage(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify progress callback includes 'Computing enrichment p-values' when enabled."""
+        progress_updates: list[PipelineProgress] = []
+
+        def callback(progress: PipelineProgress) -> None:
+            progress_updates.append(
+                PipelineProgress(
+                    total_peptide_lists=progress.total_peptide_lists,
+                    completed_peptide_lists=progress.completed_peptide_lists,
+                    current_stage=progress.current_stage,
+                    current_list_id=progress.current_list_id,
+                    progress_done=progress.progress_done,
+                    progress_total=progress.progress_total,
+                )
+            )
+
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+            compute_enrichment_pvalues=True,
+            enrichment_iterations=100,
+        )
+
+        result = run_pipeline(config, progress_callback=callback)
+        assert result.success
+
+        stages = [p.current_stage for p in progress_updates]
+
+        # Enrichment stage should appear in progress
+        assert any("enrichment" in s.lower() for s in stages), (
+            f"Expected 'enrichment' in progress stages, got: {stages}"
+        )
+
+        # progress_done should still be monotonically non-decreasing
+        for i in range(1, len(progress_updates)):
+            assert progress_updates[i].progress_done >= progress_updates[i - 1].progress_done
+
+        # Final should reach _PROGRESS_TOTAL
+        assert progress_updates[-1].progress_done == _PROGRESS_TOTAL
+
+    def test_progress_no_enrichment_stage_when_disabled(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify 'enrichment' does NOT appear in progress when disabled."""
+        progress_updates: list[PipelineProgress] = []
+
+        def callback(progress: PipelineProgress) -> None:
+            progress_updates.append(
+                PipelineProgress(
+                    total_peptide_lists=progress.total_peptide_lists,
+                    completed_peptide_lists=progress.completed_peptide_lists,
+                    current_stage=progress.current_stage,
+                    current_list_id=progress.current_list_id,
+                    progress_done=progress.progress_done,
+                    progress_total=progress.progress_total,
+                )
+            )
+
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+            compute_enrichment_pvalues=False,
+        )
+
+        result = run_pipeline(config, progress_callback=callback)
+        assert result.success
+
+        stages = [p.current_stage for p in progress_updates]
+        assert not any("enrichment" in s.lower() for s in stages), (
+            f"'enrichment' should NOT appear in progress stages when disabled, got: {stages}"
+        )
+
+    def test_no_enrichment_columns_when_disabled(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """Verify enrichment columns are empty when enrichment is disabled."""
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+            compute_enrichment_pvalues=False,
+        )
+
+        result = run_pipeline(config)
+        assert result.success
+
+        combo_path = tmp_path / "results" / "list_000" / "go_taxonomy_combo.csv"
+        assert combo_path.exists()
+
+        with open(combo_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) > 0
+
+        # Header should still have the columns
+        assert "pvalue_go_for_taxon" in rows[0]
+
+        # But values should all be empty
+        for row in rows:
+            assert row["pvalue_go_for_taxon"] == ""
+            assert row["pvalue_taxon_for_go"] == ""
+            assert row["qvalue_go_for_taxon"] == ""
+            assert row["qvalue_taxon_for_go"] == ""
+
+
 class TestPipelineErrorHandling:
     """Tests for pipeline error handling."""
 

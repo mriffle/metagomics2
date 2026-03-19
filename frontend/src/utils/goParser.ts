@@ -11,6 +11,8 @@ export interface GoTermNode {
   nPeptides: number
   fractionOfTaxon?: number
   fractionOfGo?: number
+  qvalueGoForTaxon?: number
+  qvalueTaxonForGo?: number
 }
 
 export function parseGoTermsCsv(text: string): GoTermNode[] {

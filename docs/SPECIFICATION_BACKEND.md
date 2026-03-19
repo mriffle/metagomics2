@@ -81,6 +81,7 @@ src/metagomics2/
 │   ├── annotation.py            # Peptide→annotation logic (LCA, GO union)
 │   ├── diamond.py               # DIAMOND execution and output parsing
 │   ├── fasta.py                 # FASTA parsing, hashing, subset writing
+│   ├── enrichment.py            # Monte Carlo GO × taxonomy enrichment p-values
 │   ├── filtering.py             # Homology hit filtering (thresholds + top_k)
 │   ├── gaf_parser.py            # GAF 2.2 file parser (GO annotations)
 │   ├── go.py                    # GO DAG model and closure computation
@@ -166,6 +167,7 @@ For each peptide in the list (`core/annotation.py`):
 - **GO aggregation**: Same formula for GO terms.
 - **Coverage stats**: Total, annotated, and unannotated peptide quantities and counts.
 - **GO-taxonomy cross-tabulation** (`aggregate_go_taxonomy_combos`): For each `(tax_id, go_id)` pair in `TAX(p) × GO(p)`, accumulates quantity. Computes `fraction_of_taxon` and `fraction_of_go`.
+- **Enrichment analysis** (optional, `core/enrichment.py`): If `compute_enrichment_pvalues` is enabled, runs Monte Carlo randomization to compute two-sided empirical p-values for each (taxon, GO) combo. Two shuffle modes: taxonomy shuffle (tests GO enrichment within taxon) and GO shuffle (tests taxon enrichment within GO). Results are BH-corrected to produce q-values. Uses NumPy-vectorized sparse membership matrices and supports multiprocessing parallelism via the `threads` setting.
 - **Invariant validation** (`validate_aggregation_invariants`): Checks that `0 ≤ quantity(n) ≤ total` and `0 ≤ ratio_total ≤ ratio_annotated ≤ 1`. Violations are logged as warnings.
 
 ### Stage 7: Write Reports (per list)
@@ -175,7 +177,7 @@ Output directory: `<output_dir>/<list_id>/` (e.g., `results/list_000/`)
 |------|--------|-------------|
 | `taxonomy_nodes.csv` | CSV | `tax_id, name, rank, parent_tax_id, quantity, ratio_total, ratio_annotated, n_peptides` |
 | `go_terms.csv` | CSV | `go_id, name, namespace, parent_go_ids, quantity, ratio_total, ratio_annotated, n_peptides` |
-| `go_taxonomy_combo.csv` | CSV | Cross-tab: `tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name, go_namespace, parent_go_ids, quantity, fraction_of_taxon, fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides` |
+| `go_taxonomy_combo.csv` | CSV | Cross-tab: `tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name, go_namespace, parent_go_ids, quantity, fraction_of_taxon, fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides, pvalue_go_for_taxon, pvalue_taxon_for_go, qvalue_go_for_taxon, qvalue_taxon_for_go` (enrichment columns empty when not computed) |
 | `coverage.csv` | CSV | Single row: `total_peptide_quantity, annotated_peptide_quantity, unannotated_peptide_quantity, annotation_coverage_ratio, n_peptides_total, n_peptides_annotated, n_peptides_unannotated` |
 | `peptide_mapping.parquet` | Parquet | One row per `(peptide, background_protein, annotated_protein)` triple. Columns: `peptide, peptide_lca_tax_ids (List[Int64]), peptide_go_terms (List[Utf8]), background_protein, annotated_protein, evalue, pident` |
 | `run_manifest.json` | JSON | Provenance: version, tool versions, input hashes (SHA256), parameters, reference data hashes, timestamp |
@@ -316,6 +318,8 @@ class PipelineConfig:
     job_dir: Path | None = None          # Set for web mode (enables reference snapshots)
     go_edge_types: set[str] = {"is_a", "part_of"}
     go_include_self: bool = True
+    compute_enrichment_pvalues: bool = False  # Monte Carlo enrichment analysis
+    enrichment_iterations: int = 1000          # 100–10000
     mock_hits_path: Path | None = None   # Testing only
     mock_subject_annotations_path: Path | None = None  # Testing only
 ```
@@ -424,6 +428,8 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 | `--taxonomy` | No | Path to taxonomy data (dir/JSON) |
 | `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure |
 | `--go-exclude-self` | No | Exclude terms themselves from closure |
+| `--enrichment-pvalues` | No | Compute Monte Carlo enrichment p-values for GO × taxonomy combos |
+| `--enrichment-iterations` | No (default: 1000) | Number of Monte Carlo iterations (100–10000) |
 | `--mock-hits` | No | Mock hits JSON (testing) |
 | `--mock-annotations` | No | Mock annotations JSON (testing) |
 
