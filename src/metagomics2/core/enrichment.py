@@ -332,7 +332,16 @@ def _build_index_maps(
             if g in go_to_idx:
                 go_mem[p, go_to_idx[g]] = True
 
-    # Build pair arrays — only for combos that exist
+    # Compute marginal abundances first (needed for pair filtering)
+    eps = DEFAULT_EPS
+    a_total = float(abundance.sum())
+    a_tax = tax_mem.T @ abundance   # (T,)
+    a_go = go_mem.T @ abundance     # (G,)
+
+    # Build pair arrays — only for combos that exist and have positive
+    # marginal abundances (A_TAX > 0 and A_GO > 0).  Pairs with zero
+    # marginals would produce degenerate log2 enrichment values driven
+    # entirely by the epsilon constant.
     pair_keys: list[tuple[int, str]] = []
     pair_tax: list[int] = []
     pair_go: list[int] = []
@@ -340,19 +349,15 @@ def _build_index_maps(
     for key in combos:
         tax_id, go_id = key
         if tax_id in tax_to_idx and go_id in go_to_idx:
-            pair_keys.append(key)
-            pair_tax.append(tax_to_idx[tax_id])
-            pair_go.append(go_to_idx[go_id])
+            ti = tax_to_idx[tax_id]
+            gi = go_to_idx[go_id]
+            if a_tax[ti] > 0 and a_go[gi] > 0:
+                pair_keys.append(key)
+                pair_tax.append(ti)
+                pair_go.append(gi)
 
     pair_tax_idx = np.array(pair_tax, dtype=np.intp)
     pair_go_idx = np.array(pair_go, dtype=np.intp)
-
-    # Compute observed log2 enrichment for each pair
-    eps = DEFAULT_EPS
-    a_total = float(abundance.sum())
-    # A_TAX[t] and A_GO[g]
-    a_tax = tax_mem.T @ abundance   # (T,)
-    a_go = go_mem.T @ abundance     # (G,)
 
     # A_JOINT via weighted membership: diag(abundance) @ tax_mem → (P, T)
     weighted_tax = tax_mem * abundance[:, None]   # broadcast multiply
@@ -473,11 +478,22 @@ def _run_shuffle(
             denom_vals = a_shuffled[pair_tax]
             bg_vals = a_fixed[pair_go]
         elif aspect_submats is not None:
-            # Aspect-stratified GO shuffle: independent permutation per aspect
+            # Aspect-stratified GO shuffle: independent permutation per
+            # aspect.  Peptides that lack any term in an aspect keep
+            # their empty row — they do NOT gain terms from other
+            # peptides.  Only peptides that have ≥1 term in the aspect
+            # participate in that aspect's shuffle.
             shuffled = np.empty_like(shuffle_mem)
             for aspect_mask, aspect_submat in zip(idx.go_aspect_masks, aspect_submats):
-                perm = rng.permutation(idx.n_peptides)
-                shuffled[:, aspect_mask] = aspect_submat[perm]
+                has_aspect = aspect_submat.any(axis=1)  # (P,) bool
+                has_idx = np.where(has_aspect)[0]
+                if len(has_idx) < 2:
+                    shuffled[:, aspect_mask] = aspect_submat
+                    continue
+                result = aspect_submat.copy()
+                perm = rng.permutation(len(has_idx))
+                result[has_idx] = aspect_submat[has_idx[perm]]
+                shuffled[:, aspect_mask] = result
             joint_matrix = weighted_fixed.T @ shuffled   # (T, G)
             a_shuffled = shuffled.T @ abundance          # (G,)
             joint_vals = joint_matrix[pair_tax, pair_go]

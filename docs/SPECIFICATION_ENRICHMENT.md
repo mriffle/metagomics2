@@ -43,7 +43,11 @@ These come from `PeptideAnnotation` objects produced by the annotation pipeline 
 
 ### Peptide pool filtering
 
-Before any enrichment calculation, peptides are filtered to those with **both** non-empty `taxonomy_nodes` and non-empty `go_terms`. Unannotated peptides and peptides with only taxonomy or only GO annotations are excluded. This means the enrichment denominators are based on the **doubly-annotated peptide pool**, not total sample abundance.
+Before any enrichment calculation, peptides are filtered to those satisfying **all three** conditions: `is_annotated` is true, `taxonomy_nodes` is non-empty, and `go_terms` is non-empty. The `is_annotated` flag is checked first as a fast pre-filter (it is set by the annotation pipeline when a peptide has any implied subjects); the subsequent non-empty checks on `taxonomy_nodes` and `go_terms` are the substantive filters. Peptides with only taxonomy or only GO annotations are excluded. This means the enrichment denominators are based on the **doubly-annotated peptide pool**, not total sample abundance.
+
+### Pair eligibility
+
+Tested (taxon, GO) pairs must have **positive marginal abundance** in the peptide pool: `A_TAX(t) > 0` and `A_GO(g) > 0`. Pairs where either marginal is zero are excluded from testing because the log2 enrichment formula would produce degenerate values driven entirely by the epsilon constant rather than real signal. In practice, all pairs originating from the combo cross-tabulation already satisfy this (since `A_JOINT > 0` implies both marginals are positive), but the guard is applied explicitly to handle edge cases in aspect-restricted sub-pools.
 
 ---
 
@@ -77,6 +81,10 @@ Where `eps = 1e-10` is a small constant for numerical stability.
 - `L_obs < 0` → GO term `g` is depleted within taxon `t`
 - `L_obs ≈ 0` → no enrichment or depletion
 
+### Epsilon handling and edge cases
+
+The epsilon (`eps = 1e-10`) is added to both numerator and denominator of each ratio to prevent division by zero and `log2(0)`. For all tested pairs, `A_TAX(t) > 0` and `A_GO(g) > 0` are guaranteed by the pair eligibility filter (Section 3), so the epsilon's effect on the observed statistic is negligible (`eps / A_TAX` ≈ 0). During shuffled iterations, a taxon's shuffled marginal `A_TAX_shuffled(t)` could theoretically be zero if no peptides received that taxonomy, but this is extremely rare and the epsilon ensures a finite (large-magnitude) null value rather than a crash. Such extreme null values are conservative — they increase `count_extreme` and make p-values larger, not smaller.
+
 ---
 
 ## 5. Randomization Modes
@@ -103,9 +111,11 @@ Two complementary randomization modes are implemented. Both are **aspect-stratif
 
 **What is shuffled:** peptide GO closures, **independently per aspect**
 
-**Aspect stratification:** For each iteration, three independent permutations are applied — one for molecular_function GO terms, one for biological_process, one for cellular_component. Each peptide's shuffled GO closure is the union of its randomly drawn MF closure from one peptide, BP closure from another, and CC closure from a third. This breaks the correlation between "has MF annotation" and "has BP annotation" that exists when well-annotated peptides have comprehensive coverage across all three aspects.
+**Aspect stratification:** For each iteration, three independent permutations are applied — one for molecular_function GO terms, one for biological_process, one for cellular_component. Within each aspect, **only peptides that have at least one term in that aspect participate in the shuffle**. Peptides that lack all terms in an aspect keep their empty annotation for that aspect — they do not gain terms from other peptides. This preserves the per-peptide annotation coverage structure: a peptide that was never annotated with any MF term will never acquire MF terms through shuffling.
 
-**Null hypothesis:** Conditional on the observed peptide abundances and taxonomy assignments, GO assignments within each aspect are independently exchangeable across peptides.
+Each peptide's shuffled GO closure is the union of its (possibly shuffled) MF sub-closure, BP sub-closure, and CC sub-closure. The independent permutations break the correlation between "has MF annotation" and "has BP annotation" that exists when well-annotated peptides have comprehensive coverage across all three aspects.
+
+**Null hypothesis:** Conditional on the observed peptide abundances and taxonomy assignments, GO assignments within each aspect are independently exchangeable across peptides that have at least one term in that aspect.
 
 ---
 
@@ -147,7 +157,10 @@ Let `B` be the number of iterations (default: 1000, configurable up to 10000).
 1. Compute observed `L_obs(t, g)` for every tested (taxon, GO) pair
 2. For `b = 1, ..., B`:
    a. Apply the appropriate permutation (see Section 5)
-   b. Recompute joint abundances, marginal abundances, and `L_null_b(t, g)` for all tested pairs
+   b. Recompute the **shuffled side's marginal abundances** and joint abundances for all tested pairs. The **fixed side's marginals do not change** across iterations — they are computed once and reused. Specifically:
+      - **Taxonomy shuffle**: `A_GO(g)` is fixed (GO is not shuffled); `A_TAX(t)` and `A_JOINT(t, g)` are recomputed from the permuted taxonomy memberships
+      - **GO shuffle**: `A_TAX(t)` is fixed (taxonomy is not shuffled); `A_GO(g)` and `A_JOINT(t, g)` are recomputed from the permuted GO memberships
+   c. Compute `L_null_b(t, g)` for all tested pairs using the recomputed quantities
 3. Compute the null mean: `mean_null(t, g) = mean(L_null_1, ..., L_null_B)`
 4. Compute two-sided p-value:
 
@@ -156,9 +169,15 @@ count_extreme = |{ b : |L_null_b - mean_null| >= |L_obs - mean_null| }|
 p_value = (1 + count_extreme) / (B + 1)
 ```
 
-The `+1` in numerator and denominator ensures p-values are never exactly zero and are uniformly distributed under the null.
+The `+1` in numerator and denominator ensures p-values are never exactly zero and are uniformly distributed under the null (Davison and Hinkley, 1997).
 
-### 7.2 Multiple testing correction
+### 7.2 Why center around the null mean?
+
+The two-sided p-value measures deviation from the **empirical null mean** (`mean_null`), not from zero or from the observed statistic. This is a deliberate choice: the permutation null is not guaranteed to be centered at zero due to finite-sample effects and the structure of propagated closures (where high-level taxa like "root" appear in every peptide's closure). Centering around the empirical null mean accounts for this systematic shift and tests whether the observation is unusually *extreme* relative to the null's own center, not whether it differs from zero.
+
+If a standard one-sided permutation p-value (fraction of null values ≥ observed) is preferred, the formula can be adapted, but the two-sided mean-centered approach is more robust for the hierarchical structures in GO and taxonomy data.
+
+### 7.3 Multiple testing correction
 
 Benjamini-Hochberg (BH) FDR correction is applied to the raw p-values across all tested pairs within each mode:
 
@@ -168,6 +187,8 @@ Benjamini-Hochberg (BH) FDR correction is applied to the raw p-values across all
 4. Restore original order
 
 The resulting q-values represent the expected false discovery rate if all pairs with q-value ≤ threshold are declared significant.
+
+**Dependency assumption**: BH controls FDR under independence or positive regression dependency on a subset (PRDS). The hierarchical structure of GO terms and taxonomy (parent nodes contain all descendants' peptides) creates strong positive correlations among tested pairs. These satisfy the PRDS condition, so BH remains valid. However, the effective number of independent tests is smaller than the nominal count, which means BH is conservative — some true enrichments may be missed (q-values inflated) but the false discovery rate guarantee holds.
 
 ---
 
@@ -215,32 +236,85 @@ To avoid Python-level loops during Monte Carlo iterations, all peptide-level dat
 
 ### 8.4 Vectorized shuffle iteration
 
-Each Monte Carlo iteration performs these steps (all NumPy, no Python per-pair loops):
+Below is pseudocode for each mode (all NumPy, no Python per-pair loops). The matrix operation `@` uses BLAS internally and is inherently multi-threaded.
+
+**Taxonomy shuffle** (one permutation per iteration):
 
 ```python
+# a_fixed = go_mem.T @ abundance  (computed once, GO marginals are fixed)
 perm = rng.permutation(n_peptides)
-shuffled = shuffle_mem[perm]                      # row permutation (atomic closure shuffle)
-weighted_shuffled = shuffled * abundance[:, None]  # abundance-weighted membership
-joint_matrix = weighted_shuffled.T @ fixed_mem     # (T, G) joint abundance matrix
-a_shuffled = shuffled.T @ abundance                # marginal abundance of shuffled side
+shuffled = tax_mem[perm]                           # row permutation of taxonomy closures
+weighted_shuffled = shuffled * abundance[:, None]  # abundance-weighted
+joint_matrix = weighted_shuffled.T @ go_mem        # (T, G) joint abundance
+a_shuffled = shuffled.T @ abundance                # (T,) shuffled taxonomy marginals
 
-# Extract values for all K tested pairs at once via fancy indexing
-joint_vals = joint_matrix[pair_tax, pair_go]       # (K,)
-denom_vals = a_shuffled[pair_tax]                  # (K,)
-bg_vals = a_fixed[pair_go]                         # (K,)
+joint_vals = joint_matrix[pair_tax, pair_go]        # (K,)
+denom_vals = a_shuffled[pair_tax]                   # (K,) shuffled A_TAX
+bg_vals = a_fixed[pair_go]                          # (K,) fixed A_GO
+
+p_obs_null = (joint_vals + eps) / (denom_vals + eps)
+p_bg = (bg_vals + eps) / (a_total + eps)            # a_total is fixed
+null_values[b] = np.log2(p_obs_null / p_bg)
+```
+
+**Aspect-stratified GO shuffle** (three independent permutations per iteration):
+
+```python
+# a_fixed = tax_mem.T @ abundance  (computed once, taxonomy marginals are fixed)
+# weighted_fixed = tax_mem * abundance[:, None]  (computed once)
+shuffled = np.empty_like(go_mem)
+for aspect_mask, aspect_submat in zip(go_aspect_masks, aspect_submats):
+    has_aspect = aspect_submat.any(axis=1)         # which peptides have this aspect
+    has_idx = np.where(has_aspect)[0]
+    result = aspect_submat.copy()
+    perm = rng.permutation(len(has_idx))            # permute only within has-aspect pool
+    result[has_idx] = aspect_submat[has_idx[perm]]  # peptides without aspect keep empty rows
+    shuffled[:, aspect_mask] = result
+
+joint_matrix = weighted_fixed.T @ shuffled          # (T, G) joint abundance
+a_shuffled = shuffled.T @ abundance                 # (G,) shuffled GO marginals
+
+joint_vals = joint_matrix[pair_tax, pair_go]         # (K,)
+denom_vals = a_fixed[pair_tax]                       # (K,) fixed A_TAX
+bg_vals = a_shuffled[pair_go]                        # (K,) shuffled A_GO
 
 p_obs_null = (joint_vals + eps) / (denom_vals + eps)
 p_bg = (bg_vals + eps) / (a_total + eps)
-null_values[b] = np.log2(p_obs_null / p_bg)        # (K,) null statistic
+null_values[b] = np.log2(p_obs_null / p_bg)
 ```
 
-The matrix operation `@` uses BLAS internally and is inherently multi-threaded.
+In both modes, `a_fixed` contains the **non-shuffled side's marginals**, computed once before the iteration loop. The naming convention: `a_fixed[pair_go]` in taxonomy mode retrieves the fixed GO marginals; `a_fixed[pair_tax]` in GO mode retrieves the fixed taxonomy marginals.
 
 ---
 
 ## 9. Output Columns
 
 The enrichment analysis adds four columns to `go_taxonomy_combo.csv`. These columns are empty strings when enrichment is not computed (backward-compatible).
+
+### Full column index
+
+| Index | Column | Always present |
+|-------|--------|---------------|
+| 0 | `tax_id` | yes |
+| 1 | `tax_name` | yes |
+| 2 | `tax_rank` | yes |
+| 3 | `parent_tax_id` | yes |
+| 4 | `go_id` | yes |
+| 5 | `go_name` | yes |
+| 6 | `go_namespace` | yes |
+| 7 | `parent_go_ids` | yes |
+| 8 | `quantity` | yes |
+| 9 | `fraction_of_taxon` | yes |
+| 10 | `fraction_of_go` | yes |
+| 11 | `ratio_total_taxon` | yes |
+| 12 | `ratio_total_go` | yes |
+| 13 | `n_peptides` | yes |
+| 14 | `pvalue_go_for_taxon` | empty if enrichment disabled |
+| 15 | `pvalue_taxon_for_go` | empty if enrichment disabled |
+| 16 | `qvalue_go_for_taxon` | empty if enrichment disabled |
+| 17 | `qvalue_taxon_for_go` | empty if enrichment disabled |
+
+### Enrichment column definitions
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -320,7 +394,12 @@ When a user filters the GO DAG visualization by a taxon (or the taxonomy chart b
 - **Single-process execution**: All Monte Carlo iterations run in a single process. An earlier multiprocessing implementation using `multiprocessing.Pool` with `fork` mode caused production failures due to inherited signal handlers and SQLite connection corruption in Docker. It was removed in favor of single-process NumPy-vectorized execution.
 - **BLAS threading**: The matrix operations (`@`) use NumPy's internal BLAS implementation, which is inherently multi-threaded. This provides parallelism without the risks of Python multiprocessing.
 - **Fully vectorized**: There are no Python-level per-pair loops in the hot path. All per-pair operations use NumPy fancy indexing.
-- **Memory**: Stores a `(B, K)` array of null statistics where `B` = iterations and `K` = number of tested pairs. For 1000 iterations and 100,000 pairs, this is ~800 MB. For very large datasets, a streaming approach (running counters) could replace this, but is not currently implemented.
+- **Memory**: Stores a `(B, K)` array of null statistics where `B` = iterations and `K` = number of tested pairs. Memory formula: **`B × K × 8` bytes**. Examples:
+  - 1,000 iterations × 100,000 pairs = 800 MB
+  - 1,000 iterations × 500,000 pairs = 4 GB
+  - 10,000 iterations × 100,000 pairs = 8 GB
+
+  **⚠️ For a web-hosted pipeline, operators should be aware that large samples with many taxonomy × GO pairs can require several GB of RAM during enrichment computation.** The memory is allocated twice (once per shuffle mode, but sequentially — only one mode's matrix exists at a time). Consider reducing iterations or the number of tested pairs (via abundance filters) if memory is constrained. A streaming approach using Welford's online algorithm could replace the full matrix in a future version.
 - **Aspect stratification overhead**: The taxonomy shuffle runs 3 separate shuffles (one per GO aspect), each on a smaller peptide pool. The GO shuffle runs 3 permutations per iteration instead of 1. Total work is roughly 3× a non-stratified approach, but each individual shuffle operates on a smaller matrix.
 
 ---
@@ -335,6 +414,7 @@ When a user filters the GO DAG visualization by a taxon (or the taxonomy chart b
 | `TestBuildIndexMaps` | Membership matrix correctness, abundance vector, hand-computed log2 enrichment with exact expected values |
 | `TestShuffleCorrectness` | Taxonomy shuffle preserves GO memberships; GO shuffle preserves taxonomy memberships; abundance never shuffled; row vectors permuted atomically (not element-wise) |
 | `TestComputeEnrichmentPvalues` | Empty/no-annotation edge cases; valid p-value ranges; deterministic with seed; planted enrichment detected (p < 0.05); planted depletion; q ≥ p invariant; null calibration (uniform p-values under true null); both modes produce different results; single-peptide degenerate case; two-identical-peptides case; unannotated peptides excluded; threads > 1 accepted; aspect-stratified produces different results from legacy; annotation-quality confound test; enrichment disabled leaves None |
+| `TestEdgeCasesFromReview` | Missing-aspect peptides don’t gain terms during GO shuffle; all-peptides-lack-one-aspect is a no-op; single-peptide-in-aspect-pool is degenerate; asymmetric null centering produces non-significant p-values for dominant taxa; zero-abundance pairs excluded from testing |
 | `TestRunShuffle` | Both modes produce valid p-values in (0, 1] |
 
 ### Integration tests (`tests/integration/test_pipeline_mocked_homology.py`)

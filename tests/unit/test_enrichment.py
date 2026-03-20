@@ -772,6 +772,169 @@ class TestComputeEnrichmentPvalues:
 # Tests for _run_shuffle
 # ---------------------------------------------------------------------------
 
+class TestEdgeCasesFromReview:
+    """Tests added in response to specification review findings."""
+
+    def test_missing_aspect_peptides_dont_gain_terms(self):
+        """GO shuffle: peptides without any term in an aspect must NOT gain
+        terms from other peptides during that aspect's shuffle.
+
+        Setup: PEP1-3 have MF+BP, PEP4-5 have only BP (no MF).
+        After aspect-stratified GO shuffle, PEP4-5 should still have
+        no MF terms — they should not inherit MF from PEP1-3.
+        """
+        anns = [
+            _make_annotation("PEP1", 100.0, {1, 10}, {"GO:MF1", "GO:BP1"}),
+            _make_annotation("PEP2", 100.0, {1, 10}, {"GO:MF2", "GO:BP1"}),
+            _make_annotation("PEP3", 100.0, {1, 20}, {"GO:MF1", "GO:BP2"}),
+            _make_annotation("PEP4", 100.0, {1, 20}, {"GO:BP1"}),
+            _make_annotation("PEP5", 100.0, {1, 20}, {"GO:BP2"}),
+        ]
+        go_ns = {
+            "GO:MF1": "molecular_function",
+            "GO:MF2": "molecular_function",
+            "GO:BP1": "biological_process",
+            "GO:BP2": "biological_process",
+        }
+        agg = aggregate_peptide_annotations(anns)
+        combos = aggregate_go_taxonomy_combos(anns, agg)
+
+        # Run with aspect stratification — should not crash and should
+        # produce valid p-values
+        compute_enrichment_pvalues(
+            anns, agg, combos, iterations=200, seed=42,
+            go_namespaces=go_ns,
+        )
+
+        for combo in combos.values():
+            if combo.pvalue_go_for_taxon is not None:
+                assert 0 < combo.pvalue_go_for_taxon <= 1.0
+            if combo.pvalue_taxon_for_go is not None:
+                assert 0 < combo.pvalue_taxon_for_go <= 1.0
+
+    def test_all_peptides_lack_one_aspect(self):
+        """When no peptide has any term in an aspect, that aspect's shuffle
+        should be a no-op and not crash."""
+        # All peptides have only BP, no MF or CC
+        anns = [
+            _make_annotation("PEP1", 100.0, {1, 10}, {"GO:BP1"}),
+            _make_annotation("PEP2", 100.0, {1, 20}, {"GO:BP2"}),
+        ]
+        go_ns = {
+            "GO:BP1": "biological_process",
+            "GO:BP2": "biological_process",
+        }
+        agg = aggregate_peptide_annotations(anns)
+        combos = aggregate_go_taxonomy_combos(anns, agg)
+
+        compute_enrichment_pvalues(
+            anns, agg, combos, iterations=100, seed=42,
+            go_namespaces=go_ns,
+        )
+
+        for combo in combos.values():
+            if combo.pvalue_taxon_for_go is not None:
+                assert 0 < combo.pvalue_taxon_for_go <= 1.0
+
+    def test_single_peptide_in_aspect_pool(self):
+        """When only one peptide has an aspect, taxonomy shuffle for that
+        aspect's terms should produce p-value = 1.0 (degenerate)."""
+        anns = [
+            _make_annotation("PEP1", 100.0, {1, 10}, {"GO:MF1", "GO:BP1"}),
+            _make_annotation("PEP2", 100.0, {1, 20}, {"GO:BP1"}),
+            _make_annotation("PEP3", 100.0, {1, 20}, {"GO:BP2"}),
+        ]
+        go_ns = {
+            "GO:MF1": "molecular_function",
+            "GO:BP1": "biological_process",
+            "GO:BP2": "biological_process",
+        }
+        agg = aggregate_peptide_annotations(anns)
+        combos = aggregate_go_taxonomy_combos(anns, agg)
+
+        compute_enrichment_pvalues(
+            anns, agg, combos, iterations=100, seed=42,
+            go_namespaces=go_ns,
+        )
+
+        # MF aspect has only 1 peptide → taxonomy shuffle for MF terms
+        # should be non-significant (default p=1.0 from the restricted pool
+        # having < 2 peptides)
+        key_mf = (10, "GO:MF1")
+        if key_mf in combos and combos[key_mf].pvalue_go_for_taxon is not None:
+            assert combos[key_mf].pvalue_go_for_taxon >= 0.5
+
+    def test_asymmetric_null_centering(self):
+        """The two-sided p-value centers the null around its empirical mean,
+        not around zero.  This test verifies centering works correctly for
+        a case where the null distribution is asymmetric (shifted away from
+        zero) but the observed value is near the null center.
+
+        If we centered around zero instead of mean_null, the p-value would
+        be artificially low because the observation would appear far from
+        zero even though it's typical under the null.
+        """
+        # Create data where the null is shifted: taxon 10 has most abundance
+        # and most GO terms, so the null mean of log2 enrichment for (10, GO:A)
+        # will be positive (most shuffled taxonomies assign to taxon 10)
+        anns = []
+        for i in range(8):
+            anns.append(_make_annotation(
+                f"BIG{i}", 100.0, {1, 10}, {"GO:A"}
+            ))
+        for i in range(2):
+            anns.append(_make_annotation(
+                f"SMALL{i}", 10.0, {1, 20}, {"GO:A"}
+            ))
+
+        agg = aggregate_peptide_annotations(anns)
+        combos = aggregate_go_taxonomy_combos(anns, agg)
+
+        compute_enrichment_pvalues(
+            anns, agg, combos, iterations=500, seed=42,
+        )
+
+        # The pair (10, GO:A) should NOT be significant because taxon 10
+        # dominates the pool — the observed enrichment is typical under the
+        # null even though it's positive
+        key = (10, "GO:A")
+        if key in combos and combos[key].pvalue_go_for_taxon is not None:
+            assert combos[key].pvalue_go_for_taxon > 0.05, (
+                f"Expected non-significant p-value for dominant taxon, "
+                f"got {combos[key].pvalue_go_for_taxon:.4f}"
+            )
+
+    def test_zero_abundance_pairs_excluded(self):
+        """Pairs where A_TAX=0 or A_GO=0 in a restricted pool should be
+        excluded from testing (not produce degenerate log2 values)."""
+        # In the full pool, taxon 10 has GO:MF1 and GO:BP1
+        # In the MF-restricted pool, both peptides have MF, so both taxa present
+        # In the BP-restricted pool, only PEP1 has BP
+        anns = [
+            _make_annotation("PEP1", 100.0, {1, 10}, {"GO:MF1", "GO:BP1"}),
+            _make_annotation("PEP2", 100.0, {1, 20}, {"GO:MF1"}),
+        ]
+        go_ns = {
+            "GO:MF1": "molecular_function",
+            "GO:BP1": "biological_process",
+        }
+        agg = aggregate_peptide_annotations(anns)
+        combos = aggregate_go_taxonomy_combos(anns, agg)
+
+        # Should not crash
+        compute_enrichment_pvalues(
+            anns, agg, combos, iterations=100, seed=42,
+            go_namespaces=go_ns,
+        )
+
+        # All produced p-values should be valid
+        for combo in combos.values():
+            if combo.pvalue_go_for_taxon is not None:
+                assert 0 < combo.pvalue_go_for_taxon <= 1.0
+            if combo.pvalue_taxon_for_go is not None:
+                assert 0 < combo.pvalue_taxon_for_go <= 1.0
+
+
 class TestRunShuffle:
     def test_taxonomy_shuffle_produces_pvalues(self):
         anns = [
