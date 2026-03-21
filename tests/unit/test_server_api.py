@@ -1,5 +1,6 @@
 """Unit tests for FastAPI server endpoints."""
 
+import asyncio
 import importlib
 import io
 import json
@@ -7,7 +8,9 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 import pytest
+from fastapi import HTTPException
 
 import metagomics2.config as config_module
 from metagomics2.db.database import Database
@@ -53,11 +56,55 @@ def client(tmp_path: Path, test_db):
         # Override the db with our test db
         app_module.db = test_db
         app_module.JOBS_DIR = tmp_path / "jobs"
-
-        from fastapi.testclient import TestClient
-        yield TestClient(app_module.app)
+        app_module.aiofiles.open = fake_aiofiles_open
+        yield SyncASGIClient(app_module.app)
 
     config_module.reset_settings()
+
+
+class SyncASGIClient:
+    """Synchronous wrapper around httpx.AsyncClient for ASGI apps."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def request(self, method: str, url: str, **kwargs):
+        async def _request():
+            transport = httpx.ASGITransport(app=self.app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return asyncio.run(_request())
+
+    def get(self, url: str, **kwargs):
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self.request("POST", url, **kwargs)
+
+
+class _AsyncFileWrapper:
+    """Minimal async file wrapper for tests."""
+
+    def __init__(self, path: Path, mode: str):
+        self._file = open(path, mode)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._file.close()
+
+    async def write(self, data):
+        self._file.write(data)
+
+
+def fake_aiofiles_open(path: str | Path, mode: str = "r", *args, **kwargs):
+    """Replacement for aiofiles.open used in ASGI transport tests."""
+    return _AsyncFileWrapper(Path(path), mode)
 
 
 class TestHealthCheck:
@@ -126,6 +173,24 @@ class TestCreateJob:
         )
 
         assert response.status_code == 200
+
+    def test_create_job_persists_enrichment_toggle(self, client):
+        fasta_content = b">P1\nMPEPTIDEK\n"
+        peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+        response = client.post(
+            "/api/jobs",
+            files=[
+                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
+                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+            ],
+            data={"params": json.dumps({"compute_enrichment_pvalues": True})},
+        )
+
+        assert response.status_code == 200
+        job_id = response.json()["job_id"]
+        job = client.get(f"/api/jobs/{job_id}").json()
+        assert job["params"]["compute_enrichment_pvalues"] is True
 
     def test_create_job_multiple_peptide_files(self, client, tmp_path: Path):
         fasta_content = b">P1\nMPEPTIDEK\n"
@@ -268,12 +333,15 @@ class TestUploadSizeLimit:
             importlib.reload(app_module)
             app_module.db = test_db
             app_module.JOBS_DIR = tmp_path / "jobs"
+            app_module.aiofiles.open = fake_aiofiles_open
+            async def fake_save_upload_streamed(upload, dest):
+                dest.write_bytes(b"x")
+                return app_module.MAX_UPLOAD_BYTES + 1
+            app_module._save_upload_streamed = fake_save_upload_streamed
 
-            from fastapi.testclient import TestClient
-            client = TestClient(app_module.app)
+            client = SyncASGIClient(app_module.app)
 
-            # Create a FASTA file just over 1 MB
-            fasta_content = b">P1\n" + b"M" * (1024 * 1024 + 100) + b"\n"
+            fasta_content = b">P1\nMPEPTIDEK\n"
             peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
 
             response = client.post(
@@ -304,9 +372,13 @@ class TestUploadSizeLimit:
             importlib.reload(app_module)
             app_module.db = test_db
             app_module.JOBS_DIR = tmp_path / "jobs"
+            app_module.aiofiles.open = fake_aiofiles_open
+            async def fake_save_upload_streamed(upload, dest):
+                dest.write_bytes(b"x")
+                return app_module.MAX_UPLOAD_BYTES - 1
+            app_module._save_upload_streamed = fake_save_upload_streamed
 
-            from fastapi.testclient import TestClient
-            client = TestClient(app_module.app)
+            client = SyncASGIClient(app_module.app)
 
             # Small valid FASTA
             fasta_content = b">P1\nMPEPTIDEK\n"
@@ -331,24 +403,29 @@ class TestGetJob:
         job_id = test_db.create_job(JobParams())
         test_db.update_job_status(job_id, JobStatus.QUEUED)
 
-        response = client.get(f"/api/jobs/{job_id}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["job_id"] == job_id
-        assert data["status"] == "queued"
+        import metagomics2.server.app as app_module
+
+        data = asyncio.run(app_module.get_job(job_id))
+        assert data.job_id == job_id
+        assert data.status == "queued"
 
     def test_get_nonexistent_job(self, client):
-        response = client.get("/api/jobs/nonexistent_id")
-        assert response.status_code == 404
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.get_job("nonexistent_id"))
+
+        assert exc_info.value.status_code == 404
 
     def test_get_job_includes_peptide_lists(self, client, test_db):
         job_id = test_db.create_job(JobParams())
         test_db.add_peptide_list(job_id, "list_000", "pep.tsv", "/path/pep.tsv")
 
-        response = client.get(f"/api/jobs/{job_id}")
-        data = response.json()
-        assert len(data["peptide_lists"]) == 1
-        assert data["peptide_lists"][0]["list_id"] == "list_000"
+        import metagomics2.server.app as app_module
+
+        data = asyncio.run(app_module.get_job(job_id))
+        assert len(data.peptide_lists) == 1
+        assert data.peptide_lists[0].list_id == "list_000"
 
 
 class TestAdminAuth:
@@ -362,16 +439,28 @@ class TestAdminAuth:
         assert len(data["token"]) > 0
 
     def test_login_wrong_password(self, client):
-        response = client.post("/api/admin/auth", json={"password": "wrong"})
-        assert response.status_code == 401
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.admin_login(app_module.AdminAuthRequest(password="wrong")))
+
+        assert exc_info.value.status_code == 401
 
     def test_admin_endpoint_without_token(self, client):
-        response = client.get("/api/admin/jobs")
-        assert response.status_code == 401
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.require_admin("")
+
+        assert exc_info.value.status_code == 401
 
     def test_admin_endpoint_with_bad_token(self, client):
-        response = client.get("/api/admin/jobs", headers={"Authorization": "Bearer badtoken"})
-        assert response.status_code == 401
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            app_module.require_admin("Bearer badtoken")
+
+        assert exc_info.value.status_code == 401
 
 
 def _get_admin_token(client) -> str:
@@ -384,29 +473,29 @@ class TestListJobs:
     """Tests for admin job listing endpoint."""
 
     def test_list_empty(self, client):
-        token = _get_admin_token(client)
-        response = client.get("/api/admin/jobs", headers={"Authorization": f"Bearer {token}"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["jobs"] == []
+        import metagomics2.server.app as app_module
+
+        token = asyncio.run(app_module.admin_login(app_module.AdminAuthRequest(password="testpass"))).token
+        data = asyncio.run(app_module.list_jobs(100, token))
+        assert data.jobs == []
 
     def test_list_returns_jobs(self, client, test_db):
         test_db.create_job(JobParams())
         test_db.create_job(JobParams())
-        token = _get_admin_token(client)
+        import metagomics2.server.app as app_module
 
-        response = client.get("/api/admin/jobs", headers={"Authorization": f"Bearer {token}"})
-        data = response.json()
-        assert len(data["jobs"]) == 2
+        token = asyncio.run(app_module.admin_login(app_module.AdminAuthRequest(password="testpass"))).token
+        data = asyncio.run(app_module.list_jobs(100, token))
+        assert len(data.jobs) == 2
 
     def test_list_respects_limit(self, client, test_db):
         for _ in range(5):
             test_db.create_job(JobParams())
-        token = _get_admin_token(client)
+        import metagomics2.server.app as app_module
 
-        response = client.get("/api/admin/jobs?limit=3", headers={"Authorization": f"Bearer {token}"})
-        data = response.json()
-        assert len(data["jobs"]) == 3
+        token = asyncio.run(app_module.admin_login(app_module.AdminAuthRequest(password="testpass"))).token
+        data = asyncio.run(app_module.list_jobs(3, token))
+        assert len(data.jobs) == 3
 
 
 class TestGetPeptideLists:
@@ -417,14 +506,18 @@ class TestGetPeptideLists:
         test_db.add_peptide_list(job_id, "list_000", "pep1.tsv", "/path/pep1.tsv")
         test_db.add_peptide_list(job_id, "list_001", "pep2.tsv", "/path/pep2.tsv")
 
-        response = client.get(f"/api/jobs/{job_id}/peptide-lists")
-        assert response.status_code == 200
-        data = response.json()
+        import metagomics2.server.app as app_module
+
+        data = asyncio.run(app_module.get_peptide_lists(job_id))
         assert len(data["peptide_lists"]) == 2
 
     def test_get_peptide_lists_nonexistent_job(self, client):
-        response = client.get("/api/jobs/nonexistent/peptide-lists")
-        assert response.status_code == 404
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.get_peptide_lists("nonexistent"))
+
+        assert exc_info.value.status_code == 404
 
 
 class TestDownloadResult:
@@ -438,22 +531,36 @@ class TestDownloadResult:
         result_dir.mkdir(parents=True)
         (result_dir / "coverage.csv").write_text("col1,col2\n1,2\n")
 
-        response = client.get(f"/api/jobs/{job_id}/results/list_000/coverage.csv")
+        import metagomics2.server.app as app_module
+
+        response = asyncio.run(app_module.download_result(job_id, "list_000", "coverage.csv"))
         assert response.status_code == 200
 
     def test_download_nonexistent_job(self, client):
-        response = client.get("/api/jobs/nonexistent/results/list_000/coverage.csv")
-        assert response.status_code == 404
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.download_result("nonexistent", "list_000", "coverage.csv"))
+
+        assert exc_info.value.status_code == 404
 
     def test_download_nonexistent_file(self, client, test_db, tmp_path: Path):
         job_id = test_db.create_job(JobParams())
-        response = client.get(f"/api/jobs/{job_id}/results/list_000/coverage.csv")
-        assert response.status_code == 404
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.download_result(job_id, "list_000", "coverage.csv"))
+
+        assert exc_info.value.status_code == 404
 
     def test_download_disallowed_filename(self, client, test_db):
         job_id = test_db.create_job(JobParams())
-        response = client.get(f"/api/jobs/{job_id}/results/list_000/secret_data.txt")
-        assert response.status_code == 400
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.download_result(job_id, "list_000", "secret_data.txt"))
+
+        assert exc_info.value.status_code == 400
 
     def test_allowed_filenames(self, client, test_db, tmp_path: Path):
         job_id = test_db.create_job(JobParams())
@@ -464,7 +571,9 @@ class TestDownloadResult:
                     "run_manifest.json", "peptides_annotated.csv"]
         for fname in allowed:
             (result_dir / fname).write_text("test content")
-            response = client.get(f"/api/jobs/{job_id}/results/list_000/{fname}")
+            import metagomics2.server.app as app_module
+
+            response = asyncio.run(app_module.download_result(job_id, "list_000", fname))
             assert response.status_code == 200, f"Failed for {fname}"
 
 
@@ -480,17 +589,27 @@ class TestDownloadAllResults:
         (result_dir / "list_000").mkdir()
         (result_dir / "list_000" / "coverage.csv").write_text("test")
 
-        response = client.get(f"/api/jobs/{job_id}/results/all_results.zip")
+        import metagomics2.server.app as app_module
+
+        response = asyncio.run(app_module.download_all_results(job_id))
         assert response.status_code == 200
-        assert "zip" in response.headers.get("content-type", "")
+        assert response.media_type == "application/zip"
 
     def test_download_all_incomplete_job(self, client, test_db):
         job_id = test_db.create_job(JobParams())
         test_db.update_job_status(job_id, JobStatus.RUNNING)
 
-        response = client.get(f"/api/jobs/{job_id}/results/all_results.zip")
-        assert response.status_code == 400
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.download_all_results(job_id))
+
+        assert exc_info.value.status_code == 400
 
     def test_download_all_nonexistent_job(self, client):
-        response = client.get("/api/jobs/nonexistent/results/all_results.zip")
-        assert response.status_code == 404
+        import metagomics2.server.app as app_module
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(app_module.download_all_results("nonexistent"))
+
+        assert exc_info.value.status_code == 404

@@ -151,6 +151,32 @@ class TestWorkerBuildConfig:
         assert config.filter_policy.min_pident == 80.0
         assert config.filter_policy.top_k == 10
 
+    def test_config_includes_enrichment_toggle(self, test_db, jobs_dir, fixtures_dir):
+        params = JobParams(compute_enrichment_pvalues=True)
+        job_id = test_db.create_job(params)
+        test_db.update_job_status(job_id, JobStatus.QUEUED)
+
+        job_dir = jobs_dir / job_id
+        inputs_dir = job_dir / "inputs"
+        peptides_dir = inputs_dir / "peptides"
+        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        import shutil
+        shutil.copy(
+            fixtures_dir / "fasta" / "small_background.fasta",
+            inputs_dir / "background.fasta",
+        )
+
+        job = test_db.get_job(job_id)
+
+        Worker = _get_worker_class()
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            worker = Worker(test_db)
+            config = worker._build_config(job_id, job)
+
+        assert config.compute_enrichment_pvalues is True
+
 
 class TestWorkerProcessJob:
     """Tests for job processing."""

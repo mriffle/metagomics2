@@ -23,6 +23,7 @@ interface GoDagControlsProps {
   filterLabel?: string
   baseColor?: string
   onBaseColorChange?: (color: string) => void
+  showQvalueMetric?: boolean
 }
 
 const CUTOFF_PRESETS = [
@@ -45,6 +46,10 @@ const FILTER_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
   { value: 'fractionOfGo', label: 'Fraction of GO' },
 ]
 
+const ENRICHMENT_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
+  { value: 'qvalueGoForTaxon', label: 'Q-value (GO for Taxon)' },
+]
+
 export default function GoDagControls({
   namespaces,
   namespaceLabels,
@@ -64,9 +69,17 @@ export default function GoDagControls({
   filterLabel,
   baseColor = '#4338ca',
   onBaseColorChange,
+  showQvalueMetric = false,
 }: GoDagControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
   const colorInputRef = useRef<HTMLInputElement>(null)
+  const metricOptions = filterLabel
+    ? [
+        ...BASE_METRIC_OPTIONS,
+        ...FILTER_METRIC_OPTIONS,
+        ...(showQvalueMetric ? ENRICHMENT_METRIC_OPTIONS : []),
+      ]
+    : BASE_METRIC_OPTIONS
 
   const handleCustomCutoff = () => {
     const val = parseFloat(customCutoff)
@@ -112,7 +125,7 @@ export default function GoDagControls({
               onChange={(e) => onMetricChange(e.target.value as MetricKey)}
               className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              {(filterLabel ? [...BASE_METRIC_OPTIONS, ...FILTER_METRIC_OPTIONS] : BASE_METRIC_OPTIONS).map((opt) => (
+              {metricOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>

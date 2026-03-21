@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 from metagomics2.core.annotation import PeptideAnnotation
+from metagomics2.core.enrichment import ComboEnrichmentStats
 
 
 @dataclass
@@ -226,6 +227,7 @@ class ComboAggregate:
     fraction_of_go: float = 0.0
     ratio_total_taxon: float = 0.0
     ratio_total_go: float = 0.0
+    enrichment: ComboEnrichmentStats = field(default_factory=ComboEnrichmentStats)
 
 
 def aggregate_go_taxonomy_combos(

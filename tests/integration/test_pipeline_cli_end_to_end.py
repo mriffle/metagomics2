@@ -87,6 +87,7 @@ class TestCLIEndToEnd:
         assert "--fasta" in result.stdout
         assert "--peptides" in result.stdout
         assert "--outdir" in result.stdout
+        assert "--enrichment-pvalues" in result.stdout
 
     def test_cli_missing_required_args(self):
         """Test error on missing required arguments."""

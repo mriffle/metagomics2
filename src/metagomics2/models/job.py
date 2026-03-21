@@ -52,6 +52,7 @@ class JobParams(BaseModel):
     # GO settings
     go_edge_types: str = "is_a,part_of"
     go_include_self: bool = True
+    compute_enrichment_pvalues: bool = False
 
     @field_validator("max_evalue")
     @classmethod

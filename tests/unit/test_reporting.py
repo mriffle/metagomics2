@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats, NodeAggregate
+from metagomics2.core.enrichment import ComboEnrichmentStats
 from metagomics2.core.go import load_go_from_dict
 from metagomics2.core.reporting import (
     ManifestInfo,
@@ -556,7 +557,11 @@ class TestWriteGoTaxonomyComboCSV:
         expected_cols = [
             "tax_id", "tax_name", "tax_rank", "parent_tax_id",
             "go_id", "go_name", "go_namespace", "parent_go_ids",
-            "quantity", "fraction_of_taxon", "fraction_of_go", "n_peptides",
+            "quantity", "fraction_of_taxon", "fraction_of_go",
+            "ratio_total_taxon", "ratio_total_go", "n_peptides",
+            "pvalue_go_for_taxon", "pvalue_taxon_for_go",
+            "qvalue_go_for_taxon", "qvalue_taxon_for_go",
+            "zscore_go_for_taxon", "zscore_taxon_for_go",
         ]
         for col in expected_cols:
             assert col in reader.fieldnames
@@ -585,6 +590,8 @@ class TestWriteGoTaxonomyComboCSV:
         assert float(row["fraction_of_taxon"]) == pytest.approx(0.5)
         assert float(row["fraction_of_go"]) == pytest.approx(0.8)
         assert int(row["n_peptides"]) == 1
+        assert row["pvalue_go_for_taxon"] == ""
+        assert row["qvalue_taxon_for_go"] == ""
 
     def test_parent_go_ids_present(self, small_taxonomy: dict, small_go: dict, tmp_path: Path):
         """GO:0000004 (C) has parents GO:0000002 (A) and GO:0000003 (B)."""
@@ -645,3 +652,59 @@ class TestWriteGoTaxonomyComboCSV:
 
         assert len(rows) == 0
         assert "tax_id" in reader.fieldnames
+
+    def test_enrichment_columns_written_when_present(
+        self,
+        small_taxonomy: dict,
+        small_go: dict,
+        tmp_path: Path,
+    ):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combo = make_combo(30, "GO:0000004", 10.0, 1, 0.5, 0.8)
+        combo.enrichment = ComboEnrichmentStats(
+            pvalue_go_for_taxon=0.01,
+            pvalue_taxon_for_go=0.02,
+            qvalue_go_for_taxon=0.03,
+            qvalue_taxon_for_go=0.04,
+            zscore_go_for_taxon=1.5,
+            zscore_taxon_for_go=-2.5,
+        )
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv({(30, "GO:0000004"): combo}, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert float(row["pvalue_go_for_taxon"]) == pytest.approx(0.01)
+        assert float(row["pvalue_taxon_for_go"]) == pytest.approx(0.02)
+        assert float(row["qvalue_go_for_taxon"]) == pytest.approx(0.03)
+        assert float(row["qvalue_taxon_for_go"]) == pytest.approx(0.04)
+        assert float(row["zscore_go_for_taxon"]) == pytest.approx(1.5)
+        assert float(row["zscore_taxon_for_go"]) == pytest.approx(-2.5)
+
+    def test_infinite_zscores_are_written_with_sign(
+        self,
+        small_taxonomy: dict,
+        small_go: dict,
+        tmp_path: Path,
+    ):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        combo = make_combo(30, "GO:0000004", 10.0, 1, 0.5, 0.8)
+        combo.enrichment = ComboEnrichmentStats(
+            zscore_go_for_taxon=float("inf"),
+            zscore_taxon_for_go=float("-inf"),
+        )
+
+        output_path = tmp_path / "go_taxonomy_combo.csv"
+        write_go_taxonomy_combo_csv({(30, "GO:0000004"): combo}, tree, go_dag, output_path)
+
+        with open(output_path) as f:
+            reader = csv.DictReader(f)
+            row = next(reader)
+
+        assert row["zscore_go_for_taxon"] == "+inf"
+        assert row["zscore_taxon_for_go"] == "-inf"

@@ -44,8 +44,67 @@ class TestPipelineMockedHomology:
         assert list_dir.exists()
         assert (list_dir / "taxonomy_nodes.csv").exists()
         assert (list_dir / "go_terms.csv").exists()
+        assert (list_dir / "go_taxonomy_combo.csv").exists()
         assert (list_dir / "coverage.csv").exists()
         assert (list_dir / "run_manifest.json").exists()
+
+    def test_combo_csv_includes_empty_enrichment_columns_when_disabled(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        result = run_pipeline(config)
+        assert result.success
+
+        combo_path = tmp_path / "results" / "list_000" / "go_taxonomy_combo.csv"
+        with open(combo_path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert "pvalue_go_for_taxon" in reader.fieldnames
+        assert "pvalue_taxon_for_go" in reader.fieldnames
+        assert "qvalue_go_for_taxon" in reader.fieldnames
+        assert "qvalue_taxon_for_go" in reader.fieldnames
+        assert "zscore_go_for_taxon" in reader.fieldnames
+        assert "zscore_taxon_for_go" in reader.fieldnames
+        assert rows
+        assert all(row["pvalue_go_for_taxon"] == "" for row in rows)
+        assert all(row["qvalue_taxon_for_go"] == "" for row in rows)
+
+    def test_manifest_records_enrichment_toggle(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+            compute_enrichment_pvalues=True,
+        )
+
+        result = run_pipeline(config)
+        assert result.success
+
+        manifest_path = tmp_path / "results" / "list_000" / "run_manifest.json"
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+
+        assert manifest["parameters"]["compute_enrichment_pvalues"] is True
 
     def test_coverage_csv_values(
         self,

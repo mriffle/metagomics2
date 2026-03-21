@@ -113,6 +113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         taxonomy_data_path=Path(args.taxonomy) if args.taxonomy else None,
         go_edge_types=set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a", "part_of"},
         go_include_self=not args.go_exclude_self,
+        compute_enrichment_pvalues=args.enrichment_pvalues,
         mock_hits_path=Path(args.mock_hits) if args.mock_hits else None,
         mock_subject_annotations_path=Path(args.mock_annotations) if args.mock_annotations else None,
     )
@@ -248,6 +249,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--go-exclude-self",
         action="store_true",
         help="Exclude GO terms themselves from closure",
+    )
+    ref_group.add_argument(
+        "--enrichment-pvalues",
+        action="store_true",
+        help="Enable single-sample GO x taxonomy enrichment p-values",
     )
 
     # Testing/mock options

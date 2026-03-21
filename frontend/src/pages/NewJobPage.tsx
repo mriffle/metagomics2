@@ -49,6 +49,7 @@ export default function NewJobPage() {
   const [minPident, setMinPident] = useState('80')
   const [topK, setTopK] = useState('1')
   const [notificationEmail, setNotificationEmail] = useState('')
+  const [computeEnrichmentPvalues, setComputeEnrichmentPvalues] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -78,6 +79,7 @@ export default function NewJobPage() {
       if (maxEvalue) params.max_evalue = parseFloat(maxEvalue)
       if (minPident) params.min_pident = parseFloat(minPident)
       if (topK) params.top_k = parseInt(topK)
+      if (computeEnrichmentPvalues) params.compute_enrichment_pvalues = true
       const emailTrimmed = notificationEmail.trim()
       if (emailTrimmed) params.notification_email = emailTrimmed
 
@@ -276,6 +278,23 @@ export default function NewJobPage() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
+
+            <label className="col-span-2 flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={computeEnrichmentPvalues}
+                onChange={(e) => setComputeEnrichmentPvalues(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                <span className="font-medium text-gray-900 dark:text-gray-100">
+                  Calculate enrichment p-values
+                </span>
+                <span className="block text-gray-600 dark:text-gray-400">
+                  Adds within-sample GO x taxonomy enrichment statistics to `go_taxonomy_combo.csv`.
+                </span>
+              </span>
+            </label>
           </div>
         </div>
 

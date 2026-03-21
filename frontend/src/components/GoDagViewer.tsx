@@ -102,13 +102,23 @@ function getMetricValue(node: GoTermNode, metric: MetricKey): number {
     case 'nPeptides': return node.nPeptides
     case 'fractionOfTaxon': return node.fractionOfTaxon ?? 0
     case 'fractionOfGo': return node.fractionOfGo ?? 0
+    case 'qvalueGoForTaxon': return node.qvalueGoForTaxon ?? 1
   }
 }
 
 function normalizeValues(nodes: GoTermNode[], metric: MetricKey): Map<string, number> {
   const useLog = metric === 'quantity' || metric === 'nPeptides'
   const values = nodes.map(n => getMetricValue(n, metric))
-  const transformed = useLog ? values.map(v => Math.log1p(v)) : values
+  const qvalueEpsilon = 1e-300
+  const transformed = metric === 'qvalueGoForTaxon'
+    ? nodes.map(node => (
+      node.qvalueGoForTaxon != null
+        ? -Math.log10(node.qvalueGoForTaxon + qvalueEpsilon)
+        : 0
+    ))
+    : useLog
+      ? values.map(v => Math.log1p(v))
+      : values
 
   const min = Math.min(...transformed)
   const max = Math.max(...transformed)
@@ -458,6 +468,18 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
               <>
                 <span className="text-gray-600 dark:text-gray-400">Fraction of GO:</span>
                 <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.qvalueGoForTaxon != null && (
+              <>
+                <span className="text-gray-600 dark:text-gray-400">Q-value (GO for Taxon):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.qvalueGoForTaxon.toExponential(3)}</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.zscoreGoForTaxon != null && (
+              <>
+                <span className="text-gray-600 dark:text-gray-400">Z-score (GO for Taxon):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.zscoreGoForTaxon.toFixed(4)}</span>
               </>
             )}
             {!filterLabel && (

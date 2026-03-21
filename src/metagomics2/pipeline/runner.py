@@ -24,6 +24,7 @@ from metagomics2.core.annotation import (
     load_subject_annotations_from_dict,
 )
 from metagomics2.core.diamond import DiamondError, run_diamond
+from metagomics2.core.enrichment import compute_go_taxonomy_enrichment
 from metagomics2.core.subject_lookup import load_subject_annotations
 from metagomics2.core.fasta import build_protein_dict, compute_file_sha256, parse_fasta, write_subset_fasta
 from metagomics2.core.filtering import FilterPolicy, HomologyHit, filter_all_hits, filter_all_hits_with_hits, parse_blast_tabular
@@ -84,6 +85,9 @@ class PipelineConfig:
 
     # Annotations database path (companion SQLite for taxonomy/GO lookup)
     annotations_db_path: Path | None = None
+
+    # Single-sample GO x taxonomy enrichment
+    compute_enrichment_pvalues: bool = False
 
     # Mock mode for testing (bypasses actual homology search)
     mock_hits_path: Path | None = None
@@ -618,6 +622,14 @@ class PipelineRunner:
         # Write GO-taxonomy combo CSV
         if self.taxonomy_tree and self.go_dag and annotations:
             combos = aggregate_go_taxonomy_combos(annotations, aggregation)
+            if self.config.compute_enrichment_pvalues:
+                enrichment_by_pair = compute_go_taxonomy_enrichment(
+                    annotations,
+                    list(combos.keys()),
+                )
+                for pair, enrichment in enrichment_by_pair.items():
+                    if pair in combos:
+                        combos[pair].enrichment = enrichment
             write_go_taxonomy_combo_csv(
                 combos,
                 self.taxonomy_tree,
@@ -654,6 +666,7 @@ class PipelineRunner:
                 **self.config.filter_policy.to_dict(),
                 "go_edge_types": sorted(self.config.go_edge_types),
                 "go_include_self": self.config.go_include_self,
+                "compute_enrichment_pvalues": self.config.compute_enrichment_pvalues,
             },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None,

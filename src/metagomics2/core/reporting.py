@@ -15,6 +15,7 @@ import polars as pl
 
 from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats
 from metagomics2.core.annotation import PeptideAnnotation
+from metagomics2.core.enrichment import format_optional_stat
 from metagomics2.core.go import GODAG
 from metagomics2.core.taxonomy import TaxonomyTree
 
@@ -261,6 +262,12 @@ def write_go_taxonomy_combo_csv(
             "ratio_total_taxon",
             "ratio_total_go",
             "n_peptides",
+            "pvalue_go_for_taxon",
+            "pvalue_taxon_for_go",
+            "qvalue_go_for_taxon",
+            "qvalue_taxon_for_go",
+            "zscore_go_for_taxon",
+            "zscore_taxon_for_go",
         ])
 
         for combo in sorted_combos:
@@ -310,6 +317,12 @@ def write_go_taxonomy_combo_csv(
                 f"{combo.ratio_total_taxon:.10f}",
                 f"{combo.ratio_total_go:.10f}",
                 combo.n_peptides,
+                format_optional_stat(combo.enrichment.pvalue_go_for_taxon),
+                format_optional_stat(combo.enrichment.pvalue_taxon_for_go),
+                format_optional_stat(combo.enrichment.qvalue_go_for_taxon),
+                format_optional_stat(combo.enrichment.qvalue_taxon_for_go),
+                format_optional_stat(combo.enrichment.zscore_go_for_taxon),
+                format_optional_stat(combo.enrichment.zscore_taxon_for_go),
             ])
 
 

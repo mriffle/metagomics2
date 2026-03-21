@@ -80,6 +80,7 @@ src/metagomics2/
 │   ├── aggregation.py           # Quantity roll-up into taxonomy/GO nodes
 │   ├── annotation.py            # Peptide→annotation logic (LCA, GO union)
 │   ├── diamond.py               # DIAMOND execution and output parsing
+│   ├── enrichment.py            # Single-sample GO x taxonomy enrichment statistics
 │   ├── fasta.py                 # FASTA parsing, hashing, subset writing
 │   ├── filtering.py             # Homology hit filtering (thresholds + top_k)
 │   ├── gaf_parser.py            # GAF 2.2 file parser (GO annotations)
@@ -113,7 +114,7 @@ scripts/
 
 tests/
 ├── conftest.py                  # Shared fixtures (fixtures_dir, small_taxonomy, small_go, etc.)
-├── unit/                        # 28 unit test files
+├── unit/                        # 29 unit test files
 ├── property/                    # 3 property-based test files (Hypothesis)
 ├── integration/                 # 5 integration test files
 └── fixtures/                    # Test data (FASTA, peptides, taxonomy, GO, hits, annotations)
@@ -166,6 +167,7 @@ For each peptide in the list (`core/annotation.py`):
 - **GO aggregation**: Same formula for GO terms.
 - **Coverage stats**: Total, annotated, and unannotated peptide quantities and counts.
 - **GO-taxonomy cross-tabulation** (`aggregate_go_taxonomy_combos`): For each `(tax_id, go_id)` pair in `TAX(p) × GO(p)`, accumulates quantity. Computes `fraction_of_taxon` and `fraction_of_go`.
+- **Optional single-sample enrichment** (`core/enrichment.py`): When `compute_enrichment_pvalues` is enabled, compute two-direction weighted enrichment statistics for each observed `(tax_id, go_id)` pair. The implementation uses leave-one-out background rates, exact weighted enumeration for small groups (`N <= 14`), a normal approximation for larger groups, and Benjamini-Hochberg correction separately for the two test directions.
 - **Invariant validation** (`validate_aggregation_invariants`): Checks that `0 ≤ quantity(n) ≤ total` and `0 ≤ ratio_total ≤ ratio_annotated ≤ 1`. Violations are logged as warnings.
 
 ### Stage 7: Write Reports (per list)
@@ -175,10 +177,13 @@ Output directory: `<output_dir>/<list_id>/` (e.g., `results/list_000/`)
 |------|--------|-------------|
 | `taxonomy_nodes.csv` | CSV | `tax_id, name, rank, parent_tax_id, quantity, ratio_total, ratio_annotated, n_peptides` |
 | `go_terms.csv` | CSV | `go_id, name, namespace, parent_go_ids, quantity, ratio_total, ratio_annotated, n_peptides` |
-| `go_taxonomy_combo.csv` | CSV | Cross-tab: `tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name, go_namespace, parent_go_ids, quantity, fraction_of_taxon, fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides` |
+| `go_taxonomy_combo.csv` | CSV | Cross-tab: `tax_id, tax_name, tax_rank, parent_tax_id, go_id, go_name, go_namespace, parent_go_ids, quantity, fraction_of_taxon, fraction_of_go, ratio_total_taxon, ratio_total_go, n_peptides, pvalue_go_for_taxon, pvalue_taxon_for_go, qvalue_go_for_taxon, qvalue_taxon_for_go, zscore_go_for_taxon, zscore_taxon_for_go` |
 | `coverage.csv` | CSV | Single row: `total_peptide_quantity, annotated_peptide_quantity, unannotated_peptide_quantity, annotation_coverage_ratio, n_peptides_total, n_peptides_annotated, n_peptides_unannotated` |
 | `peptide_mapping.parquet` | Parquet | One row per `(peptide, background_protein, annotated_protein)` triple. Columns: `peptide, peptide_lca_tax_ids (List[Int64]), peptide_go_terms (List[Utf8]), background_protein, annotated_protein, evalue, pident` |
 | `run_manifest.json` | JSON | Provenance: version, tool versions, input hashes (SHA256), parameters, reference data hashes, timestamp |
+
+`go_taxonomy_combo.csv` always includes the six enrichment columns. When enrichment is disabled, or when a pair is ineligible for one test direction, those fields are written as empty strings. Boundary z-scores are formatted as signed infinities (`+inf` / `-inf`) when the direction is known.
+`run_manifest.json` records the submitted `compute_enrichment_pvalues` flag alongside the other run parameters.
 
 ---
 
@@ -299,6 +304,30 @@ class AggregationResult:
     coverage: CoverageStats
 ```
 
+### `ComboEnrichmentStats` / `ComboAggregate` (`core/enrichment.py`, `core/aggregation.py`)
+```python
+@dataclass
+class ComboEnrichmentStats:
+    pvalue_go_for_taxon: float | None = None
+    pvalue_taxon_for_go: float | None = None
+    qvalue_go_for_taxon: float | None = None
+    qvalue_taxon_for_go: float | None = None
+    zscore_go_for_taxon: float | None = None
+    zscore_taxon_for_go: float | None = None
+
+@dataclass
+class ComboAggregate:
+    tax_id: int
+    go_id: str
+    quantity: float = 0.0
+    n_peptides: int = 0
+    fraction_of_taxon: float = 0.0
+    fraction_of_go: float = 0.0
+    ratio_total_taxon: float = 0.0
+    ratio_total_go: float = 0.0
+    enrichment: ComboEnrichmentStats = field(default_factory=ComboEnrichmentStats)
+```
+
 ### `PipelineConfig` (`pipeline/runner.py`)
 ```python
 @dataclass
@@ -316,6 +345,7 @@ class PipelineConfig:
     job_dir: Path | None = None          # Set for web mode (enables reference snapshots)
     go_edge_types: set[str] = {"is_a", "part_of"}
     go_include_self: bool = True
+    compute_enrichment_pvalues: bool = False
     mock_hits_path: Path | None = None   # Testing only
     mock_subject_annotations_path: Path | None = None  # Testing only
 ```
@@ -391,6 +421,22 @@ Invariants that must always hold:
 
 These invariants are checked by `validate_aggregation_invariants()` and verified by property-based tests.
 
+### 7.6 Single-Sample GO x Taxonomy Enrichment (`core/enrichment.py`)
+
+For each observed `(taxon, GO)` pair in the doubly annotated peptide pool, the enrichment module computes two leave-one-out weighted rate tests:
+
+1. Is GO term `g` enriched or depleted within taxon `t`?
+2. Is taxon `t` enriched or depleted within GO term `g`?
+
+Implementation details:
+
+- only peptides with `is_annotated` and non-empty taxonomy and GO annotations participate
+- exact weighted enumeration is used for groups with `N <= 14`
+- a weighted normal approximation is used for larger groups
+- per-group weight summaries are cached so the large-group path is effectively constant-time per tested pair
+- boundary nulls with zero variance emit signed infinite z-scores (`+inf` / `-inf`) when direction is known
+- Benjamini-Hochberg correction is applied separately for the two test directions
+
 ---
 
 ## 8. CLI (`cli.py`)
@@ -424,6 +470,7 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 | `--taxonomy` | No | Path to taxonomy data (dir/JSON) |
 | `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure |
 | `--go-exclude-self` | No | Exclude terms themselves from closure |
+| `--enrichment-pvalues` | No | Enable single-sample GO x taxonomy enrichment statistics |
 | `--mock-hits` | No | Mock hits JSON (testing) |
 | `--mock-annotations` | No | Mock annotations JSON (testing) |
 
@@ -520,7 +567,7 @@ The `regenerate_job_id()` method atomically updates the job_id across all tables
 ### 9.4 Job Models (`models/job.py`)
 
 Pydantic models with field validators:
-- `JobParams`: Validates `max_evalue > 0`, `min_pident ∈ [0,100]`, `min_qcov ∈ [0,100]`, `min_alnlen ≥ 1`, `top_k ≥ 1`, `db_choice` is a plain filename (no path traversal), `notification_email` matches basic email regex.
+- `JobParams`: Validates `max_evalue > 0`, `min_pident ∈ [0,100]`, `min_qcov ∈ [0,100]`, `min_alnlen ≥ 1`, `top_k ≥ 1`, `db_choice` is a plain filename (no path traversal), `notification_email` matches basic email regex. Also carries GO settings and the boolean `compute_enrichment_pvalues` flag used by the pipeline and worker.
 - `JobInfo`: Response model with nested `PeptideListInfo` objects.
 - `JobStatus`: Enum (`uploaded`, `queued`, `running`, `completed`, `failed`).
 
@@ -718,7 +765,7 @@ markers = [
 ]
 ```
 
-### Unit Tests (`tests/unit/` — 28 files)
+### Unit Tests (`tests/unit/` — 29 files)
 
 Each test file corresponds to a module. Tests use **class-based grouping** with descriptive method names. Helper factory functions (e.g., `make_hit()`, `make_annotation()`) create test objects concisely.
 
@@ -735,6 +782,7 @@ Key test files and what they verify:
 | `test_peptide_annotation_taxonomy.py` | `core/annotation.py` | Taxonomy annotation via LCA |
 | `test_peptide_annotation_go.py` | `core/annotation.py` | GO annotation via union of closures |
 | `test_aggregation.py` | `core/aggregation.py` | Quantity rollup, ratios, coverage, combo cross-tab |
+| `test_enrichment.py` | `core/enrichment.py` | Exact vs approximate enrichment, pair eligibility, boundary p-values and infinite z-scores |
 | `test_reporting.py` | `core/reporting.py` | CSV/Parquet output format and content |
 | `test_diamond.py` | `core/diamond.py` | DIAMOND output parsing, accession extraction |
 | `test_obo_parser.py` | `core/obo_parser.py` | OBO format parsing |

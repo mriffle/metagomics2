@@ -361,6 +361,18 @@ export default function TaxonomyChart({ nodes, chartType, filterLabel, onNodeCli
                 <span className="font-medium text-right text-gray-900 dark:text-gray-100">{(tooltip.node.fractionOfGo * 100).toFixed(4)}%</span>
               </>
             )}
+            {filterLabel && tooltip.node.qvalueTaxonForGo != null && (
+              <>
+                <span className="text-gray-600 dark:text-gray-400">Q-value (Taxon for GO):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.qvalueTaxonForGo.toExponential(3)}</span>
+              </>
+            )}
+            {filterLabel && tooltip.node.zscoreTaxonForGo != null && (
+              <>
+                <span className="text-gray-600 dark:text-gray-400">Z-score (Taxon for GO):</span>
+                <span className="font-medium text-right text-gray-900 dark:text-gray-100">{tooltip.node.zscoreTaxonForGo.toFixed(4)}</span>
+              </>
+            )}
             {!filterLabel && (
               <>
                 <span className="text-gray-600 dark:text-gray-400">Ratio (Annotated):</span>

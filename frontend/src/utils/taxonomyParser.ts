@@ -11,6 +11,8 @@ export interface TaxonNode {
   nPeptides: number
   fractionOfTaxon?: number
   fractionOfGo?: number
+  qvalueTaxonForGo?: number
+  zscoreTaxonForGo?: number
 }
 
 export const CANONICAL_RANKS_ORDERED = [

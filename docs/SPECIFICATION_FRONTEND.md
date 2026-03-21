@@ -146,17 +146,19 @@ The job submission form. Fetches server configuration on mount (`GET /api/config
 - `searchTool: string` — Always `"diamond"`
 - `dbChoice: string` — Selected annotated database path
 - `maxEvalue, minPident, topK: string` — Filter parameters (text inputs)
+- `computeEnrichmentPvalues: boolean` — Optional single-sample GO x taxonomy enrichment toggle
 - `notificationEmail: string` — Optional email for notifications
 
 **Submission flow**:
 1. Validates FASTA and peptide files are selected
-2. Builds `FormData` with `fasta`, `peptides` (repeatable), and `params` (JSON string)
+2. Builds `FormData` with `fasta`, `peptides` (repeatable), and `params` (JSON string). When the enrichment checkbox is enabled, `params.compute_enrichment_pvalues = true` is included.
 3. `POST /api/jobs` with multipart body
 4. On success: `navigate(/job/${data.job_id})`
 
 **UI features**:
 - Drag-style file upload areas with visual feedback
 - Inline `Tooltip` component for parameter help text
+- "Calculate enrichment p-values" checkbox with helper text explaining that enrichment statistics are added to `go_taxonomy_combo.csv`
 - Error display with `AlertCircle` icon
 - Loading spinner during submission
 
@@ -198,7 +200,10 @@ Interactive Gene Ontology DAG visualization.
 - `GoDagViewer` — Cytoscape.js graph renderer
 - `PeptideDetailsPane` — peptide drill-down (shown when a GO node is clicked)
 
-**Metric options**: `quantity`, `ratioTotal`, `ratioAnnotated`, `nPeptides`, plus `fractionOfTaxon` and `fractionOfGo` when a taxon filter is active.
+**Metric options**:
+- Always available: `quantity`, `ratioTotal`, `nPeptides`
+- When a taxon filter is active: `fractionOfTaxon`, `fractionOfGo`
+- When a taxon filter is active and enrichment data is present in `go_taxonomy_combo.csv`: `qvalueGoForTaxon`
 
 ### 6.4 TaxonomyPage (`pages/TaxonomyPage.tsx`)
 
@@ -267,8 +272,8 @@ Renders the GO DAG using Cytoscape.js with the `dagre` layout.
 
 **Key behaviors**:
 - **Layout**: Top-to-bottom DAG using `dagre` layout engine with `tight-tree` ranker
-- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. 5-stop color ramp whose endpoints are determined by the current theme (defined in `GO_DAG` constants from `utils/colors.ts`). In dark mode, nodes have a subtle indigo glow via Cytoscape `shadow-*` styles. Node text color is chosen by computing the WCAG relative luminance of the actual interpolated background color and selecting light or dark text for contrast (defined as `textLight`/`textDark` in the `GO_DAG` constants).
-- **Hover**: BFS traversal highlights the hovered node and **all ancestor nodes and edges up to the root** (not just immediate neighbors), using `cy.incomers('edge')` recursively. Shows a fixed-position tooltip with node details (ID, name, quantity, ratios, fractions). Tooltip styling adapts to dark mode.
+- **Node coloring**: Based on selected metric, normalized to [0, 1] via min-max scaling. Log transform for `quantity` and `nPeptides`. When coloring by `qvalueGoForTaxon`, the viewer uses `-log10(qvalue + 1e-300)` before normalization so smaller q-values map to stronger colors. The 5-stop color ramp endpoints are determined by the current theme (defined in the `GO_DAG` constants from `utils/colors.ts`). In dark mode, nodes have a subtle indigo glow via Cytoscape `shadow-*` styles. Node text color is chosen by computing the WCAG relative luminance of the actual interpolated background color and selecting light or dark text for contrast (defined as `textLight`/`textDark` in the `GO_DAG` constants).
+- **Hover**: BFS traversal highlights the hovered node and **all ancestor nodes and edges up to the root** (not just immediate neighbors), using `cy.incomers('edge')` recursively. Shows a fixed-position tooltip with node details (ID, name, quantity, ratio total, peptide count). In taxon-filtered mode it also shows `fractionOfTaxon`, `fractionOfGo`, and, when enrichment data is present, `qvalueGoForTaxon` and `zscoreGoForTaxon`. Tooltip styling adapts to dark mode.
 - **Tooltip positioning**: Uses `useLayoutEffect` to reposition within viewport bounds, flipping horizontally/vertically if overflowing.
 - **Click**: Notifies parent via `onNodeClick(nodeId)`. Background click clears selection.
 - **Export**: PNG via `cy.png()`, SVG via `cy.svg()`. Functions are attached to the container DOM element for parent access (`__exportPng`, `__exportSvg`).
@@ -280,7 +285,10 @@ Controls for the GO DAG visualization.
 
 **Sections**:
 - **Namespace tabs**: Toggle between GO namespaces
-- **Metric selector**: Dropdown to choose coloring metric
+- **Metric selector**: Dropdown to choose coloring metric. The option set is conditional:
+  - Unfiltered view: `quantity`, `ratioTotal`, `nPeptides`
+  - Taxon-filtered view: adds `fractionOfTaxon` and `fractionOfGo`
+  - Taxon-filtered view with enrichment data: also adds `Q-value (GO for Taxon)`
 - **Color picker**: Click the gradient bar to open a hidden `<input type="color">`
 - **Export buttons**: PNG and SVG
 - **Taxonomy filter**: `Autocomplete` component to filter GO terms by a specific taxon
@@ -298,7 +306,7 @@ Renders taxonomy data using Plotly.js via `react-plotly.js/factory`.
 
 **Coloring strategy**: Each domain (top-level taxon below root) gets a distinct color from the domain palette defined in `utils/colors.ts`. In light mode, `DOMAIN_PALETTE_LIGHT` provides medium-saturation colorblind-friendly colors that are progressively lightened at depth. In dark mode, `DOMAIN_PALETTE_DARK` provides vivid high-saturation neon colors with minimal depth-based washout, and `textfont.color` is set to dark (`#111827`) for contrast against bright backgrounds. Root is white in light mode, dark gray (`rgb(17,24,39)`) in dark mode. All chart-specific color values (root, fallback, line separators, text, pathbar text) are read from `TAX_CHART` and `SANKEY` constants in `utils/colors.ts`.
 
-**Hover tooltip**: Custom fixed-position tooltip (same pattern as GoDagViewer) showing tax ID, name, rank, quantity, ratios, fractions.
+**Hover tooltip**: Custom fixed-position tooltip (same pattern as GoDagViewer) showing tax ID, name, rank, quantity, ratio total, peptide count. In GO-filtered mode it also shows `fractionOfTaxon`, `fractionOfGo`, and, when enrichment data is present, `qvalueTaxonForGo` and `zscoreTaxonForGo`.
 
 **Click**: Notifies parent via `onNodeClick(taxId)`. Not active for Sankey.
 
@@ -375,7 +383,7 @@ Used by all other parsers to handle fields that may contain commas (e.g., specie
 ### 8.2 taxonomyParser (`utils/taxonomyParser.ts`)
 
 **Types**:
-- `TaxonNode` — `{ taxId, name, rank, parentTaxId, quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo? }`
+- `TaxonNode` — `{ taxId, name, rank, parentTaxId, quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo?, qvalueTaxonForGo?, zscoreTaxonForGo? }`
 - `CanonicalRank` — `'root' | 'domain' | 'kingdom' | 'phylum' | 'class' | 'order' | 'family' | 'genus' | 'species'`
 
 **Constants**:
@@ -407,7 +415,7 @@ parseTaxonomyCsv → filterCanonicalRanks → validateCanonicalHierarchy → fil
 ### 8.3 goParser (`utils/goParser.ts`)
 
 **Types**:
-- `GoTermNode` — `{ id, name, namespace, parentIds: string[], quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo? }`
+- `GoTermNode` — `{ id, name, namespace, parentIds: string[], quantity, ratioTotal, ratioAnnotated, nPeptides, fractionOfTaxon?, fractionOfGo?, qvalueGoForTaxon?, zscoreGoForTaxon? }`
 
 **Functions**:
 - `parseGoTermsCsv(text)` — Parse `go_terms.csv` into `GoTermNode[]`. Parent IDs are semicolon-delimited.
@@ -417,14 +425,14 @@ parseTaxonomyCsv → filterCanonicalRanks → validateCanonicalHierarchy → fil
 Handles the `go_taxonomy_combo.csv` cross-tabulation data for cross-filtering.
 
 **Types**:
-- `ComboRow` — `{ taxId, taxName, taxRank, parentTaxId, goId, goName, goNamespace, parentGoIds, quantity, fractionOfTaxon, fractionOfGo, ratioTotalTaxon, ratioTotalGo, nPeptides }`
+- `ComboRow` — `{ taxId, taxName, taxRank, parentTaxId, goId, goName, goNamespace, parentGoIds, quantity, fractionOfTaxon, fractionOfGo, ratioTotalTaxon, ratioTotalGo, nPeptides, pvalueGoForTaxon?, pvalueTaxonForGo?, qvalueGoForTaxon?, qvalueTaxonForGo?, zscoreGoForTaxon?, zscoreTaxonForGo? }`
 
 **Functions**:
 | Function | Purpose |
 |----------|---------|
-| `parseComboCsv(text)` | Parse combo CSV into `ComboRow[]` |
-| `comboRowsToTaxonNodes(rows, goId)` | Filter by GO ID, reshape into `TaxonNode[]`. Uses `ratioTotalTaxon` as `ratioTotal`. |
-| `comboRowsToGoTermNodes(rows, taxId)` | Filter by tax ID, reshape into `GoTermNode[]`. Uses `ratioTotalGo` as `ratioTotal`. |
+| `parseComboCsv(text)` | Parse combo CSV into `ComboRow[]`. Backward-compatible with older files that lack enrichment columns. Parses `+inf`, `-inf`, `Infinity`, and `-Infinity` into JavaScript signed infinities for z-scores. |
+| `comboRowsToTaxonNodes(rows, goId)` | Filter by GO ID, reshape into `TaxonNode[]`. Uses `ratioTotalTaxon` as `ratioTotal`, preserves `fractionOfTaxon`/`fractionOfGo` for tooltips, and forwards `qvalueTaxonForGo`/`zscoreTaxonForGo` when present. |
+| `comboRowsToGoTermNodes(rows, taxId)` | Filter by tax ID, reshape into `GoTermNode[]`. Uses `ratioTotalGo` as `ratioTotal`, preserves `fractionOfTaxon`/`fractionOfGo` for tooltips, and forwards `qvalueGoForTaxon`/`zscoreGoForTaxon` when present. |
 
 ### 8.5 duckdb (`utils/duckdb.ts`)
 
@@ -599,7 +607,7 @@ The `Dockerfile` has a `frontend-builder` stage:
 FROM node:20-slim AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm install
 COPY frontend/ ./
 RUN npm run build
 ```
@@ -648,7 +656,7 @@ Setup file (`test-setup.ts`): Imports `@testing-library/jest-dom` for DOM matche
 | `utils/__tests__/csvParser.test.ts` | `csvParser.ts` | Simple fields, empty strings, quoted fields, escaped quotes, commas in quotes, newlines in quotes, realistic CSV lines |
 | `utils/__tests__/taxonomyParser.test.ts` | `taxonomyParser.ts` | `parseTaxonomyCsv`: empty/header-only/single/multiple rows, quoted names, high precision decimals, short rows. `CANONICAL_RANKS`: membership. `filterCanonicalRanks`: canonical filtering, parent re-linking through non-canonical nodes, NCBI root normalization, realistic hierarchies. `filterByMaxRank`: all rank cutoffs. `validateCanonicalHierarchy`: valid hierarchies, rank gaps allowed, missing parents, same-rank parents, no-parent errors. `ensureStrictRankLayers`: no modification when consecutive, single/multiple placeholder insertion, placeholder naming, multiple children with same gap. |
 | `utils/__tests__/goParser.test.ts` | `goParser.ts` | Empty/header-only/single/multiple rows, semicolon-delimited parents, empty parents, whitespace trimming, quoted names with commas, non-numeric defaults, short rows, high precision, Windows line endings |
-| `utils/__tests__/comboParser.test.ts` | `comboParser.ts` | `parseComboCsv`: empty/header-only/single/multiple rows, empty parents, short rows. `comboRowsToTaxonNodes`: filtering by GO ID, field mapping, non-existent GO term. `comboRowsToGoTermNodes`: filtering by tax ID, field mapping, non-existent tax ID. |
+| `utils/__tests__/comboParser.test.ts` | `comboParser.ts` | `parseComboCsv`: empty/header-only/single/multiple rows, empty parents, short rows, optional enrichment columns, backward compatibility with older combo CSVs, signed infinity parsing for `+inf`/`-inf`. `comboRowsToTaxonNodes`: filtering by GO ID, field mapping, non-existent GO term, forwarding enrichment q/z values. `comboRowsToGoTermNodes`: filtering by tax ID, field mapping, non-existent tax ID, forwarding enrichment q/z values. |
 | `components/__tests__/PeptideDetailsPane.test.tsx` | `PeptideDetailsPane` | Placeholder when no selection, loading state, correct peptide hierarchy rendering, "no peptides found" message, expand/collapse peptide rows, expand background protein to show annotated proteins, selection info in header (tax IDs and GO IDs). Mocks DuckDB via `vi.mock`. |
 | `__tests__/ThemeContext.test.tsx` | `ThemeContext` | Default light theme, reads stored theme from localStorage, toggles light↔dark, persists to localStorage on toggle, ignores invalid stored values and defaults to light, adds/removes `dark` class on `document.documentElement` |
 | `components/__tests__/ThemeToggle.test.tsx` | `ThemeToggle` | Renders accessible button with correct aria-label, toggles to dark mode on click, toggles back to light on second click, starts in dark mode when localStorage has dark preference |
@@ -751,7 +759,7 @@ On node hover, `GoDagViewer` performs a BFS traversal via `cy.incomers('edge')` 
 |------|--------|-------------|-----|
 | `taxonomy_nodes.csv` | CSV | `TaxonomyPage`, `GoDagPage` (for taxon autocomplete) | `fetch` → `parseTaxonomyCsv` |
 | `go_terms.csv` | CSV | `GoDagPage`, `TaxonomyPage` (for GO autocomplete) | `fetch` → `parseGoTermsCsv` |
-| `go_taxonomy_combo.csv` | CSV | `GoDagPage` (taxon filter), `TaxonomyPage` (GO filter) | `fetch` → `parseComboCsv` → reshape |
+| `go_taxonomy_combo.csv` | CSV | `GoDagPage` (taxon filter), `TaxonomyPage` (GO filter) | `fetch` → `parseComboCsv` → reshape. Base combo fields are always used; optional enrichment `pvalue_*`, `qvalue_*`, and `zscore_*` columns are consumed when present. |
 | `coverage.csv` | CSV | Download only (JobPage) | Direct download link |
 | `run_manifest.json` | JSON | Download only (JobPage) | Direct download link |
 | `peptide_mapping.parquet` | Parquet | `PeptideDetailsPane` | DuckDB-WASM HTTP range requests |
@@ -770,3 +778,4 @@ On node hover, `GoDagViewer` performs a BFS traversal via `cy.incomers('edge')` 
 | **Combo data** | The `go_taxonomy_combo.csv` cross-tabulation of taxonomy × GO with quantities and fractions for each combination |
 | **fractionOfTaxon** | For a (taxon, GO) combo: `quantity / taxon_total_quantity` — what fraction of this taxon's quantity is attributed to this GO term |
 | **fractionOfGo** | For a (taxon, GO) combo: `quantity / go_total_quantity` — what fraction of this GO term's quantity is attributed to this taxon |
+| **Enrichment q-value metric** | Optional combo statistic used in filtered GO/taxonomy views. GO DAG colors by `qvalueGoForTaxon`; taxonomy tooltips show `qvalueTaxonForGo` when enrichment columns are present. |

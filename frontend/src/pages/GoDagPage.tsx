@@ -11,7 +11,14 @@ import { parseComboCsv, comboRowsToGoTermNodes } from '../utils/comboParser'
 import type { AutocompleteOption } from '../components/Autocomplete'
 
 export type { GoTermNode } from '../utils/goParser'
-export type MetricKey = 'quantity' | 'ratioTotal' | 'ratioAnnotated' | 'nPeptides' | 'fractionOfTaxon' | 'fractionOfGo'
+export type MetricKey =
+  | 'quantity'
+  | 'ratioTotal'
+  | 'ratioAnnotated'
+  | 'nPeptides'
+  | 'fractionOfTaxon'
+  | 'fractionOfGo'
+  | 'qvalueGoForTaxon'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   biological_process: 'Biological Process',
@@ -131,6 +138,13 @@ export default function GoDagPage() {
 
   // Get available namespaces from data
   const namespaces = Array.from(new Set(allNodes.map(n => n.namespace))).filter(Boolean).sort()
+  const showQvalueMetric = selectedTaxon !== '' && allNodes.some(n => n.qvalueGoForTaxon != null)
+
+  useEffect(() => {
+    if (!showQvalueMetric && selectedMetric === 'qvalueGoForTaxon') {
+      setSelectedMetric('quantity')
+    }
+  }, [showQvalueMetric, selectedMetric])
 
   // Auto-select first available namespace if current selection has no data
   useEffect(() => {
@@ -216,6 +230,7 @@ export default function GoDagPage() {
         filterLabel={selectedTaxon || undefined}
         baseColor={baseColor}
         onBaseColorChange={setBaseColor}
+        showQvalueMetric={showQvalueMetric}
       />
 
       {/* Main content: graph + details pane */}
