@@ -168,6 +168,51 @@ class TestComputeGoTaxonomyEnrichment:
         assert stats[(10, "GO:ROOT")].qvalue_taxon_for_go is None
         assert stats[(10, "GO:ROOT")].pvalue_go_for_taxon is not None
 
+    def test_large_group_uses_normal_approximation_through_pipeline(self):
+        # 20 taxon-10 peptides (12 carry GO:1) exceed the exact-enumeration
+        # threshold, so the GO-for-taxon direction must fall to the normal
+        # approximation. 10 taxon-20 peptides (4 carry GO:1) give an interior
+        # leave-one-out background rate. This exercises the approximation branch
+        # through the real engine, not just the standalone helper.
+        annotations = (
+            [
+                make_annotation(f"A_GO1_{i}", 1.0, taxonomy_nodes={10}, go_terms={"GO:1"})
+                for i in range(12)
+            ]
+            + [
+                make_annotation(f"A_GO2_{i}", 1.0, taxonomy_nodes={10}, go_terms={"GO:2"})
+                for i in range(8)
+            ]
+            + [
+                make_annotation(f"B_GO1_{i}", 1.0, taxonomy_nodes={20}, go_terms={"GO:1"})
+                for i in range(4)
+            ]
+            + [
+                make_annotation(f"B_GO2_{i}", 1.0, taxonomy_nodes={20}, go_terms={"GO:2"})
+                for i in range(6)
+            ]
+        )
+
+        stats = compute_go_taxonomy_enrichment(annotations, [(10, "GO:1")])
+
+        tax_total = 20.0
+        go_total = 16.0
+        joint = 12.0
+        total_abundance = 30.0
+        sum_weight_sq = 20.0
+
+        background_rate = (go_total - joint) / (total_abundance - tax_total)
+        observed_rate = joint / tax_total
+        variance = background_rate * (1.0 - background_rate) * sum_weight_sq / (tax_total**2)
+        expected_z = (observed_rate - background_rate) / sqrt(variance)
+        expected_p = erfc(abs(expected_z) / sqrt(2.0))
+
+        result = stats[(10, "GO:1")]
+        assert result.zscore_go_for_taxon == pytest.approx(expected_z)
+        assert result.pvalue_go_for_taxon == pytest.approx(expected_p)
+        # Single tested pair, so its BH q-value equals the raw p-value.
+        assert result.qvalue_go_for_taxon == pytest.approx(expected_p)
+
     def test_only_doubly_annotated_peptides_contribute_to_background(self):
         annotations = [
             make_annotation("P1", 10.0, taxonomy_nodes={10}, go_terms={"GO:1"}),

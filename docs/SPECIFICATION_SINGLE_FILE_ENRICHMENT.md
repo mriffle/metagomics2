@@ -251,7 +251,7 @@ Formatting rules:
 
 - disabled enrichment: empty strings
 - ineligible direction: empty strings
-- finite values: fixed decimal string
+- finite values: scientific-notation string (e.g. `1.234560e-02`), which preserves the magnitude of very small p-values and q-values
 - infinite z-scores: `+inf` or `-inf`
 
 This behavior is part of the backward-compatible CSV contract used by the frontend parser.

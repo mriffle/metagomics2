@@ -78,6 +78,17 @@ describe('parseComboCsv', () => {
     expect(rows[0].zscoreTaxonForGo).toBe(-2.5)
   })
 
+  it('parses scientific-notation p/q-values as written by the backend', () => {
+    const csv = `${ENRICHED_HEADER}\n30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002;GO:0000003,10.0,0.5,0.8,0.12,0.04,3,1.234560e-02,5.000000e-50,0.000000e+00,3.000000e-03,1.825742e+00,-2.500000e+00`
+    const rows = parseComboCsv(csv)
+    expect(rows[0].pvalueGoForTaxon).toBeCloseTo(0.0123456, 10)
+    expect(rows[0].pvalueTaxonForGo).toBe(5e-50)
+    expect(rows[0].qvalueGoForTaxon).toBe(0)
+    expect(rows[0].qvalueTaxonForGo).toBe(0.003)
+    expect(rows[0].zscoreGoForTaxon).toBeCloseTo(1.825742, 6)
+    expect(rows[0].zscoreTaxonForGo).toBe(-2.5)
+  })
+
   it('parses signed infinite z-scores when present', () => {
     const csv = `${ENRICHED_HEADER}\n30,ClassA,class,20,GO:0000004,C,biological_process,GO:0000002;GO:0000003,10.0,0.5,0.8,0.12,0.04,3,0.01,0.02,0.03,0.04,+inf,-inf`
     const rows = parseComboCsv(csv)

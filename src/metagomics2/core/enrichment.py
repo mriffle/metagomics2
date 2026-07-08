@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import erfc, isinf, sqrt
 
@@ -10,7 +11,6 @@ from metagomics2.core.annotation import PeptideAnnotation
 
 DEFAULT_EXACT_ENUMERATION_THRESHOLD = 14
 _EXACT_PVALUE_TOLERANCE = 1e-12
-_STAT_FORMAT_EPSILON = 1e-300
 
 
 @dataclass
@@ -91,25 +91,6 @@ def benjamini_hochberg(pvalues: list[float]) -> list[float]:
     for adjusted_value, (original_index, _) in zip(adjusted, ranked):
         restored[original_index] = adjusted_value
     return restored
-
-
-def compute_signed_z_score(
-    weights: list[float],
-    observed_rate: float,
-    background_rate: float,
-) -> float | None:
-    """Compute the signed z-score for a weighted Bernoulli rate."""
-    if not weights:
-        return None
-
-    total_weight = sum(weights)
-    sum_weight_sq = sum(weight * weight for weight in weights)
-    return compute_signed_z_score_from_summary(
-        total_weight,
-        sum_weight_sq,
-        observed_rate,
-        background_rate,
-    )
 
 
 def compute_signed_z_score_from_summary(
@@ -216,6 +197,46 @@ def compute_exact_weighted_pvalue(
     return min(max(pvalue, 0.0), 1.0)
 
 
+def _resolve_pvalue_and_zscore(
+    total_weight: float,
+    sum_weight_sq: float,
+    observed_rate: float,
+    background_rate: float,
+    exact_weights: list[float],
+    exact_indicators: list[int],
+    use_exact: bool,
+) -> tuple[float, float | None]:
+    """Select the boundary, exact, or normal-approximation result.
+
+    This is the single decision path shared by the batch enrichment engine
+    (via ``_test_pair_direction``) and the standalone
+    ``compute_weighted_rate_test`` helper, so the tested logic and the logic the
+    pipeline actually runs cannot drift apart.
+    """
+    zscore = compute_signed_z_score_from_summary(
+        total_weight, sum_weight_sq, observed_rate, background_rate
+    )
+
+    boundary_pvalue = compute_boundary_rate_pvalue(observed_rate, background_rate)
+    if boundary_pvalue is not None:
+        return boundary_pvalue, compute_boundary_zscore(observed_rate, background_rate)
+
+    if use_exact:
+        pvalue = compute_exact_weighted_pvalue(
+            exact_weights, exact_indicators, background_rate
+        )
+        return pvalue, zscore
+
+    if zscore is None:
+        # Interior background rate whose weighted variance underflowed to zero:
+        # the normal approximation is undefined and the group is too large to
+        # enumerate, so report a non-significant result with no effect size.
+        return 1.0, None
+
+    pvalue = min(max(erfc(abs(zscore) / sqrt(2.0)), 0.0), 1.0)
+    return pvalue, zscore
+
+
 def compute_weighted_rate_test(
     weights: list[float],
     indicators: list[int],
@@ -230,17 +251,58 @@ def compute_weighted_rate_test(
     if total_weight <= 0:
         return 1.0, None
 
+    sum_weight_sq = sum(weight * weight for weight in weights)
     observed_rate = (
         sum(weight for weight, indicator in zip(weights, indicators) if indicator)
         / total_weight
     )
-    zscore = compute_signed_z_score(weights, observed_rate, background_rate)
+    return _resolve_pvalue_and_zscore(
+        total_weight,
+        sum_weight_sq,
+        observed_rate,
+        background_rate,
+        weights,
+        indicators,
+        use_exact=len(weights) <= exact_enumeration_threshold,
+    )
 
-    if len(weights) <= exact_enumeration_threshold or zscore is None:
-        return compute_exact_weighted_pvalue(weights, indicators, background_rate), zscore
 
-    pvalue = erfc(abs(zscore) / sqrt(2.0))
-    return min(max(pvalue, 0.0), 1.0), zscore
+def _test_pair_direction(
+    summary: GroupSummary,
+    joint: float,
+    other_group_total: float,
+    background_denominator: float,
+    feature_id: int | str,
+    feature_collection: Callable[[PeptideAnnotation], set[int] | set[str]],
+) -> tuple[float, float | None]:
+    """Run one directional leave-one-out test for a single (taxon, GO) pair."""
+    background_rate = min(
+        max((other_group_total - joint) / background_denominator, 0.0),
+        1.0,
+    )
+    observed_rate = joint / summary.total_weight
+
+    if summary.exact_peptides is not None:
+        exact_weights = [ann.quantity for ann in summary.exact_peptides]
+        exact_indicators = [
+            1 if feature_id in feature_collection(ann) else 0
+            for ann in summary.exact_peptides
+        ]
+        use_exact = True
+    else:
+        exact_weights = []
+        exact_indicators = []
+        use_exact = False
+
+    return _resolve_pvalue_and_zscore(
+        summary.total_weight,
+        summary.sum_weight_sq,
+        observed_rate,
+        background_rate,
+        exact_weights,
+        exact_indicators,
+        use_exact=use_exact,
+    )
 
 
 def compute_go_taxonomy_enrichment(
@@ -305,28 +367,14 @@ def compute_go_taxonomy_enrichment(
         tax_summary = tax_summaries.get(tax_id)
         tax_background_denominator = total_abundance - tax_total
         if tax_summary and tax_total > 0.0 and tax_background_denominator > 0.0:
-            background_rate = min(
-                max((go_total - joint) / tax_background_denominator, 0.0),
-                1.0,
+            pvalue, zscore = _test_pair_direction(
+                tax_summary,
+                joint,
+                go_total,
+                tax_background_denominator,
+                go_id,
+                lambda ann: ann.go_terms,
             )
-            observed_rate = joint / tax_summary.total_weight
-            zscore = compute_signed_z_score_from_summary(
-                tax_summary.total_weight,
-                tax_summary.sum_weight_sq,
-                observed_rate,
-                background_rate,
-            )
-            boundary_pvalue = compute_boundary_rate_pvalue(observed_rate, background_rate)
-            if boundary_pvalue is not None:
-                pvalue = boundary_pvalue
-                zscore = compute_boundary_zscore(observed_rate, background_rate)
-            elif tax_summary.exact_peptides is not None or zscore is None:
-                exact_peptides = tax_summary.exact_peptides or ()
-                weights = [ann.quantity for ann in exact_peptides]
-                indicators = [1 if go_id in ann.go_terms else 0 for ann in exact_peptides]
-                pvalue = compute_exact_weighted_pvalue(weights, indicators, background_rate)
-            else:
-                pvalue = min(max(erfc(abs(zscore) / sqrt(2.0)), 0.0), 1.0)
             stats.pvalue_go_for_taxon = pvalue
             stats.zscore_go_for_taxon = zscore
             go_for_taxon_pairs.append((pair, pvalue))
@@ -334,28 +382,14 @@ def compute_go_taxonomy_enrichment(
         go_summary = go_summaries.get(go_id)
         go_background_denominator = total_abundance - go_total
         if go_summary and go_total > 0.0 and go_background_denominator > 0.0:
-            background_rate = min(
-                max((tax_total - joint) / go_background_denominator, 0.0),
-                1.0,
+            pvalue, zscore = _test_pair_direction(
+                go_summary,
+                joint,
+                tax_total,
+                go_background_denominator,
+                tax_id,
+                lambda ann: ann.taxonomy_nodes,
             )
-            observed_rate = joint / go_summary.total_weight
-            zscore = compute_signed_z_score_from_summary(
-                go_summary.total_weight,
-                go_summary.sum_weight_sq,
-                observed_rate,
-                background_rate,
-            )
-            boundary_pvalue = compute_boundary_rate_pvalue(observed_rate, background_rate)
-            if boundary_pvalue is not None:
-                pvalue = boundary_pvalue
-                zscore = compute_boundary_zscore(observed_rate, background_rate)
-            elif go_summary.exact_peptides is not None or zscore is None:
-                exact_peptides = go_summary.exact_peptides or ()
-                weights = [ann.quantity for ann in exact_peptides]
-                indicators = [1 if tax_id in ann.taxonomy_nodes else 0 for ann in exact_peptides]
-                pvalue = compute_exact_weighted_pvalue(weights, indicators, background_rate)
-            else:
-                pvalue = min(max(erfc(abs(zscore) / sqrt(2.0)), 0.0), 1.0)
             stats.pvalue_taxon_for_go = pvalue
             stats.zscore_taxon_for_go = zscore
             taxon_for_go_pairs.append((pair, pvalue))
@@ -372,13 +406,14 @@ def compute_go_taxonomy_enrichment(
 
 
 def format_optional_stat(value: float | None) -> str:
-    """Format an optional enrichment statistic for CSV output."""
+    """Format an optional enrichment statistic for CSV output.
+
+    Uses scientific notation so that very small p-values and q-values (which
+    are exactly the most significant results) keep their magnitude instead of
+    collapsing to a string of zeros.
+    """
     if value is None:
         return ""
     if isinf(value):
         return "+inf" if value > 0 else "-inf"
-    if value == 0.0:
-        return "0.0000000000"
-    if abs(value) < _STAT_FORMAT_EPSILON:
-        return "0.0000000000"
-    return f"{value:.10f}"
+    return f"{value:.6e}"
