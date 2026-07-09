@@ -115,7 +115,7 @@ scripts/
 tests/
 ├── conftest.py                  # Shared fixtures (fixtures_dir, small_taxonomy, small_go, etc.)
 ├── unit/                        # 29 unit test files
-├── property/                    # 3 property-based test files (Hypothesis)
+├── property/                    # 4 property-based test files (Hypothesis)
 ├── integration/                 # 5 integration test files
 └── fixtures/                    # Test data (FASTA, peptides, taxonomy, GO, hits, annotations)
 ```
@@ -167,7 +167,7 @@ For each peptide in the list (`core/annotation.py`):
 - **GO aggregation**: Same formula for GO terms.
 - **Coverage stats**: Total, annotated, and unannotated peptide quantities and counts.
 - **GO-taxonomy cross-tabulation** (`aggregate_go_taxonomy_combos`): For each `(tax_id, go_id)` pair in `TAX(p) × GO(p)`, accumulates quantity. Computes `fraction_of_taxon` and `fraction_of_go`.
-- **Optional single-sample enrichment** (`core/enrichment.py`): When `compute_enrichment_pvalues` is enabled, compute two-direction weighted enrichment statistics for each observed `(tax_id, go_id)` pair. The implementation uses leave-one-out background rates, exact weighted enumeration for small groups (`N <= 14`), a normal approximation for larger groups, and Benjamini-Hochberg correction separately for the two test directions.
+- **Optional single-sample enrichment** (`core/enrichment.py`): When `compute_enrichment_pvalues` is enabled, compute two-direction enrichment statistics for each observed `(tax_id, go_id)` pair using a weighted finite-population (sampling-without-replacement) permutation null — equivalent to a weighted Fisher/hypergeometric test conditioning on both margins. Peptides with identical `(taxonomy, GO)` annotations are collapsed to one weighted unit first. Large groups use the closed-form normal approximation; small groups (`m <= 14`) use a cached exact enumeration; Benjamini-Hochberg correction is applied separately for the two test directions.
 - **Invariant validation** (`validate_aggregation_invariants`): Checks that `0 ≤ quantity(n) ≤ total` and `0 ≤ ratio_total ≤ ratio_annotated ≤ 1`. Violations are logged as warnings.
 
 ### Stage 7: Write Reports (per list)
@@ -182,7 +182,7 @@ Output directory: `<output_dir>/<list_id>/` (e.g., `results/list_000/`)
 | `peptide_mapping.parquet` | Parquet | One row per `(peptide, background_protein, annotated_protein)` triple. Columns: `peptide, peptide_lca_tax_ids (List[Int64]), peptide_go_terms (List[Utf8]), background_protein, annotated_protein, evalue, pident` |
 | `run_manifest.json` | JSON | Provenance: version, tool versions, input hashes (SHA256), parameters, reference data hashes, timestamp |
 
-`go_taxonomy_combo.csv` always includes the six enrichment columns. When enrichment is disabled, or when a pair is ineligible for one test direction, those fields are written as empty strings. Boundary z-scores are formatted as signed infinities (`+inf` / `-inf`) when the direction is known.
+`go_taxonomy_combo.csv` always includes the six enrichment columns. When enrichment is disabled, or when a pair is ineligible for one test direction, those fields are written as empty strings. Finite values are written in scientific notation so the magnitude of very small p-values and q-values is preserved.
 `run_manifest.json` records the submitted `compute_enrichment_pvalues` flag alongside the other run parameters.
 
 ---
@@ -423,7 +423,7 @@ These invariants are checked by `validate_aggregation_invariants()` and verified
 
 ### 7.6 Single-Sample GO x Taxonomy Enrichment (`core/enrichment.py`)
 
-For each observed `(taxon, GO)` pair in the doubly annotated peptide pool, the enrichment module computes two leave-one-out weighted rate tests:
+For each observed `(taxon, GO)` pair, the enrichment module runs two directional tests under a weighted finite-population (sampling-without-replacement) permutation null — equivalent to a weighted Fisher/hypergeometric test that conditions on both margins:
 
 1. Is GO term `g` enriched or depleted within taxon `t`?
 2. Is taxon `t` enriched or depleted within GO term `g`?
@@ -431,10 +431,9 @@ For each observed `(taxon, GO)` pair in the doubly annotated peptide pool, the e
 Implementation details:
 
 - only peptides with `is_annotated` and non-empty taxonomy and GO annotations participate
-- exact weighted enumeration is used for groups with `N <= 14`
-- a weighted normal approximation is used for larger groups
-- per-group weight summaries are cached so the large-group path is effectively constant-time per tested pair
-- boundary nulls with zero variance emit signed infinite z-scores (`+inf` / `-inf`) when direction is known
+- peptides with identical `(taxonomy, GO)` annotations are collapsed into one weighted unit (removes pseudo-replication)
+- the null has closed-form moments; large groups use a double-saddlepoint (Skovgaard) tail approximation, small groups (`m <= 14`) use a cached exact enumeration of the group's weighted subsets
+- the z-score is a signed effect size from the same moments; degenerate features (`n ∈ {0, P}`) give `p = 1` and an empty z-score
 - Benjamini-Hochberg correction is applied separately for the two test directions
 
 ---
@@ -782,7 +781,7 @@ Key test files and what they verify:
 | `test_peptide_annotation_taxonomy.py` | `core/annotation.py` | Taxonomy annotation via LCA |
 | `test_peptide_annotation_go.py` | `core/annotation.py` | GO annotation via union of closures |
 | `test_aggregation.py` | `core/aggregation.py` | Quantity rollup, ratios, coverage, combo cross-tab |
-| `test_enrichment.py` | `core/enrichment.py` | Exact vs approximate enrichment, pair eligibility, boundary p-values and infinite z-scores |
+| `test_enrichment.py` | `core/enrichment.py` | Finite-population null: closed-form moments vs enumeration, exact vs analytic, pair eligibility, degenerate features, identical-annotation collapse |
 | `test_reporting.py` | `core/reporting.py` | CSV/Parquet output format and content |
 | `test_diamond.py` | `core/diamond.py` | DIAMOND output parsing, accession extraction |
 | `test_obo_parser.py` | `core/obo_parser.py` | OBO format parsing |
@@ -802,7 +801,7 @@ Key test files and what they verify:
 | `test_accession_parsing.py` | `core/diamond.py` | UniProt accession extraction from DIAMOND IDs |
 | `test_write_peptide_mapping_parquet.py` | `core/reporting.py` | Parquet output schema and content |
 
-### Property-Based Tests (`tests/property/` — 3 files)
+### Property-Based Tests (`tests/property/` — 4 files)
 
 Use **Hypothesis** to generate random inputs and verify mathematical invariants hold for all cases.
 
@@ -811,6 +810,7 @@ Use **Hypothesis** to generate random inputs and verify mathematical invariants 
 | `test_aggregation_invariants.py` | Quantity bounds, ratio bounds, ratio ordering, coverage sums, n_peptides bounds |
 | `test_go_union_invariants.py` | GO closure union properties |
 | `test_taxonomy_lca_invariants.py` | LCA properties (ancestor of all inputs, depth ordering) |
+| `test_enrichment_invariants.py` | Finite-population null: closed-form moments and exact p-value match exhaustive enumeration; p-values bounded |
 
 Example: `test_aggregation_invariants.py` generates random `PeptideAnnotation` lists (up to 50 items, 100 examples) and checks that all aggregation invariants hold.
 

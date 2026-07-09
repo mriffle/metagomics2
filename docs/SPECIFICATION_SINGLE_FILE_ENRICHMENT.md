@@ -55,12 +55,18 @@ Only peptides satisfying all of the following are included in enrichment:
 
 This means enrichment uses the doubly annotated peptide pool, not all sample abundance.
 
-Only observed `(taxon, GO)` pairs are tested. A pair must have positive joint abundance in the filtered pool to receive enrichment statistics.
+### 3.1 Collapsing pseudo-replicates
 
-Each test direction also requires a positive leave-one-out denominator:
+Before testing, peptides that share an identical `(taxonomy_nodes, go_terms)` annotation are collapsed into a single weighted unit whose quantity is the sum of the merged peptides. Such peptides are statistically indistinguishable to the test — they co-occur in, and are co-absent from, every `(taxon, GO)` pair — so counting them as separate independent observations would inflate significance. The collapsed pool defines the population size `P` used by the null. Collapsing is on by default (`collapse_identical=True`).
 
-- GO-for-taxon requires `A_total - A_TAX(t) > 0`
-- taxon-for-GO requires `A_total - A_GO(g) > 0`
+### 3.2 Eligibility
+
+Only observed `(taxon, GO)` pairs are tested. A pair must have positive joint abundance in the collapsed pool to receive enrichment statistics.
+
+A test direction is ineligible when its tested group is the entire pool (there is no complement to compare against):
+
+- GO-for-taxon is ineligible when taxon `t` is present in every unit
+- taxon-for-GO is ineligible when GO term `g` is present in every unit
 
 If a direction is ineligible, its p-value, q-value, and z-score fields are left empty in the CSV.
 
@@ -72,10 +78,13 @@ For the filtered peptide pool:
 
 | Symbol | Definition |
 |--------|-----------|
-| `A_total` | Total abundance across all eligible peptides |
-| `A_TAX(t)` | Total abundance of peptides whose taxonomy closure contains `t` |
-| `A_GO(g)` | Total abundance of peptides whose GO closure contains `g` |
-| `A_JOINT(t, g)` | Total abundance of peptides containing both `t` and `g` |
+| `P` | Number of units in the collapsed pool |
+| `A_total` | Total abundance across all eligible units |
+| `A_TAX(t)` | Total abundance of units whose taxonomy closure contains `t` |
+| `A_GO(g)` | Total abundance of units whose GO closure contains `g` |
+| `A_JOINT(t, g)` | Total abundance of units containing both `t` and `g` |
+| `n_TAX(t)` | Number of units whose taxonomy closure contains `t` |
+| `n_GO(g)` | Number of units whose GO closure contains `g` |
 
 These quantities are computed over propagated closures, so parent and child nodes in either hierarchy share signal and therefore produce correlated results. That correlation is expected.
 
@@ -83,41 +92,32 @@ These quantities are computed over propagated closures, so parent and child node
 
 ## 5. Statistical Tests
 
+The null hypothesis is that taxonomy annotation and GO annotation are independent across units, conditional on the observed margins. It is realized as a weighted finite-population (sampling-without-replacement) permutation: the labels of one axis are placed uniformly at random among the `P` units, holding the other axis and the weights fixed. This is equivalent to a weighted Fisher/hypergeometric test and conditions on both margins, so no leave-one-out background is required.
+
 ### 5.1 GO for Taxon
 
-This asks whether GO term `g` is unusually concentrated within taxon `t`.
-
-Observed rate:
+Holds the taxon-`t` group of units (with their weights) fixed and places the `n_GO(g)` "carries `g`" labels uniformly without replacement among all `P` units. The statistic is the group's labelled weight:
 
 ```text
-p_obs = A_JOINT(t, g) / A_TAX(t)
+A_JOINT(t, g) = Σ_{u ∈ TAX(t)} w_u · 1[u carries g]
 ```
 
-Leave-one-out background rate:
-
-```text
-p_bg = (A_GO(g) - A_JOINT(t, g)) / (A_total - A_TAX(t))
-```
+compared against its null distribution. Large `A_JOINT` relative to the null means `g` is enriched within `t`.
 
 ### 5.2 Taxon for GO
 
-This asks whether taxon `t` claims an unusual share of GO term `g`.
+Symmetric: holds the GO-`g` group fixed and places the `n_TAX(t)` "in taxon `t`" labels. The statistic is the same `A_JOINT(t, g)`, compared against the null defined by the GO-`g` group and `n_TAX(t)`.
 
-Observed rate:
+### 5.3 Null Moments
 
-```text
-p_obs = A_JOINT(t, g) / A_GO(g)
-```
-
-Leave-one-out background rate:
+Under placement of `n` labels among `P` units, the tested group's labelled weight has closed-form moments:
 
 ```text
-p_bg = (A_TAX(t) - A_JOINT(t, g)) / (A_total - A_GO(g))
+mean = (n / P) · W_S
+var  = [ n (P − n) / (P² (P − 1)) ] · ( P · Σ_S w_u² − W_S² )
 ```
 
-### 5.3 Why Leave-One-Out
-
-The implementation uses leave-one-out backgrounds so the tested slice is compared against "the rest of the sample" rather than against a background partly containing itself. This avoids self-dilution for dominant taxa or broad GO groups.
+where `W_S` is the group's total weight and `Σ_S w_u²` its sum of squared weights. The variance carries the finite-population correction that the earlier independent-Bernoulli model lacked, and conditioning on both margins removes the need for a leave-one-out background.
 
 ---
 
@@ -125,45 +125,35 @@ The implementation uses leave-one-out backgrounds so the tested slice is compare
 
 ### 6.1 Exact vs Approximate Computation
 
-The implementation uses two paths:
+Two paths, selected by the size `m` of the tested group:
 
-- Exact weighted enumeration for groups with `N <= 14`
-- Normal approximation for groups with `N > 14`
+- Exact enumeration for groups with `m <= 14`
+- Normal approximation for groups with `m > 14`
 
 The threshold is implemented as:
 
 ```python
-DEFAULT_EXACT_ENUMERATION_THRESHOLD = 14
+EXACT_GROUP_SIZE_MAX = 14
 ```
 
 This threshold is not user-configurable in the UI or CLI.
 
-### 6.2 Exact Weighted P-Value
+### 6.2 Exact Two-Sided P-Value
 
-For small groups, the code enumerates all `2^N` Bernoulli assignments for the tested group and computes an exact two-sided p-value using peptide abundances as weights.
+For small groups the code enumerates the group's `2^m` weighted subsets once (grouped by subset size and sorted) and caches the result per group. A specific size-`h` subset is the labelled set with probability `C(P − m, n − h) / C(P, n)` (only its size matters), so the two-sided p-value is the total probability mass of subsets whose sum is at least as far from the null mean as the observed `A_JOINT`. Because the enumeration is cached per group, every `(taxon, GO)` pair that shares the group reuses it rather than re-enumerating.
 
-For a group with weights `w_i` and binary indicators `x_i`:
+### 6.3 Large-Group Tail (Double Saddlepoint)
 
-```text
-p_obs = sum(w_i * x_i) / sum(w_i)
-```
-
-The exact p-value is the probability, under the null Bernoulli rate `p_bg`, of observing a weighted rate at least as far from `p_bg` as the observed one.
-
-### 6.3 Normal Approximation
-
-For larger groups, the weighted rate is approximated as normal:
+For larger groups the two-sided p-value comes from a **double-saddlepoint (Skovgaard) approximation** to the finite-population null. It conditions on both margins, so it captures the skewness a normal approximation misses and stays accurate across all group/pool ratios (validated against the exact enumeration of §6.2 to within a few percent in the tail). The signed z-score (§6.4) is still taken from the closed-form moments:
 
 ```text
-Var[S] = p_bg * (1 - p_bg) * sum(w_i^2) / (sum(w_i)^2)
-z = (p_obs - p_bg) / sqrt(Var[S])
+z = (A_JOINT − mean) / sqrt(var)
 ```
 
-The two-sided p-value is computed as:
+Two regimes defer to the plain normal tail `erfc(|z| / sqrt(2))`:
 
-```text
-erfc(|z| / sqrt(2))
-```
+- **near the mean** (`|z| < 0.5`), where the normal is accurate and the saddlepoint formula is singular; and
+- **at the support edge** — a "pure" group whose entire weight carries (or lacks) the feature — an atom the continuous approximation mishandles but which is hugely significant regardless.
 
 ### 6.4 Signed Z-Score Semantics
 
@@ -172,28 +162,11 @@ The z-score is a signed directional effect measure:
 - `z > 0` means enrichment
 - `z < 0` means depletion
 
-For large groups, the z-score is the same value used for the approximate p-value.
+It is computed from the closed-form moments and reported for both paths (exact and approximate) as a descriptive effect size whenever the variance is defined.
 
-For small groups, the p-value comes from exact enumeration, but the z-score is still reported as a descriptive effect size when the variance is defined.
+### 6.5 Degenerate Cases
 
-### 6.5 Boundary Cases
-
-When `p_bg` is exactly `0` or `1`, the usual variance term is zero and a finite z-score does not exist.
-
-The shipped implementation handles these cases explicitly:
-
-- if direction is enriched, z-score is `+inf`
-- if direction is depleted, z-score is `-inf`
-- if `p_obs == p_bg`, z-score remains empty
-
-The CSV formatter writes these values as `+inf` and `-inf`.
-
-The p-value behavior at the boundary is:
-
-- `pvalue = 0` when the observed rate contradicts a boundary null
-- `pvalue = 1` when the observed rate matches the boundary null
-
-So a row can legitimately contain `pvalue = 0` and `zscore = +inf` or `-inf`.
+When a feature is absent (`n = 0`) or universal (`n = P`) the statistic is deterministic: the variance is zero, so the p-value is `1` and the z-score is left empty. This null does not produce infinite z-scores.
 
 ---
 
@@ -210,27 +183,17 @@ The implementation restores q-values to the original pair order after ranking.
 
 ## 8. Performance Characteristics
 
-The current implementation is optimized for the large-group path.
-
 ### 8.1 Cached Group Summaries
 
-For each taxon group and GO group, the engine caches:
+For each taxon group and GO group, the engine caches total group weight, sum of squared weights, and the group's weights. Small groups (at or below the exact threshold) additionally get a lazily-built, sorted subset-sum table.
 
-- total group weight
-- sum of squared weights
-- the exact peptide tuple only when the group size is at or below the exact threshold
+### 8.2 Complexity
 
-This means the normal-approximation path no longer rebuilds per-pair weight vectors for large groups.
+- preprocessing over the collapsed pool: proportional to propagated taxonomy and GO memberships
+- large-group pair testing: `O(1)` near the mean (normal); `O(m)` per tail in the tail region (the double-saddlepoint's Newton solve)
+- small-group pair testing: `O(2^m)` **once per group** (cached), then `O(m)` per pair that shares the group
 
-### 8.2 Current Complexity
-
-Approximate high-level behavior:
-
-- preprocessing over the peptide pool: proportional to propagated taxonomy and GO memberships
-- large-group pair testing: approximately `O(1)` per tested pair
-- small-group exact testing: `O(2^N)` per tested pair, but only for groups with `N <= 14`
-
-In practice, the exact branch is still the dominant hotspot on workloads containing many small tested groups with many observed pairs.
+The exact enumeration is amortized per group rather than repeated per pair, and most large-group pairs fall near the mean (the fast normal path), so the method is much faster than a per-pair exact approach.
 
 ---
 
@@ -252,9 +215,8 @@ Formatting rules:
 - disabled enrichment: empty strings
 - ineligible direction: empty strings
 - finite values: scientific-notation string (e.g. `1.234560e-02`), which preserves the magnitude of very small p-values and q-values
-- infinite z-scores: `+inf` or `-inf`
 
-This behavior is part of the backward-compatible CSV contract used by the frontend parser.
+The finite-population null does not produce infinite z-scores; for backward compatibility the formatter still writes `+inf` / `-inf` if an infinite value is ever encountered. This behavior is part of the CSV contract used by the frontend parser.
 
 ---
 
@@ -385,7 +347,8 @@ docker run --rm metagomics2-frontend-test npx tsc --noEmit
 
 ## 14. Known Limitations
 
-- The method assumes independent Bernoulli behavior within a tested group; peptides from the same protein can violate that assumption.
+- The null treats units as exchangeable. Collapsing identical annotations removes exact pseudo-replication, but distinct peptides with correlated (non-identical) annotations from homologous proteins are still treated as independent.
 - Parent and child nodes in GO and taxonomy remain highly correlated because closures are propagated.
 - Very broad GO terms and very high-level taxonomy nodes can produce biologically uninformative but statistically valid results.
-- Exact enumeration can still be slow on pathological workloads with many small tested groups and many observed pairs, though lowering the threshold to `14` substantially reduces this cost.
+- The two-sided p-value uses distance from the null mean. For strongly skewed groups this is mildly anti-conservative in the extreme tail — empirically ~2-3x nominal at `p < 0.01` under a real-structure null, versus ~8x for the previous method — while the `p < 0.05` level is well calibrated. This residual is a property of the two-sided definition, not the tail approximation (the double-saddlepoint tracks the exact tail to a few percent, and the "twice the smaller tail" alternative is worse). Large groups use the double-saddlepoint tail; small groups use the exact enumeration.
+- The analysis is within-sample and single-replicate; it does not model biological variability. Outputs are best read as enrichment scores rather than population-level inference.
