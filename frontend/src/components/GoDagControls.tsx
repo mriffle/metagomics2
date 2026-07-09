@@ -24,6 +24,9 @@ interface GoDagControlsProps {
   baseColor?: string
   onBaseColorChange?: (color: string) => void
   showQvalueMetric?: boolean
+  showQvalueFilter?: boolean
+  qvalueThreshold?: number | null
+  onQvalueThresholdChange?: (v: number | null) => void
 }
 
 const CUTOFF_PRESETS = [
@@ -33,6 +36,14 @@ const CUTOFF_PRESETS = [
   { label: '1%', value: 0.01 },
   { label: '5%', value: 0.05 },
   { label: '10%', value: 0.1 },
+]
+
+const QVALUE_PRESETS: { label: string; value: number | null }[] = [
+  { label: 'None', value: null },
+  { label: '0.1', value: 0.1 },
+  { label: '0.05', value: 0.05 },
+  { label: '0.01', value: 0.01 },
+  { label: '0.001', value: 0.001 },
 ]
 
 const BASE_METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
@@ -70,8 +81,12 @@ export default function GoDagControls({
   baseColor = '#4338ca',
   onBaseColorChange,
   showQvalueMetric = false,
+  showQvalueFilter = false,
+  qvalueThreshold = null,
+  onQvalueThresholdChange,
 }: GoDagControlsProps) {
   const [customCutoff, setCustomCutoff] = useState('')
+  const [customQvalue, setCustomQvalue] = useState('')
   const colorInputRef = useRef<HTMLInputElement>(null)
   const metricOptions = filterLabel
     ? [
@@ -86,6 +101,14 @@ export default function GoDagControls({
     if (!isNaN(val) && val >= 0 && val <= 100) {
       onMinRatioTotalChange(val / 100)
       setCustomCutoff('')
+    }
+  }
+
+  const handleCustomQvalue = () => {
+    const val = parseFloat(customQvalue)
+    if (!isNaN(val) && val > 0 && val <= 1) {
+      onQvalueThresholdChange?.(val)
+      setCustomQvalue('')
     }
   }
 
@@ -234,6 +257,53 @@ export default function GoDagControls({
           </span>
         )}
       </div>
+
+      {/* Q-value leaf filter (only when enrichment q-values are available for the taxon) */}
+      {showQvalueFilter && onQvalueThresholdChange && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+          <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Max q-value (GO for taxon):</span>
+          {QVALUE_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              onClick={() => onQvalueThresholdChange(preset.value)}
+              className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                qvalueThreshold === preset.value
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={customQvalue}
+              onChange={(e) => setCustomQvalue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCustomQvalue()}
+              placeholder="q"
+              className="w-16 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <button
+              onClick={handleCustomQvalue}
+              className="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded transition-colors"
+            >
+              Set
+            </button>
+          </div>
+          {qvalueThreshold != null && !QVALUE_PRESETS.some(p => p.value === qvalueThreshold) && (
+            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+              q ≤ {qvalueThreshold}
+            </span>
+          )}
+          {qvalueThreshold != null && (
+            <span className="text-xs text-gray-500 dark:text-gray-400 italic">
+              trims insignificant leaves only; ancestors are kept
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

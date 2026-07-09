@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
 import GoDagViewer from '../components/GoDagViewer'
@@ -6,6 +6,7 @@ import GoDagControls from '../components/GoDagControls'
 import PeptideDetailsPane from '../components/PeptideDetailsPane'
 import { parseGoTermsCsv } from '../utils/goParser'
 import type { GoTermNode } from '../utils/goParser'
+import { pruneInsignificantLeaves } from '../utils/goDagFilter'
 import { parseTaxonomyCsv, getDescendantTaxIds } from '../utils/taxonomyParser'
 import { parseComboCsv, comboRowsToGoTermNodes } from '../utils/comboParser'
 import type { AutocompleteOption } from '../components/Autocomplete'
@@ -37,6 +38,7 @@ export default function GoDagPage() {
   const [selectedNamespace, setSelectedNamespace] = useState('biological_process')
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('quantity')
   const [minRatioTotal, setMinRatioTotal] = useState(0.1)
+  const [qvalueThreshold, setQvalueThreshold] = useState<number | null>(null)
   const [baseColor, setBaseColor] = useState('#4338ca')
   const viewerContainerRef = useRef<HTMLDivElement>(null)
 
@@ -146,6 +148,14 @@ export default function GoDagPage() {
     }
   }, [showQvalueMetric, selectedMetric])
 
+  // The q-value leaf filter is only meaningful when enrichment q-values are present
+  // for the selected taxon; clear it when that gate closes.
+  useEffect(() => {
+    if (!showQvalueMetric && qvalueThreshold != null) {
+      setQvalueThreshold(null)
+    }
+  }, [showQvalueMetric, qvalueThreshold])
+
   // Auto-select first available namespace if current selection has no data
   useEffect(() => {
     if (namespaces.length > 0 && !namespaces.includes(selectedNamespace)) {
@@ -153,10 +163,29 @@ export default function GoDagPage() {
     }
   }, [namespaces])
 
-  // Filter nodes by selected namespace and abundance cutoff
-  const filteredNodes = allNodes.filter(
-    n => n.namespace === selectedNamespace && n.ratioTotal >= minRatioTotal
+  // Nodes for the selected namespace passing the abundance cutoff (pre q-value).
+  const baseNodes = useMemo(
+    () => allNodes.filter(
+      n => n.namespace === selectedNamespace && n.ratioTotal >= minRatioTotal
+    ),
+    [allNodes, selectedNamespace, minRatioTotal]
   )
+
+  // Optionally prune insignificant leaves by q-value (leaf-only, preserving the DAG spine).
+  const filteredNodes = useMemo(
+    () => (showQvalueMetric && qvalueThreshold != null
+      ? pruneInsignificantLeaves(baseNodes, qvalueThreshold)
+      : baseNodes),
+    [baseNodes, showQvalueMetric, qvalueThreshold]
+  )
+
+  // When the q-value filter alone empties the graph, explain why rather than
+  // showing the generic "no terms" message (which implies there is no data).
+  const emptyMessage =
+    showQvalueMetric && qvalueThreshold != null && baseNodes.length > 0 && filteredNodes.length === 0
+      ? `No GO terms pass the q-value filter (q ≤ ${qvalueThreshold}) for this taxon. `
+        + `Try a higher threshold${minRatioTotal > 0 ? ' or a lower abundance cutoff' : ''}.`
+      : undefined
 
   if (loading) {
     return (
@@ -231,6 +260,9 @@ export default function GoDagPage() {
         baseColor={baseColor}
         onBaseColorChange={setBaseColor}
         showQvalueMetric={showQvalueMetric}
+        showQvalueFilter={showQvalueMetric}
+        qvalueThreshold={qvalueThreshold}
+        onQvalueThresholdChange={setQvalueThreshold}
       />
 
       {/* Main content: graph + details pane */}
@@ -245,6 +277,7 @@ export default function GoDagPage() {
               filterLabel={selectedTaxon || undefined}
               baseColor={baseColor}
               onNodeClick={setSelectedGoNode}
+              emptyMessage={emptyMessage}
             />
           </div>
         </div>

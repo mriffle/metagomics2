@@ -103,6 +103,7 @@ frontend/
         ├── csvParser.ts               # RFC-compliant CSV line parser
         ├── taxonomyParser.ts          # Taxonomy CSV parsing, canonical rank filtering, placeholder insertion
         ├── goParser.ts                # GO terms CSV parsing
+        ├── goDagFilter.ts             # Leaf-only q-value pruning of the GO DAG (pruneInsignificantLeaves)
         ├── comboParser.ts             # GO-taxonomy combo CSV parsing and reshaping
         ├── colors.ts                  # Centralized light/dark mode color constants for visualizations and badges
         ├── duckdb.ts                  # DuckDB-WASM singleton initialization and Parquet registration
@@ -111,6 +112,7 @@ frontend/
             ├── csvParser.test.ts
             ├── taxonomyParser.test.ts
             ├── goParser.test.ts
+            ├── goDagFilter.test.ts
             └── comboParser.test.ts
 ```
 
@@ -194,6 +196,7 @@ Interactive Gene Ontology DAG visualization.
 1. Filter by namespace (`biological_process` | `cellular_component` | `molecular_function`)
 2. Filter by `minRatioTotal` cutoff
 3. Optionally filter by taxon (uses combo data)
+4. Optionally prune insignificant **leaves** by q-value (`pruneInsignificantLeaves`, `utils/goDagFilter.ts`) — only available when a taxon filter is active and enrichment q-values are present (same gate as the q-value coloring metric). This iteratively removes leaf GO terms whose `qvalueGoForTaxon` exceeds the selected threshold until every remaining leaf passes. Internal nodes are never pruned by q-value, so the DAG spine from significant leaves up to the root(s) is preserved even where ancestor q-values are worse than the threshold. When every node along a branch fails, the branch (including a root that becomes an isolated failing leaf) is removed entirely. If the q-value filter removes every term (the pre-filter set was non-empty), `GoDagPage` passes an explanatory `emptyMessage` to `GoDagViewer` (e.g. "No GO terms pass the q-value filter (q ≤ 0.05) for this taxon…") instead of the generic "No GO terms in this namespace."
 
 **Child components**:
 - `GoDagControls` — namespace tabs, metric selector, color picker, abundance cutoff, taxon autocomplete, export buttons
@@ -293,6 +296,7 @@ Controls for the GO DAG visualization.
 - **Export buttons**: PNG and SVG
 - **Taxonomy filter**: `Autocomplete` component to filter GO terms by a specific taxon
 - **Abundance cutoff**: Preset buttons (None, 0.01%, 0.1%, 1%, 5%, 10%) + custom percentage input
+- **Max q-value (GO for taxon)**: Preset buttons (None, 0.1, 0.05, 0.01, 0.001) + custom value input. Rendered only when `showQvalueFilter` is true (taxon filter active and enrichment q-values present). Drives the leaf-only q-value pruning described in §6.3.
 
 ### 7.4 TaxonomyChart (`components/TaxonomyChart.tsx`)
 

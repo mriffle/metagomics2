@@ -273,6 +273,7 @@ When a taxonomy filter is active and combo enrichment data is present:
 
 - the GO DAG page can color by `Q-value (GO for Taxon)`
 - q-values are visualized as `-log10(q + eps)`
+- the GO DAG page can filter by a **max q-value (GO for taxon)** threshold. This iteratively prunes leaf GO terms whose `qvalue_go_for_taxon` exceeds the threshold until every remaining leaf passes. Only leaves are pruned: internal GO terms are preserved even when their own q-value is worse than the threshold, so the DAG spine from significant leaves up to the root(s) stays intact. Because q-value eligibility for the go-for-taxon direction is an all-or-nothing property of the selected taxon (a q-value is empty only when the taxon is present in every unit, which also hides this control), every candidate leaf has a q-value whenever the filter is usable.
 - GO tooltips show:
   - fraction of taxon
   - fraction of GO

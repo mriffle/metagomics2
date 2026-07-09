@@ -137,9 +137,10 @@ interface GoDagViewerProps {
   filterLabel?: string
   baseColor?: string
   onNodeClick?: (nodeId: string | null) => void
+  emptyMessage?: string
 }
 
-export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#4338ca', onNodeClick }: GoDagViewerProps) {
+export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#4338ca', onNodeClick, emptyMessage }: GoDagViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -430,8 +431,10 @@ export default function GoDagViewer({ nodes, metric, filterLabel, baseColor = '#
 
   if (nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-        No GO terms in this namespace.
+      <div className="flex items-center justify-center h-full px-6">
+        <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
+          {emptyMessage ?? 'No GO terms in this namespace.'}
+        </p>
       </div>
     )
   }
