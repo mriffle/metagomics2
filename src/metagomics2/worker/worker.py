@@ -276,6 +276,9 @@ class Worker:
             job_dir=job_dir,  # Enable reference snapshot creation
             go_edge_types=set(params.go_edge_types.split(",")),
             go_include_self=params.go_include_self,
+            diamond_block_size=_cfg.diamond_block_size,
+            diamond_index_chunks=_cfg.diamond_index_chunks,
+            diamond_tmpdir=_cfg.diamond_tmpdir,
         )
 
 
@@ -290,6 +293,14 @@ def main() -> None:
         f"cleanup_on_success={CLEANUP_ON_SUCCESS}, cleanup_on_failure={CLEANUP_ON_FAILURE}"
     )
     logger.info(f"Configured databases: {[d.get('name') for d in DATABASES]}")
+    block_size = _cfg.diamond_block_size
+    index_chunks = _cfg.diamond_index_chunks
+    logger.info(
+        "DIAMOND tuning: "
+        f"block_size={block_size if block_size is not None else 'default (2.0)'}, "
+        f"index_chunks={index_chunks if index_chunks is not None else 'default (4)'}, "
+        f"tmpdir={_cfg.diamond_tmpdir or 'default (job work dir)'}"
+    )
     logger.info(
         f"Worker log: {_cfg.logs_dir / 'worker.log'}; per-job logs: {JOBS_DIR}/<job_id>/logs/"
     )

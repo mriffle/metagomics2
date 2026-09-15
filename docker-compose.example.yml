@@ -14,6 +14,12 @@ services:
       - METAGOMICS_DATABASES_DIR=/databases
       - METAGOMICS_CONFIG_DIR=/config
       - METAGOMICS_THREADS=${METAGOMICS_THREADS:-4}
+      # DIAMOND performance/memory tuning; see the comments in .env.example
+      # before setting these. Empty means DIAMOND's defaults.
+      - METAGOMICS_DIAMOND_BLOCK_SIZE=${METAGOMICS_DIAMOND_BLOCK_SIZE:-}
+      - METAGOMICS_DIAMOND_INDEX_CHUNKS=${METAGOMICS_DIAMOND_INDEX_CHUNKS:-}
+      - METAGOMICS_DIAMOND_TMPDIR=${METAGOMICS_DIAMOND_TMPDIR:-}
+      - METAGOMICS_LOG_LEVEL=${METAGOMICS_LOG_LEVEL:-INFO}
       - METAGOMICS_ADMIN_PASSWORD=${METAGOMICS_ADMIN_PASSWORD:-changeme}
       - METAGOMICS_MAX_UPLOAD_MB=${METAGOMICS_MAX_UPLOAD_MB:-1024}
       - METAGOMICS_CLEANUP_ON_SUCCESS=${METAGOMICS_CLEANUP_ON_SUCCESS:-true}
@@ -25,3 +31,13 @@ services:
       - SMTP_FROM=${SMTP_FROM:-}
       - SITE_URL=${SITE_URL:-}
     restart: unless-stopped
+    # On a shared server, cap what this container can use so a big DIAMOND run
+    # cannot take the whole machine. Size mem_limit from METAGOMICS_DIAMOND_BLOCK_SIZE
+    # (about 6 GB per unit) plus a few GB for the worker itself. If the cap is
+    # reached DIAMOND will slow to a crawl rather than fail, and the worker logs
+    # a warning at job start when the block size looks too big for the limit.
+    # mem_limit: 64g
+    #
+    # Only needed if METAGOMICS_DIAMOND_TMPDIR=/dev/shm: Docker's default /dev/shm
+    # is 64 MB. Whatever DIAMOND writes there counts against mem_limit.
+    # shm_size: 32g

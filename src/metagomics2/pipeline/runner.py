@@ -100,6 +100,12 @@ class PipelineConfig:
     mock_hits_path: Path | None = None
     mock_subject_annotations_path: Path | None = None
 
+    # DIAMOND tuning (None = DIAMOND's defaults). See README "DIAMOND performance
+    # and memory" for what these do.
+    diamond_block_size: float | None = None
+    diamond_index_chunks: int | None = None
+    diamond_tmpdir: Path | None = None
+
 
 # Weighted progress milestones (out of 1000) for each pipeline stage.
 # DIAMOND homology search is weighted heaviest as it is typically the
@@ -156,6 +162,8 @@ ProgressCallback = Callable[[PipelineProgress], None]
 class PipelineRunner:
     # Monotonic timestamp of the most recent stage change, for stage timing logs.
     _stage_started: float | None = None
+    # The DIAMOND command line actually run, recorded in the manifest.
+    diamond_command: str = ""
 
     """Orchestrates the metagomics pipeline execution."""
 
@@ -232,6 +240,9 @@ class PipelineRunner:
                 f"annotated_db={self.config.annotated_db_path}, "
                 f"annotations_db={self.config.annotations_db_path}, "
                 f"threads={self.config.threads}, "
+                f"diamond_block_size={self.config.diamond_block_size}, "
+                f"diamond_index_chunks={self.config.diamond_index_chunks}, "
+                f"diamond_tmpdir={self.config.diamond_tmpdir}, "
                 f"filters={self.config.filter_policy.to_dict()}, "
                 f"go_edge_types={sorted(self.config.go_edge_types)}, "
                 f"go_include_self={self.config.go_include_self}, "
@@ -562,7 +573,11 @@ class PipelineRunner:
             evalue=self.config.filter_policy.max_evalue or 1e-10,
             threads=self.config.threads,
             log_path=log_dir / "diamond.log",
+            block_size=self.config.diamond_block_size,
+            index_chunks=self.config.diamond_index_chunks,
+            tmpdir=self.config.diamond_tmpdir,
         )
+        self.diamond_command = " ".join(diamond_result.command)
 
         logger.info(
             f"DIAMOND returned {diamond_result.n_hits} hits "
@@ -707,7 +722,7 @@ class PipelineRunner:
         manifest = create_manifest(
             metagomics2_version=__version__,
             search_tool=self.config.search_tool,
-            search_tool_command="",  # TODO: capture actual command
+            search_tool_command=self.diamond_command,
             annotated_db_choice=str(self.config.annotated_db_path or "mock"),
             input_fasta_path=self.config.fasta_path,
             peptide_list_path=peptide_list_path,
@@ -715,6 +730,12 @@ class PipelineRunner:
                 **self.config.filter_policy.to_dict(),
                 "go_edge_types": sorted(self.config.go_edge_types),
                 "go_include_self": self.config.go_include_self,
+                "threads": self.config.threads,
+                "diamond_block_size": self.config.diamond_block_size,
+                "diamond_index_chunks": self.config.diamond_index_chunks,
+                "diamond_tmpdir": (
+                    str(self.config.diamond_tmpdir) if self.config.diamond_tmpdir else None
+                ),
             },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=(

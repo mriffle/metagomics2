@@ -14,6 +14,7 @@ Precedence (highest → lowest):
 """
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +76,11 @@ class Settings:
     diamond_version: str = ""
     site_url: str = ""
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
+
+    # --- DIAMOND tuning (None = DIAMOND's own default) ---
+    diamond_block_size: float | None = None
+    diamond_index_chunks: int | None = None
+    diamond_tmpdir: Path | None = None
 
     # --- Logging ---
     log_level: str = "INFO"
@@ -248,6 +254,37 @@ def load_settings(
     site_url = os.environ.get("SITE_URL", "")
     poll_interval = int(os.environ.get("METAGOMICS_POLL_INTERVAL", "5"))
     log_level = os.environ.get("METAGOMICS_LOG_LEVEL", "INFO").strip().upper() or "INFO"
+
+    # --- DIAMOND tuning (all optional; empty means use DIAMOND's defaults) ---
+    errors: list[str] = []
+    diamond_block_size: float | None = None
+    diamond_index_chunks: int | None = None
+    diamond_tmpdir: Path | None = None
+    raw_block_size = os.environ.get("METAGOMICS_DIAMOND_BLOCK_SIZE", "").strip()
+    if raw_block_size:
+        try:
+            diamond_block_size = float(raw_block_size)
+            if not math.isfinite(diamond_block_size) or diamond_block_size <= 0:
+                raise ValueError
+        except ValueError:
+            errors.append(
+                f"METAGOMICS_DIAMOND_BLOCK_SIZE must be a positive number "
+                f"(billions of letters), got {raw_block_size!r}"
+            )
+    raw_index_chunks = os.environ.get("METAGOMICS_DIAMOND_INDEX_CHUNKS", "").strip()
+    if raw_index_chunks:
+        try:
+            diamond_index_chunks = int(raw_index_chunks)
+            if diamond_index_chunks < 1:
+                raise ValueError
+        except ValueError:
+            errors.append(
+                f"METAGOMICS_DIAMOND_INDEX_CHUNKS must be a positive integer, "
+                f"got {raw_index_chunks!r}"
+            )
+    raw_tmpdir = os.environ.get("METAGOMICS_DIAMOND_TMPDIR", "").strip()
+    if raw_tmpdir:
+        diamond_tmpdir = Path(raw_tmpdir)
     cleanup_on_success = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true"))
     cleanup_on_failure = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true"))
 
@@ -262,7 +299,6 @@ def load_settings(
 
     # --- Databases (from JSON config file) ---
     databases: list[DatabaseEntry] = []
-    errors: list[str] = []
 
     # Determine databases JSON path
     if databases_json is None:
@@ -357,6 +393,9 @@ def load_settings(
         diamond_version=diamond_version,
         site_url=site_url,
         allowed_origins=allowed_origins,
+        diamond_block_size=diamond_block_size,
+        diamond_index_chunks=diamond_index_chunks,
+        diamond_tmpdir=diamond_tmpdir,
         log_level=log_level,
         poll_interval=poll_interval,
         cleanup_on_success=cleanup_on_success,

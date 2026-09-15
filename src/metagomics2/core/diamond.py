@@ -6,12 +6,17 @@ import signal
 import subprocess
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from metagomics2.core.filtering import HomologyHit, parse_blast_tabular
-from metagomics2.logging_setup import format_bytes, process_rss_bytes
+from metagomics2.logging_setup import (
+    format_bytes,
+    get_cgroup_memory_limit,
+    get_total_memory,
+    process_rss_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,7 @@ class DiamondResult:
     output_path: Path
     n_queries: int
     n_hits: int
+    command: list[str] = field(default_factory=list)
 
 
 def _tail(path: Path, n: int = 30) -> str:
@@ -113,6 +119,9 @@ def run_diamond(
     threads: int = 4,
     log_path: Path | None = None,
     heartbeat_seconds: float = 60.0,
+    block_size: float | None = None,
+    index_chunks: int | None = None,
+    tmpdir: Path | None = None,
 ) -> DiamondResult:
     """Run DIAMOND blastp and parse the results.
 
@@ -132,6 +141,12 @@ def run_diamond(
         log_path: File that receives DIAMOND's console output.  Defaults to
             ``diamond.log`` next to the output file.
         heartbeat_seconds: Interval between progress log lines while waiting.
+        block_size: DIAMOND ``--block-size`` in billions of letters.  The
+            main control over DIAMOND's memory use and speed; ``None`` keeps
+            DIAMOND's default (2.0).
+        index_chunks: DIAMOND ``--index-chunks``; ``None`` keeps the default (4).
+        tmpdir: DIAMOND ``--tmpdir`` for its intermediate files; ``None`` lets
+            DIAMOND use the output file's directory.
 
     Returns:
         DiamondResult with parsed hits
@@ -157,8 +172,16 @@ def run_diamond(
 
     if max_target_seqs is not None:
         cmd.extend(["--max-target-seqs", str(max_target_seqs)])
+    if block_size is not None:
+        cmd.extend(["--block-size", f"{block_size:g}"])
+    if index_chunks is not None:
+        cmd.extend(["--index-chunks", str(index_chunks)])
+    if tmpdir is not None:
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["--tmpdir", str(tmpdir)])
 
     logger.info(f"Running DIAMOND: {' '.join(cmd)}")
+    _log_memory_expectation(block_size)
     logger.info(
         f"DIAMOND inputs: query {format_bytes(_file_size(query_fasta))}, "
         f"database {format_bytes(_file_size(db_path))}; console output -> {log_path}"
@@ -204,7 +227,44 @@ def run_diamond(
     )
 
     # Parse results
-    return parse_diamond_output(output_path)
+    result = parse_diamond_output(output_path)
+    result.command = cmd
+    return result
+
+
+# DIAMOND's documentation says to expect roughly six times the block size in
+# gigabytes of memory.  In practice it is often less, so this is a budget, not
+# a prediction.
+_DIAMOND_GB_PER_BLOCK_UNIT = 6.0
+_DIAMOND_DEFAULT_BLOCK_SIZE = 2.0
+
+
+def estimate_diamond_memory_bytes(block_size: float | None) -> int:
+    """Upper-bound estimate of DIAMOND's memory use for a block size."""
+    effective = block_size if block_size is not None else _DIAMOND_DEFAULT_BLOCK_SIZE
+    return int(effective * _DIAMOND_GB_PER_BLOCK_UNIT * 1024**3)
+
+
+def _log_memory_expectation(block_size: float | None) -> None:
+    """Log the expected DIAMOND memory budget and warn if it exceeds what is available."""
+    expected = estimate_diamond_memory_bytes(block_size)
+    effective = block_size if block_size is not None else _DIAMOND_DEFAULT_BLOCK_SIZE
+    logger.info(
+        f"DIAMOND block size {effective:g} billion letters: expect up to about "
+        f"{format_bytes(expected)} of memory"
+    )
+    limit = get_cgroup_memory_limit()
+    total = get_total_memory()
+    if limit is not None and expected > limit:
+        logger.warning(
+            f"DIAMOND may need {format_bytes(expected)} but the container memory limit is "
+            f"{format_bytes(limit)}; lower METAGOMICS_DIAMOND_BLOCK_SIZE or raise the limit"
+        )
+    elif total is not None and expected > total:
+        logger.warning(
+            f"DIAMOND may need {format_bytes(expected)} but the machine has "
+            f"{format_bytes(total)}; lower METAGOMICS_DIAMOND_BLOCK_SIZE"
+        )
 
 
 def _iter_lines_with_progress(path: Path, every: int = 1_000_000) -> Iterator[str]:

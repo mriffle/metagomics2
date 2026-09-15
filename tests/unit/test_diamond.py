@@ -9,6 +9,7 @@ import pytest
 from metagomics2.core.diamond import (
     DiamondError,
     _iter_lines_with_progress,
+    estimate_diamond_memory_bytes,
     parse_diamond_output,
     run_diamond,
 )
@@ -211,6 +212,88 @@ class TestRunDiamond:
         assert len(heartbeats) == 2
         assert "pid 4242" in heartbeats[0].message
         assert "reference block 2/5" in heartbeats[0].message
+
+
+class TestDiamondTuningOptions:
+    """Block size, index chunks and tmpdir are passed through to DIAMOND."""
+
+    def _run(self, mock_popen, tmp_path, **kwargs):
+        query = tmp_path / "query.fasta"
+        query.write_text(">protA\nACDE\n")
+        db = tmp_path / "db.dmnd"
+        output = tmp_path / "work" / "results.tsv"
+        mock_popen.side_effect = _fake_popen(output_text="", output_path=output)
+        result = run_diamond(query, db, output, **kwargs)
+        return mock_popen.call_args[0][0], result
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_defaults_add_no_tuning_flags(self, mock_popen, tmp_path):
+        cmd, result = self._run(mock_popen, tmp_path)
+        assert "--block-size" not in cmd
+        assert "--index-chunks" not in cmd
+        assert "--tmpdir" not in cmd
+        assert result.command == cmd
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_flags_passed_through(self, mock_popen, tmp_path):
+        tmpdir = tmp_path / "shm"
+        cmd, _ = self._run(
+            mock_popen, tmp_path, block_size=8.0, index_chunks=1, tmpdir=tmpdir
+        )
+        assert cmd[cmd.index("--block-size") + 1] == "8"
+        assert cmd[cmd.index("--index-chunks") + 1] == "1"
+        assert cmd[cmd.index("--tmpdir") + 1] == str(tmpdir)
+        # tmpdir is created so DIAMOND does not fail on a missing directory
+        assert tmpdir.is_dir()
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_fractional_block_size_formatting(self, mock_popen, tmp_path):
+        cmd, _ = self._run(mock_popen, tmp_path, block_size=0.5)
+        assert cmd[cmd.index("--block-size") + 1] == "0.5"
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_memory_budget_logged(self, mock_popen, tmp_path, caplog):
+        with caplog.at_level(logging.INFO, logger="metagomics2.core.diamond"):
+            self._run(mock_popen, tmp_path, block_size=4.0)
+        budget = [r.message for r in caplog.records if "expect up to about" in r.message]
+        assert budget == [
+            "DIAMOND block size 4 billion letters: expect up to about 24.0 GB of memory"
+        ]
+
+    @patch("metagomics2.core.diamond.get_total_memory", return_value=8 * 1024**3)
+    @patch("metagomics2.core.diamond.get_cgroup_memory_limit", return_value=None)
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_warns_when_budget_exceeds_machine(self, mock_popen, _limit, _total, tmp_path, caplog):
+        with caplog.at_level(logging.WARNING, logger="metagomics2.core.diamond"):
+            self._run(mock_popen, tmp_path, block_size=4.0)
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "machine has 8.0 GB" in warnings[0]
+        assert "lower METAGOMICS_DIAMOND_BLOCK_SIZE" in warnings[0]
+
+    @patch("metagomics2.core.diamond.get_total_memory", return_value=700 * 1024**3)
+    @patch("metagomics2.core.diamond.get_cgroup_memory_limit", return_value=16 * 1024**3)
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_warns_when_budget_exceeds_container_limit(
+        self, mock_popen, _limit, _total, tmp_path, caplog
+    ):
+        with caplog.at_level(logging.WARNING, logger="metagomics2.core.diamond"):
+            self._run(mock_popen, tmp_path, block_size=4.0)
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "container memory limit is 16.0 GB" in warnings[0]
+
+    @patch("metagomics2.core.diamond.get_total_memory", return_value=700 * 1024**3)
+    @patch("metagomics2.core.diamond.get_cgroup_memory_limit", return_value=None)
+    @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_no_warning_when_budget_fits(self, mock_popen, _limit, _total, tmp_path, caplog):
+        with caplog.at_level(logging.WARNING, logger="metagomics2.core.diamond"):
+            self._run(mock_popen, tmp_path, block_size=20.0)
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+    def test_estimate_uses_diamond_default_when_unset(self):
+        assert estimate_diamond_memory_bytes(None) == estimate_diamond_memory_bytes(2.0)
+        assert estimate_diamond_memory_bytes(1.0) == 6 * 1024**3
 
 
 class TestStreamingParse:

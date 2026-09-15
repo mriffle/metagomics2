@@ -99,6 +99,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
+    if args.diamond_block_size is not None and args.diamond_block_size <= 0:
+        print("Error: --diamond-block-size must be greater than 0", file=sys.stderr)
+        return 1
+    if args.diamond_index_chunks is not None and args.diamond_index_chunks < 1:
+        print("Error: --diamond-index-chunks must be at least 1", file=sys.stderr)
+        return 1
+
     # Build config
     config = PipelineConfig(
         fasta_path=fasta_path,
@@ -119,6 +126,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         mock_subject_annotations_path=(
             Path(args.mock_annotations) if args.mock_annotations else None
         ),
+        diamond_block_size=args.diamond_block_size,
+        diamond_index_chunks=args.diamond_index_chunks,
+        diamond_tmpdir=Path(args.diamond_tmpdir) if args.diamond_tmpdir else None,
     )
 
     # Run pipeline
@@ -199,6 +209,36 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="Number of threads for homology search (default: 1)",
+    )
+
+    # DIAMOND tuning
+    diamond_group = run_parser.add_argument_group(
+        "DIAMOND tuning",
+        "Control DIAMOND's memory use and speed. Defaults are DIAMOND's own. "
+        "Expect up to about 6 GB of memory per unit of block size.",
+    )
+    diamond_group.add_argument(
+        "--diamond-block-size",
+        type=float,
+        default=None,
+        metavar="GIGALETTERS",
+        help="DIAMOND --block-size: billions of database letters processed per block. "
+             "Larger is faster but uses more memory (default: DIAMOND's 2.0).",
+    )
+    diamond_group.add_argument(
+        "--diamond-index-chunks",
+        type=int,
+        default=None,
+        metavar="N",
+        help="DIAMOND --index-chunks: 1 is fastest and uses the most memory "
+             "(default: DIAMOND's 4).",
+    )
+    diamond_group.add_argument(
+        "--diamond-tmpdir",
+        default=None,
+        metavar="DIR",
+        help="DIAMOND --tmpdir for intermediate files, e.g. /dev/shm to keep them in RAM "
+             "(default: the work directory).",
     )
 
     # Filter parameters

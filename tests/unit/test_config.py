@@ -301,3 +301,49 @@ class TestLogLevel:
     def test_empty_falls_back_to_info(self, tmp_path: Path):
         settings = self._load(tmp_path, {"METAGOMICS_LOG_LEVEL": ""})
         assert settings.log_level == "INFO"
+
+
+class TestDiamondTuning:
+    """METAGOMICS_DIAMOND_* variables are optional, validated, and passed through."""
+
+    def _load(self, tmp_path: Path, env: dict[str, str]):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(exist_ok=True)
+        (config_dir / "databases.json").write_text(
+            '[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}]'
+        )
+        base = {"METAGOMICS_DATA_DIR": str(tmp_path), "METAGOMICS_CONFIG_DIR": str(config_dir)}
+        with patch.dict(os.environ, {**base, **env}, clear=False):
+            return load_settings(config_dir=config_dir)
+
+    def test_defaults_are_none(self, tmp_path: Path):
+        env = {
+            "METAGOMICS_DIAMOND_BLOCK_SIZE": "",
+            "METAGOMICS_DIAMOND_INDEX_CHUNKS": "",
+            "METAGOMICS_DIAMOND_TMPDIR": "",
+        }
+        settings = self._load(tmp_path, env)
+        assert settings.diamond_block_size is None
+        assert settings.diamond_index_chunks is None
+        assert settings.diamond_tmpdir is None
+
+    def test_values_parsed(self, tmp_path: Path):
+        env = {
+            "METAGOMICS_DIAMOND_BLOCK_SIZE": " 8.5 ",
+            "METAGOMICS_DIAMOND_INDEX_CHUNKS": "1",
+            "METAGOMICS_DIAMOND_TMPDIR": "/dev/shm",
+        }
+        settings = self._load(tmp_path, env)
+        assert settings.diamond_block_size == 8.5
+        assert settings.diamond_index_chunks == 1
+        assert settings.diamond_tmpdir == Path("/dev/shm")
+
+    @pytest.mark.parametrize("bad", ["0", "-2", "abc", "nan", "inf"])
+    def test_invalid_block_size_rejected(self, tmp_path: Path, bad: str):
+        with pytest.raises(RuntimeError, match="METAGOMICS_DIAMOND_BLOCK_SIZE"):
+            self._load(tmp_path, {"METAGOMICS_DIAMOND_BLOCK_SIZE": bad})
+
+    @pytest.mark.parametrize("bad", ["0", "-1", "2.5", "four"])
+    def test_invalid_index_chunks_rejected(self, tmp_path: Path, bad: str):
+        with pytest.raises(RuntimeError, match="METAGOMICS_DIAMOND_INDEX_CHUNKS"):
+            self._load(tmp_path, {"METAGOMICS_DIAMOND_INDEX_CHUNKS": bad})

@@ -857,7 +857,7 @@ Key components:
 - `Settings` — Frozen dataclass holding all validated runtime settings
 - `DatabaseEntry` — Frozen dataclass for a single annotated database (`name`, `description`, `path`, `annotations`)
 - `SmtpSettings` — Frozen dataclass for SMTP configuration
-- `load_settings()` — Reads env vars and JSON files, validates, returns `Settings`
+- `load_settings()` — Reads env vars and JSON files, validates, returns `Settings`. Invalid values for the DIAMOND tuning variables are reported together with any other config errors and abort startup.
 - `get_settings()` / `set_settings()` / `reset_settings()` — Singleton management
 
 ### JSON Config Files
@@ -886,6 +886,10 @@ If no `databases.json` file exists, the config loader falls back to the `METAGOM
 | `METAGOMICS_POLL_INTERVAL` | `5` | Worker | Seconds between job queue polls |
 | `METAGOMICS_CLEANUP_ON_SUCCESS` | `true` | Worker | Delete inputs/work after successful job |
 | `METAGOMICS_CLEANUP_ON_FAILURE` | `true` | Worker | Delete inputs/work after failed job |
+| `METAGOMICS_LOG_LEVEL` | `INFO` | Server, Worker | Root log level (see Section 19) |
+| `METAGOMICS_DIAMOND_BLOCK_SIZE` | *(empty = DIAMOND default 2.0)* | Worker | Passed as `--block-size`; validated as a positive number. Main DIAMOND memory/speed knob (~6 GB per unit) |
+| `METAGOMICS_DIAMOND_INDEX_CHUNKS` | *(empty = DIAMOND default 4)* | Worker | Passed as `--index-chunks`; validated as a positive integer |
+| `METAGOMICS_DIAMOND_TMPDIR` | *(empty = job work dir)* | Worker | Passed as `--tmpdir`; created if missing |
 | `METAGOMICS_VERSION` | `0.1.0` | All | Runtime version (set by Docker build) |
 | `DIAMOND_VERSION` | *(set at build)* | Server | DIAMOND version string for config API |
 | `SMTP_HOST` | *(empty)* | Worker | SMTP server for notifications |

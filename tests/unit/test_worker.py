@@ -159,6 +159,41 @@ class TestWorkerBuildConfig:
         assert config.filter_policy.top_k == 10
 
 
+class TestWorkerDiamondTuning:
+    """DIAMOND tuning settings flow from config into the pipeline config."""
+
+    def test_defaults_are_none(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job = test_db.get_job(job_id)
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            config = worker_cls(test_db)._build_config(job_id, job)
+        assert config.diamond_block_size is None
+        assert config.diamond_index_chunks is None
+        assert config.diamond_tmpdir is None
+
+    def test_settings_passed_through(self, test_db, jobs_dir, fixtures_dir, tmp_path):
+        config_dir = tmp_path / "config"
+        env = {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_CONFIG_DIR": str(config_dir),
+            "METAGOMICS_DIAMOND_BLOCK_SIZE": "12",
+            "METAGOMICS_DIAMOND_INDEX_CHUNKS": "1",
+            "METAGOMICS_DIAMOND_TMPDIR": "/dev/shm",
+        }
+        with patch.dict(os.environ, env):
+            config_module.reset_settings()
+            import metagomics2.worker.worker as wmod
+            importlib.reload(wmod)
+            job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+            job = test_db.get_job(job_id)
+            with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+                config = wmod.Worker(test_db)._build_config(job_id, job)
+        assert config.diamond_block_size == 12.0
+        assert config.diamond_index_chunks == 1
+        assert config.diamond_tmpdir == Path("/dev/shm")
+
+
 class TestWorkerProcessJob:
     """Tests for job processing."""
 
