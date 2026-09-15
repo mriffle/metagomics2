@@ -3,10 +3,9 @@
 import csv
 import hashlib
 import json
-import platform
 import subprocess
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -108,7 +107,8 @@ def write_go_terms_csv(
 ) -> None:
     """Write go_terms.csv.
 
-    Columns: go_id, name, namespace, parent_go_ids, quantity, ratio_total, ratio_annotated, n_peptides
+    Columns: go_id, name, namespace, parent_go_ids, quantity, ratio_total,
+    ratio_annotated, n_peptides
 
     Args:
         result: Aggregation result
@@ -371,14 +371,14 @@ def write_peptide_mapping_parquet(
                 rows_evalue.append(hit.evalue if hit is not None else None)
                 rows_pident.append(hit.pident if hit is not None else None)
 
-    schema = {
-        "peptide": pl.Utf8,
+    schema: dict[str, pl.DataType] = {
+        "peptide": pl.Utf8(),
         "peptide_lca_tax_ids": pl.List(pl.Int64),
         "peptide_go_terms": pl.List(pl.Utf8),
-        "background_protein": pl.Utf8,
-        "annotated_protein": pl.Utf8,
-        "evalue": pl.Float64,
-        "pident": pl.Float64,
+        "background_protein": pl.Utf8(),
+        "annotated_protein": pl.Utf8(),
+        "evalue": pl.Float64(),
+        "pident": pl.Float64(),
     }
 
     if rows_peptide:
@@ -553,7 +553,9 @@ def create_manifest(
         input_fasta_path=str(input_fasta_path),
         input_fasta_hash=compute_file_hash(input_fasta_path) if input_fasta_path.exists() else "",
         peptide_list_path=str(peptide_list_path),
-        peptide_list_hash=compute_file_hash(peptide_list_path) if peptide_list_path.exists() else "",
+        peptide_list_hash=(
+            compute_file_hash(peptide_list_path) if peptide_list_path.exists() else ""
+        ),
         parameters=parameters,
         timestamp_utc=datetime.now(timezone.utc).isoformat(),
     )

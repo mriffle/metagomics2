@@ -25,7 +25,8 @@ def setup_logging(verbose: bool = False) -> None:
 
 def progress_callback(progress: PipelineProgress) -> None:
     """Print progress updates to stderr."""
-    pct = (progress.progress_done * 100) // progress.progress_total if progress.progress_total else 0
+    total = progress.progress_total
+    pct = (progress.progress_done * 100) // total if total else 0
     msg = f"[{pct:3d}%] {progress.current_stage}"
     if progress.current_list_id:
         msg += f" ({progress.current_list_id})"
@@ -58,7 +59,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' command."""
     # Display version
     print(f"Metagomics 2 v{__version__}", file=sys.stderr)
-    
+
     # Validate inputs
     fasta_path = Path(args.fasta)
     if not fasta_path.exists():
@@ -96,7 +97,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             print("Build it with: python scripts/build_annotations_db.py", file=sys.stderr)
             return 1
     elif not args.mock_annotations:
-        print("Error: --annotations-db is required (or use --mock-annotations for testing)", file=sys.stderr)
+        print(
+            "Error: --annotations-db is required (or use --mock-annotations for testing)",
+            file=sys.stderr,
+        )
         return 1
 
     # Build config
@@ -111,10 +115,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         filter_policy=filter_policy,
         go_data_path=Path(args.go) if args.go else None,
         taxonomy_data_path=Path(args.taxonomy) if args.taxonomy else None,
-        go_edge_types=set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a", "part_of"},
+        go_edge_types=(
+            set(args.go_edge_types.split(",")) if args.go_edge_types else {"is_a", "part_of"}
+        ),
         go_include_self=not args.go_exclude_self,
         mock_hits_path=Path(args.mock_hits) if args.mock_hits else None,
-        mock_subject_annotations_path=Path(args.mock_annotations) if args.mock_annotations else None,
+        mock_subject_annotations_path=(
+            Path(args.mock_annotations) if args.mock_annotations else None
+        ),
     )
 
     # Run pipeline
@@ -299,7 +307,7 @@ def main() -> int:
     setup_logging(verbose)
 
     # Execute command
-    return args.func(args)
+    return int(args.func(args))
 
 
 if __name__ == "__main__":

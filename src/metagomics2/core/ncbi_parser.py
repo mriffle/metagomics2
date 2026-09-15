@@ -1,8 +1,8 @@
 """Parser for NCBI taxonomy dump files."""
-
 from pathlib import Path
+from typing import Any
 
-from metagomics2.core.taxonomy import TaxonomyTree, TaxonNode
+from metagomics2.core.taxonomy import TaxonNode, TaxonomyTree
 
 
 class NCBIParsingError(Exception):
@@ -68,7 +68,7 @@ def parse_ncbi_taxonomy_dump(dump_dir: Path | str) -> TaxonomyTree:
     return tree
 
 
-def _parse_nodes_dmp(file_path: Path) -> dict[int, dict]:
+def _parse_nodes_dmp(file_path: Path) -> dict[int, dict[str, Any]]:
     """Parse nodes.dmp file.
 
     Format: tax_id | parent_tax_id | rank | ... (pipe-delimited)
@@ -81,7 +81,7 @@ def _parse_nodes_dmp(file_path: Path) -> dict[int, dict]:
     """
     nodes = {}
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         for line in f:
             # Split on pipe and strip whitespace
             parts = [p.strip() for p in line.split("|")]
@@ -116,7 +116,7 @@ def _parse_names_dmp(file_path: Path) -> dict[int, str]:
     """
     names = {}
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         for line in f:
             # Split on pipe and strip whitespace
             parts = [p.strip() for p in line.split("|")]
@@ -135,7 +135,7 @@ def _parse_names_dmp(file_path: Path) -> dict[int, str]:
     return names
 
 
-def convert_ncbi_dump_to_json_dict(dump_dir: Path | str) -> dict:
+def convert_ncbi_dump_to_json_dict(dump_dir: Path | str) -> dict[str, Any]:
     """Convert NCBI taxonomy dump to JSON dictionary format.
 
     Args:
@@ -147,7 +147,7 @@ def convert_ncbi_dump_to_json_dict(dump_dir: Path | str) -> dict:
     tree = parse_ncbi_taxonomy_dump(dump_dir)
 
     # Build the JSON structure
-    result = {"nodes": {}}
+    result: dict[str, Any] = {"nodes": {}}
 
     for tax_id, node in tree.nodes.items():
         result["nodes"][str(tax_id)] = {

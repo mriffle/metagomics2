@@ -1,7 +1,6 @@
 """Homology hit filtering based on user-configurable policies."""
-
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any
 
 
 @dataclass
@@ -27,7 +26,7 @@ class FilterPolicy:
     min_alnlen: int | None = None  # minimum alignment length
     top_k: int | None = None  # keep only top K by bitscore
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert policy to dictionary for manifest."""
         return {
             "max_evalue": self.max_evalue,

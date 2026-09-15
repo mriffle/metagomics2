@@ -4,8 +4,6 @@ import pytest
 
 from metagomics2.core.aggregation import (
     AggregationResult,
-    ComboAggregate,
-    CoverageStats,
     NodeAggregate,
     aggregate_go_taxonomy_combos,
     aggregate_peptide_annotations,
@@ -283,7 +281,14 @@ class TestAggregationWithFixtureScenario:
                 10.0,
                 is_annotated=True,
                 taxonomy_nodes={30, 20, 10, 1},
-                go_terms={"GO:0000004", "GO:0000005", "GO:0000006", "GO:0000002", "GO:0000003", "GO:0000001"},
+                go_terms={
+                    "GO:0000004",
+                    "GO:0000005",
+                    "GO:0000006",
+                    "GO:0000002",
+                    "GO:0000003",
+                    "GO:0000001",
+                },
             ),
             make_annotation("ABC", 5.0, is_annotated=False),
             make_annotation("NOMATCH", 3.0, is_annotated=False),
@@ -304,7 +309,14 @@ class TestAggregationWithFixtureScenario:
             assert result.taxonomy_nodes[tax_id].ratio_annotated == 1.0
 
         # GO terms all get 10
-        for go_id in ["GO:0000004", "GO:0000005", "GO:0000006", "GO:0000002", "GO:0000003", "GO:0000001"]:
+        for go_id in [
+            "GO:0000004",
+            "GO:0000005",
+            "GO:0000006",
+            "GO:0000002",
+            "GO:0000003",
+            "GO:0000001",
+        ]:
             assert result.go_terms[go_id].quantity == 10.0
 
         # Invariants hold

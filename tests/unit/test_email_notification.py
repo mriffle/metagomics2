@@ -3,8 +3,6 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from metagomics2.models.job import (
     JobInfo,
     JobParams,

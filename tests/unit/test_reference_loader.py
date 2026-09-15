@@ -71,7 +71,8 @@ namespace: biological_process
 
     def test_load_taxonomy_from_ncbi_dump(self, tmp_path: Path):
         """Load taxonomy from NCBI dump directory."""
-        nodes_content = """1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
+        nodes_content = """\
+1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|
 """
         nodes_file = tmp_path / "nodes.dmp"
         nodes_file.write_text(nodes_content)
@@ -124,12 +125,12 @@ namespace: biological_process
         # Create source directory with files
         source_dir = tmp_path / "source"
         source_dir.mkdir()
-        
+
         go_dir = source_dir / "go"
         go_dir.mkdir()
         (go_dir / "go.obo").write_text("GO content")
         (go_dir / "VERSION").write_text("2024-01-17")
-        
+
         taxonomy_dir = source_dir / "taxonomy"
         taxonomy_dir.mkdir()
         (taxonomy_dir / "nodes.dmp").write_text("nodes content")
@@ -215,7 +216,8 @@ namespace: biological_process
         create_reference_snapshot(source_dir, snapshot_dir)
 
         assert (snapshot_dir / "level1" / "level2" / "level3" / "deep.txt").exists()
-        assert (snapshot_dir / "level1" / "level2" / "level3" / "deep.txt").read_text() == "deep content"
+        deep_file = snapshot_dir / "level1" / "level2" / "level3" / "deep.txt"
+        assert deep_file.read_text() == "deep content"
 
     def test_create_snapshot_skips_directories(self, tmp_path: Path):
         """Snapshot should only include files, not empty directories."""

@@ -1,8 +1,8 @@
 """Taxonomy tree loading and LCA (Lowest Common Ancestor) computation."""
-
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -33,7 +33,7 @@ class TaxonomyTree:
         """
         lineage: list[int] = []
         visited: set[int] = set()
-        current = tax_id
+        current: int | None = tax_id
 
         while current is not None and current not in visited:
             visited.add(current)
@@ -136,13 +136,13 @@ def load_taxonomy_from_json(file_path: Path | str) -> TaxonomyTree:
     """
     file_path = Path(file_path)
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         data = json.load(f)
 
     return load_taxonomy_from_dict(data)
 
 
-def load_taxonomy_from_dict(data: dict) -> TaxonomyTree:
+def load_taxonomy_from_dict(data: dict[str, Any]) -> TaxonomyTree:
     """Load taxonomy tree from a dictionary.
 
     Args:

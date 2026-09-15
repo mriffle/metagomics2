@@ -10,9 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import metagomics2.config as config_module
-from metagomics2.config import Settings, DatabaseEntry
 from metagomics2.db.database import Database
-from metagomics2.models.job import JobParams, JobStatus, PeptideListStatus
+from metagomics2.models.job import JobParams, JobStatus
 
 
 def _get_worker_class():
@@ -92,14 +91,14 @@ class TestWorkerInit:
     """Tests for worker initialization."""
 
     def test_worker_creates(self, test_db):
-        Worker = _get_worker_class()
-        worker = Worker(test_db)
+        worker_cls = _get_worker_class()
+        worker = worker_cls(test_db)
         assert worker.running is True
         assert worker.current_job_id is None
 
     def test_worker_signal_handler(self, test_db):
-        Worker = _get_worker_class()
-        worker = Worker(test_db)
+        worker_cls = _get_worker_class()
+        worker = worker_cls(test_db)
         assert worker.running is True
         worker._handle_signal(signal.SIGTERM, None)
         assert worker.running is False
@@ -109,12 +108,12 @@ class TestWorkerBuildConfig:
     """Tests for building pipeline config from job info."""
 
     def test_builds_config(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
         job = test_db.get_job(job_id)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             config = worker._build_config(job_id, job)
 
         assert config.fasta_path == jobs_dir / job_id / "inputs" / "background.fasta"
@@ -131,7 +130,13 @@ class TestWorkerBuildConfig:
         job_dir = jobs_dir / job_id
         inputs_dir = job_dir / "inputs"
         peptides_dir = inputs_dir / "peptides"
-        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+        for d in [
+            inputs_dir,
+            peptides_dir,
+            job_dir / "work",
+            job_dir / "results",
+            job_dir / "logs",
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
         import shutil
@@ -142,9 +147,9 @@ class TestWorkerBuildConfig:
 
         job = test_db.get_job(job_id)
 
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             config = worker._build_config(job_id, job)
 
         assert config.filter_policy.max_evalue == 1e-5
@@ -156,7 +161,7 @@ class TestWorkerProcessJob:
     """Tests for job processing."""
 
     def test_process_job_updates_status_to_running(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
@@ -166,14 +171,14 @@ class TestWorkerProcessJob:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         job = test_db.get_job(job_id)
         assert job.status == JobStatus.COMPLETED
 
     def test_process_job_marks_failed_on_error(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
@@ -183,7 +188,7 @@ class TestWorkerProcessJob:
             mock_result.error_message = "Test error"
             mock_pipeline.return_value = mock_result
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         job = test_db.get_job(job_id)
@@ -191,14 +196,14 @@ class TestWorkerProcessJob:
         assert "Test error" in job.error_message
 
     def test_process_job_handles_exception(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
              patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
             mock_pipeline.side_effect = RuntimeError("Unexpected error")
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         job = test_db.get_job(job_id)
@@ -206,7 +211,7 @@ class TestWorkerProcessJob:
         assert "Unexpected error" in job.error_message
 
     def test_process_job_clears_current_job_id(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
@@ -216,13 +221,13 @@ class TestWorkerProcessJob:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert worker.current_job_id is None
 
     def test_process_job_adds_events(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
@@ -232,7 +237,7 @@ class TestWorkerProcessJob:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         # Events should have been added (started + completed)
@@ -241,9 +246,9 @@ class TestWorkerProcessJob:
         assert job.status == JobStatus.COMPLETED
 
     def test_process_nonexistent_job(self, test_db, jobs_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
             worker._process_job("nonexistent_id")
 
         # Should fail gracefully - job doesn't exist so status update will just be a no-op
@@ -253,7 +258,7 @@ class TestWorkerRunLoop:
     """Tests for the main worker loop."""
 
     def test_run_processes_queued_job(self, test_db, jobs_dir, fixtures_dir):
-        Worker = _get_worker_class()
+        worker_cls = _get_worker_class()
         job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
 
         with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
@@ -264,11 +269,10 @@ class TestWorkerRunLoop:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            worker = Worker(test_db)
+            worker = worker_cls(test_db)
 
             # Process one iteration then stop
             call_count = 0
-            original_run = worker.run
 
             def limited_run():
                 nonlocal call_count
@@ -286,8 +290,8 @@ class TestWorkerRunLoop:
         assert job.status == JobStatus.COMPLETED
 
     def test_run_stops_on_signal(self, test_db):
-        Worker = _get_worker_class()
-        worker = Worker(test_db)
+        worker_cls = _get_worker_class()
+        worker = worker_cls(test_db)
         worker.running = False  # Simulate signal received before loop starts
 
         with patch("metagomics2.worker.worker.POLL_INTERVAL", 0):
@@ -305,7 +309,13 @@ class TestWorkerNotification:
         job_dir = jobs_dir / job_id
         inputs_dir = job_dir / "inputs"
         peptides_dir = inputs_dir / "peptides"
-        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+        for d in [
+            inputs_dir,
+            peptides_dir,
+            job_dir / "work",
+            job_dir / "results",
+            job_dir / "logs",
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
         import shutil
@@ -322,8 +332,8 @@ class TestWorkerNotification:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         mock_send.assert_called_once()
@@ -338,7 +348,13 @@ class TestWorkerNotification:
         job_dir = jobs_dir / job_id
         inputs_dir = job_dir / "inputs"
         peptides_dir = inputs_dir / "peptides"
-        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+        for d in [
+            inputs_dir,
+            peptides_dir,
+            job_dir / "work",
+            job_dir / "results",
+            job_dir / "logs",
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
         import shutil
@@ -355,8 +371,8 @@ class TestWorkerNotification:
             mock_result.error_message = "Pipeline error"
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         mock_send.assert_called_once()
@@ -369,7 +385,13 @@ class TestWorkerNotification:
         job_dir = jobs_dir / job_id
         inputs_dir = job_dir / "inputs"
         peptides_dir = inputs_dir / "peptides"
-        for d in [inputs_dir, peptides_dir, job_dir / "work", job_dir / "results", job_dir / "logs"]:
+        for d in [
+            inputs_dir,
+            peptides_dir,
+            job_dir / "work",
+            job_dir / "results",
+            job_dir / "logs",
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
         import shutil
@@ -386,8 +408,8 @@ class TestWorkerNotification:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         # send_job_notification should not be called because notification_email is empty
@@ -416,8 +438,8 @@ class TestWorkerCleanup:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert not (job_dir / "inputs").exists()
@@ -441,8 +463,8 @@ class TestWorkerCleanup:
             mock_result.error_message = "Pipeline error"
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert not (job_dir / "inputs").exists()
@@ -461,8 +483,8 @@ class TestWorkerCleanup:
              patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
             mock_pipeline.side_effect = RuntimeError("Unexpected error")
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert not (job_dir / "inputs").exists()
@@ -482,8 +504,8 @@ class TestWorkerCleanup:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert (job_dir / "inputs").exists()
@@ -502,8 +524,8 @@ class TestWorkerCleanup:
             mock_result.error_message = "Pipeline error"
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id)
 
         assert (job_dir / "inputs").exists()
@@ -524,8 +546,8 @@ class TestWorkerCleanup:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id_ok)
 
         assert not (job_dir_ok / "inputs").exists()
@@ -543,8 +565,8 @@ class TestWorkerCleanup:
             mock_result.error_message = "Error"
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             worker._process_job(job_id_fail)
 
         assert (job_dir_fail / "inputs").exists()
@@ -562,8 +584,8 @@ class TestWorkerCleanup:
             mock_result.peptide_list_results = []
             mock_pipeline.return_value = mock_result
 
-            Worker = _get_worker_class()
-            worker = Worker(test_db)
+            worker_cls = _get_worker_class()
+            worker = worker_cls(test_db)
             # Should not raise
             worker._process_job(job_id)
 

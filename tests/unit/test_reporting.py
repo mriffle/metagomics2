@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from metagomics2.core.aggregation import AggregationResult, ComboAggregate, CoverageStats, NodeAggregate
+from metagomics2.core.aggregation import (
+    AggregationResult,
+    ComboAggregate,
+    CoverageStats,
+    NodeAggregate,
+)
 from metagomics2.core.go import load_go_from_dict
 from metagomics2.core.reporting import (
     ManifestInfo,

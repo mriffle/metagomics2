@@ -1,6 +1,6 @@
 """Peptide annotation semantics: taxonomy LCA and GO union."""
-
 from dataclasses import dataclass, field
+from typing import Any
 
 from metagomics2.core.go import GODAG
 from metagomics2.core.taxonomy import TaxonomyTree
@@ -203,7 +203,7 @@ def annotate_peptide(
     )
 
 
-def load_subject_annotations_from_dict(data: dict) -> dict[str, SubjectAnnotation]:
+def load_subject_annotations_from_dict(data: dict[str, Any]) -> dict[str, SubjectAnnotation]:
     """Load subject annotations from a dictionary.
 
     Expected format:

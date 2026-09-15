@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from metagomics2.pipeline.runner import PipelineConfig, run_pipeline
 
 
@@ -29,7 +27,9 @@ class TestReferenceSnapshot:
         (bundled_ref / "go" / "VERSION").write_text("2024-01-17\nsource=test")
         (bundled_ref / "taxonomy").mkdir()
         (bundled_ref / "taxonomy" / "nodes.dmp").write_text("1\t|\t1\t|\tno rank\t|\n")
-        (bundled_ref / "taxonomy" / "names.dmp").write_text("1\t|\troot\t|\t\t|\tscientific name\t|\n")
+        (bundled_ref / "taxonomy" / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n"
+        )
         (bundled_ref / "taxonomy" / "VERSION").write_text("2024-01-15\nsource=test")
 
         config = PipelineConfig(
@@ -43,7 +43,9 @@ class TestReferenceSnapshot:
             mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
         )
 
-        with patch("metagomics2.pipeline.runner.get_bundled_reference_dir", return_value=bundled_ref):
+        with patch(
+            "metagomics2.pipeline.runner.get_bundled_reference_dir", return_value=bundled_ref
+        ):
             result = run_pipeline(config)
 
         assert result.success, f"Pipeline failed: {result.error_message}"
@@ -52,8 +54,12 @@ class TestReferenceSnapshot:
         snapshot_dir = job_dir / "work" / "ref_snapshot"
         assert snapshot_dir.exists(), "Reference snapshot directory should exist"
         assert (snapshot_dir / "go" / "go.obo").exists(), "GO OBO file should be in snapshot"
-        assert (snapshot_dir / "taxonomy" / "nodes.dmp").exists(), "Taxonomy nodes.dmp should be in snapshot"
-        assert (snapshot_dir / "taxonomy" / "names.dmp").exists(), "Taxonomy names.dmp should be in snapshot"
+        assert (snapshot_dir / "taxonomy" / "nodes.dmp").exists(), (
+            "Taxonomy nodes.dmp should be in snapshot"
+        )
+        assert (snapshot_dir / "taxonomy" / "names.dmp").exists(), (
+            "Taxonomy names.dmp should be in snapshot"
+        )
 
     def test_pipeline_without_job_dir_skips_snapshot(
         self,
@@ -86,7 +92,7 @@ class TestReferenceSnapshot:
     ):
         """Manifest should include reference metadata when available."""
         job_dir = tmp_path / "job_456"
-        
+
         config = PipelineConfig(
             fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
             peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
@@ -117,7 +123,7 @@ class TestReferenceSnapshot:
     ):
         """Snapshot files should be readable and contain expected data."""
         job_dir = tmp_path / "job_789"
-        
+
         # Create a simple GO file for testing
         go_source = tmp_path / "go_source"
         go_source.mkdir()
@@ -125,7 +131,7 @@ class TestReferenceSnapshot:
             "terms": {"GO:0000001": {"name": "test", "namespace": "biological_process"}},
             "edges": {"is_a": []}
         }))
-        
+
         config = PipelineConfig(
             fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
             peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
@@ -143,7 +149,7 @@ class TestReferenceSnapshot:
 
         # Verify we can read files from snapshot
         snapshot_dir = job_dir / "work" / "ref_snapshot"
-        
+
         # Should have taxonomy files
         if (snapshot_dir / "taxonomy").exists():
             # Check that files are readable
@@ -161,7 +167,7 @@ class TestReferenceSnapshotProvenance:
     ):
         """Manifest should include SHA256 hashes of snapshot files."""
         job_dir = tmp_path / "job_hash_test"
-        
+
         config = PipelineConfig(
             fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
             peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],

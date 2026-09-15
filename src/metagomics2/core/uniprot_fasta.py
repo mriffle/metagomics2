@@ -3,8 +3,9 @@
 import gzip
 import logging
 import re
+from collections.abc import Iterator
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 logger = logging.getLogger(__name__)
 
@@ -66,5 +67,5 @@ def parse_uniprot_fasta_annotations(
         with gzip.open(fasta_path, "rt", encoding="utf-8") as f:
             yield from parse_uniprot_fasta_annotations_stream(f)
     else:
-        with open(fasta_path, "r", encoding="utf-8") as f:
+        with open(fasta_path, encoding="utf-8") as f:
             yield from parse_uniprot_fasta_annotations_stream(f)

@@ -2,9 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-
-from metagomics2.core.fasta import parse_fasta, build_protein_dict
+from metagomics2.core.fasta import build_protein_dict, parse_fasta
 from metagomics2.core.matching import (
     MatchResult,
     build_automaton,

@@ -7,7 +7,6 @@ import pytest
 
 from metagomics2.core.peptides import (
     EXTENDED_AA_ALPHABET,
-    STANDARD_AA_ALPHABET,
     Peptide,
     PeptideParsingError,
     _aggregate_peptides,

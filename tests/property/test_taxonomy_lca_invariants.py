@@ -1,9 +1,9 @@
 """Property-based tests for taxonomy LCA invariants."""
 
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from metagomics2.core.taxonomy import TaxonomyTree, TaxonNode, load_taxonomy_from_dict
+from metagomics2.core.taxonomy import TaxonomyTree, load_taxonomy_from_dict
 
 
 # Strategy for generating taxonomy trees
@@ -149,7 +149,9 @@ class TestTaxonomyLCAInvariants:
         st.integers(min_value=1, max_value=30),
     )
     @settings(max_examples=50, deadline=None)
-    def test_lca_with_ancestor_is_ancestor(self, tree: TaxonomyTree, tax_id: int, ancestor_idx: int):
+    def test_lca_with_ancestor_is_ancestor(
+        self, tree: TaxonomyTree, tax_id: int, ancestor_idx: int
+    ):
         """LCA of a taxon and one of its ancestors should be the ancestor."""
         if tax_id not in tree.nodes:
             return

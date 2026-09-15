@@ -125,7 +125,13 @@ class TestWritePeptideMappingParquet:
     def test_unannotated_peptide_excluded(self, tmp_path: Path) -> None:
         """Unannotated peptides are not written to the Parquet file."""
         annotations = [
-            make_annotation("ANNOTATED", is_annotated=True, lca_tax_id=9606, taxonomy_nodes={9606, 1}, background_proteins={"prot_A"}),
+            make_annotation(
+                "ANNOTATED",
+                is_annotated=True,
+                lca_tax_id=9606,
+                taxonomy_nodes={9606, 1},
+                background_proteins={"prot_A"},
+            ),
             make_annotation("UNANNOTATED", is_annotated=False),
         ]
         peptide_to_proteins = {"ANNOTATED": {"prot_A"}, "UNANNOTATED": set()}

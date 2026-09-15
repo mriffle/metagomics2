@@ -1,7 +1,5 @@
 """Unit tests for SQLite database operations."""
 
-import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -38,18 +36,18 @@ class TestDatabaseInit:
 
     def test_creates_db_file(self, tmp_path: Path):
         db_path = tmp_path / "test.db"
-        db = Database(db_path)
+        Database(db_path)
         assert db_path.exists()
 
     def test_creates_parent_directories(self, tmp_path: Path):
         db_path = tmp_path / "subdir" / "nested" / "test.db"
-        db = Database(db_path)
+        Database(db_path)
         assert db_path.exists()
 
     def test_idempotent_init(self, tmp_path: Path):
         db_path = tmp_path / "test.db"
-        db1 = Database(db_path)
-        db2 = Database(db_path)  # Should not raise
+        Database(db_path)
+        Database(db_path)  # Should not raise
         assert db_path.exists()
 
 
@@ -236,7 +234,7 @@ class TestGetNextQueuedJob:
 
     def test_returns_none_when_no_queued(self, tmp_path: Path):
         db = Database(tmp_path / "test.db")
-        job_id = db.create_job(JobParams())
+        db.create_job(JobParams())
         # Status is 'uploaded', not 'queued'
         assert db.get_next_queued_job() is None
 
@@ -284,8 +282,8 @@ class TestListJobs:
 
     def test_list_returns_jobs(self, tmp_path: Path):
         db = Database(tmp_path / "test.db")
-        id1 = db.create_job(JobParams())
-        id2 = db.create_job(JobParams())
+        db.create_job(JobParams())
+        db.create_job(JobParams())
         jobs = db.list_jobs()
         assert len(jobs) == 2
 

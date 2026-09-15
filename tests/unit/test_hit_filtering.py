@@ -1,10 +1,8 @@
 """Unit tests for homology hit filtering."""
 
-import pytest
 
 from metagomics2.core.filtering import (
     FilterPolicy,
-    FilterResult,
     HomologyHit,
     filter_all_hits,
     filter_hits_for_query,

@@ -1,9 +1,9 @@
 """Property-based tests for GO union invariants."""
 
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from metagomics2.core.go import GODAG, GOTerm, load_go_from_dict
+from metagomics2.core.go import GODAG, load_go_from_dict
 
 
 # Strategy for generating GO DAGs
@@ -42,7 +42,10 @@ def go_dag_strategy(draw):
 class TestGOUnionInvariants:
     """Property-based tests for GO union operations."""
 
-    @given(go_dag_strategy(), st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5))
+    @given(
+        go_dag_strategy(),
+        st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5),
+    )
     @settings(max_examples=50, deadline=None)
     def test_closure_contains_self(self, dag: GODAG, term_indices: set[int]):
         """Closure with include_self=True should contain the term itself."""
@@ -52,7 +55,10 @@ class TestGOUnionInvariants:
                 closure = dag.get_closure(term_id, include_self=True)
                 assert term_id in closure
 
-    @given(go_dag_strategy(), st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5))
+    @given(
+        go_dag_strategy(),
+        st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5),
+    )
     @settings(max_examples=50, deadline=None)
     def test_closure_excludes_self_when_requested(self, dag: GODAG, term_indices: set[int]):
         """Closure with include_self=False should not contain the term itself."""
@@ -62,7 +68,10 @@ class TestGOUnionInvariants:
                 closure = dag.get_closure(term_id, include_self=False)
                 assert term_id not in closure
 
-    @given(go_dag_strategy(), st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5))
+    @given(
+        go_dag_strategy(),
+        st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5),
+    )
     @settings(max_examples=50, deadline=None)
     def test_union_is_superset_of_individual_closures(self, dag: GODAG, term_indices: set[int]):
         """Union of closures should be superset of each individual closure."""
@@ -75,9 +84,12 @@ class TestGOUnionInvariants:
 
         for term_id in term_ids:
             individual = dag.get_closure(term_id)
-            assert individual <= union, f"Individual closure not subset of union"
+            assert individual <= union, "Individual closure not subset of union"
 
-    @given(go_dag_strategy(), st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5))
+    @given(
+        go_dag_strategy(),
+        st.sets(st.integers(min_value=0, max_value=19), min_size=1, max_size=5),
+    )
     @settings(max_examples=50, deadline=None)
     def test_union_is_set(self, dag: GODAG, term_indices: set[int]):
         """Union should be a proper set with no duplicates."""

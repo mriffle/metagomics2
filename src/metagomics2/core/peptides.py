@@ -148,7 +148,7 @@ def parse_peptide_list(
     if not file_path.exists():
         raise PeptideParsingError(f"File not found: {file_path}")
 
-    with open(file_path, "r", newline="", encoding="utf-8") as f:
+    with open(file_path, newline="", encoding="utf-8") as f:
         return parse_peptide_list_from_handle(
             f,
             allowed_alphabet=allowed_alphabet,
@@ -206,7 +206,7 @@ def parse_peptide_list_from_handle(
         # First row is data, process it
         if len(first_row) <= max(seq_idx, qty_idx):
             raise PeptideParsingError(
-                f"Line 1: Not enough columns (expected at least 2)"
+                "Line 1: Not enough columns (expected at least 2)"
             )
         raw_seq = first_row[seq_idx].strip()
         if raw_seq in seen_raw:

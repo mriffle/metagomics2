@@ -1,17 +1,15 @@
 """FastAPI server application."""
 
-import hashlib
 import json
-import os
 import secrets
 import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import aiofiles
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -19,7 +17,6 @@ from metagomics2 import __version__
 from metagomics2.config import get_settings
 from metagomics2.db.database import Database
 from metagomics2.models.job import (
-    JobCreate,
     JobCreateResponse,
     JobInfo,
     JobListResponse,
@@ -39,7 +36,7 @@ THREADS = _cfg.threads
 DATABASES_DIR = _cfg.databases_dir
 MAX_UPLOAD_MB = _cfg.max_upload_mb
 MAX_UPLOAD_BYTES = _cfg.max_upload_bytes
-DATABASES: list[dict] = _cfg.databases_as_dicts
+DATABASES: list[dict[str, Any]] = _cfg.databases_as_dicts
 
 # Chunk size for streaming file writes (1 MB)
 _WRITE_CHUNK_SIZE = 1024 * 1024
@@ -80,16 +77,20 @@ class AdminAuthResponse(BaseModel):
     token: str
 
 
-def require_admin(authorization: str = Header(default="")):
+def require_admin(authorization: str = Header(default="")) -> str:
     """Dependency that validates admin token from Authorization header."""
-    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    token = (
+        authorization.replace("Bearer ", "")
+        if authorization.startswith("Bearer ")
+        else authorization
+    )
     if not token or token not in _admin_tokens:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return token
 
 
 @app.post("/api/admin/auth", response_model=AdminAuthResponse)
-async def admin_login(body: AdminAuthRequest):
+async def admin_login(body: AdminAuthRequest) -> AdminAuthResponse:
     """Authenticate with admin password and receive a session token."""
     if not ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Admin access is not configured")
@@ -101,19 +102,19 @@ async def admin_login(body: AdminAuthRequest):
 
 
 @app.get("/api/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy", "version": __version__}
 
 
 @app.get("/api/version")
-async def get_version():
+async def get_version() -> dict[str, str]:
     """Get application version."""
     return {"version": __version__}
 
 
 @app.get("/api/config")
-async def get_config():
+async def get_config() -> dict[str, Any]:
     """Get public application configuration."""
     return {
         "diamond_version": DIAMOND_VERSION,
@@ -140,7 +141,7 @@ def _validate_fasta_content(text: str) -> None:
     Checks that the first non-empty line starts with '>' and that at least
     one sequence line follows.  Raises HTTPException(400) on failure.
     """
-    lines = [l for l in text.splitlines() if l.strip()]
+    lines = [line for line in text.splitlines() if line.strip()]
 
     if not lines:
         raise HTTPException(
@@ -184,7 +185,7 @@ async def create_job(
     fasta: Annotated[UploadFile, File(description="Background proteome FASTA file")],
     peptides: Annotated[list[UploadFile], File(description="Peptide list files")],
     params: Annotated[str, Form()] = "{}",
-):
+) -> JobCreateResponse:
     """Create a new job.
 
     Upload a background FASTA and one or more peptide list files.
@@ -268,7 +269,10 @@ async def create_job(
             shutil.rmtree(job_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=413,
-                detail=f"Total peptide file size exceeds the maximum upload size of {MAX_UPLOAD_MB} MB.",
+                detail=(
+                    "Total peptide file size exceeds the maximum upload size of "
+                    f"{MAX_UPLOAD_MB} MB."
+                ),
             )
 
         # Register in database
@@ -282,7 +286,7 @@ async def create_job(
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobInfo)
-async def get_job(job_id: str):
+async def get_job(job_id: str) -> JobInfo:
     """Get job status and information."""
     job = db.get_job(job_id)
     if not job:
@@ -295,7 +299,7 @@ class RegenerateIdResponse(BaseModel):
 
 
 @app.post("/api/jobs/{job_id}/regenerate-id", response_model=RegenerateIdResponse)
-async def regenerate_job_id(job_id: str):
+async def regenerate_job_id(job_id: str) -> RegenerateIdResponse:
     """Regenerate the job ID (URL hash) for a job.
 
     This changes the URL used to access the job, invalidating the old one.
@@ -316,14 +320,14 @@ async def regenerate_job_id(job_id: str):
 
 
 @app.get("/api/admin/jobs", response_model=JobListResponse)
-async def list_jobs(limit: int = 100, _token: str = Depends(require_admin)):
+async def list_jobs(limit: int = 100, _token: str = Depends(require_admin)) -> JobListResponse:
     """List recent jobs (admin only)."""
     jobs = db.list_jobs(limit)
     return JobListResponse(jobs=jobs)
 
 
 @app.get("/api/jobs/{job_id}/peptide-lists")
-async def get_peptide_lists(job_id: str):
+async def get_peptide_lists(job_id: str) -> dict[str, Any]:
     """Get peptide lists for a job."""
     job = db.get_job(job_id)
     if not job:
@@ -332,7 +336,7 @@ async def get_peptide_lists(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/results/{list_id}/{filename}")
-async def download_result(job_id: str, list_id: str, filename: str):
+async def download_result(job_id: str, list_id: str, filename: str) -> FileResponse:
     """Download a result file."""
     # Validate job exists
     job = db.get_job(job_id)
@@ -364,7 +368,7 @@ async def download_result(job_id: str, list_id: str, filename: str):
 
 
 @app.get("/api/jobs/{job_id}/results/all_results.zip")
-async def download_all_results(job_id: str):
+async def download_all_results(job_id: str) -> FileResponse:
     """Download all results as a ZIP file."""
     job = db.get_job(job_id)
     if not job:
@@ -398,7 +402,7 @@ if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str) -> FileResponse:
         """Serve the SPA index.html for all non-API routes."""
         # Try to serve the exact file first
         file_path = FRONTEND_DIR / full_path

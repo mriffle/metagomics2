@@ -131,7 +131,7 @@ def build_go_annotations(
     conn.commit()
 
     # Get actual row count (INSERT OR IGNORE silently skips duplicates)
-    actual_count = conn.execute("SELECT COUNT(*) FROM go_annotations").fetchone()[0]
+    actual_count = int(conn.execute("SELECT COUNT(*) FROM go_annotations").fetchone()[0])
     duplicates = count - actual_count
     logger.info(
         f"GO annotations: {actual_count:,} unique rows inserted, "

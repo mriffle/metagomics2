@@ -1,12 +1,9 @@
 """Tests for GAF 2.2 parser."""
 
-import io
 import gzip
-import tempfile
-from pathlib import Path
+import io
 
 from metagomics2.core.gaf_parser import GOARecord, parse_gaf_file, parse_gaf_stream
-
 
 # Sample GAF lines (tab-delimited, 17 columns)
 _HEADER = "!gaf-version: 2.2\n!generated-by: UniProt\n"

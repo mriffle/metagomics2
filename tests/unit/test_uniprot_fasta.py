@@ -8,7 +8,6 @@ from metagomics2.core.uniprot_fasta import (
     parse_uniprot_fasta_annotations_stream,
 )
 
-
 _FASTA_CONTENT = """\
 >sp|Q21HH2|RS2_SACD2 30S ribosomal protein S2 OS=Saccharopolyspora erythraea OX=266940 GN=rpsB PE=3 SV=1
 MKTLQIRNPQRNAARRRSRPFQFERGQTLVHISGEPVTLKECNLVGSTLNPRGVNALTK
@@ -16,7 +15,7 @@ MKTLQIRNPQRNAARRRSRPFQFERGQTLVHISGEPVTLKECNLVGSTLNPRGVNALTK
 MSSDSEMAIFGEAAPYLRKSEKERIEAQNKPFDAKTSVFVAEPDEEVGALVKRQGVMYLFK
 >sp|A0B1C2|NOOXTAG No OX tag here GN=FOO PE=1 SV=1
 ACDEFGHIKLMNPQRSTVWY
-"""
+"""  # noqa: E501
 
 
 def test_parse_stream_extracts_accession_and_taxid():

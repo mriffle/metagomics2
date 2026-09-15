@@ -1,6 +1,5 @@
 """Unit tests for taxonomy tree loading and LCA computation."""
 
-import pytest
 
 from metagomics2.core.taxonomy import TaxonomyTree, load_taxonomy_from_dict
 

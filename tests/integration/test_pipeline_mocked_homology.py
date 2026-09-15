@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from metagomics2.pipeline.runner import (
-    PipelineConfig,
-    PipelineProgress,
     _PROGRESS_PER_LIST_END,
     _PROGRESS_PER_LIST_START,
     _PROGRESS_TOTAL,
+    PipelineConfig,
+    PipelineProgress,
     run_pipeline,
 )
 
@@ -349,7 +349,9 @@ class TestPipelineMockedHomology:
             assert completed[i].progress_done > completed[i - 1].progress_done
 
         # The per-list progress should span from _PROGRESS_PER_LIST_START to _PROGRESS_PER_LIST_END
-        per_list_starts = [p for p in progress_updates if "Processing peptide list" in p.current_stage]
+        per_list_starts = [
+            p for p in progress_updates if "Processing peptide list" in p.current_stage
+        ]
         assert per_list_starts[0].progress_done == _PROGRESS_PER_LIST_START
         assert completed[-1].progress_done == _PROGRESS_PER_LIST_END
 

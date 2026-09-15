@@ -1,11 +1,9 @@
 """Unit tests for OBO parser."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from metagomics2.core.go import GODAG
 from metagomics2.core.obo_parser import (
     OBOParsingError,
     convert_obo_to_json_dict,

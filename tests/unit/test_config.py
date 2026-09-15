@@ -15,9 +15,7 @@ from metagomics2.config import (
     _load_server_json,
     _parse_bool,
     load_settings,
-    reset_settings,
 )
-
 
 # ---------------------------------------------------------------------------
 # _parse_bool

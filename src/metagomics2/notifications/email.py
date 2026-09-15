@@ -91,7 +91,7 @@ def _build_message(job: JobInfo, site_url: str) -> tuple[str, str]:
     if job.params.fasta_filename:
         lines.append(f"  FASTA file: {job.params.fasta_filename}")
     if job.peptide_lists:
-        lines.append(f"  Peptide lists:")
+        lines.append("  Peptide lists:")
         for pl in job.peptide_lists:
             lines.append(f"    - {pl.filename}")
     lines.append("")

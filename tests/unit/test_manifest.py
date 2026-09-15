@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from metagomics2.core.reporting import (
     ManifestInfo,
     compute_file_hash,

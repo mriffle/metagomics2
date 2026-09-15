@@ -33,8 +33,8 @@ class NodeAggregate:
         self._ratio_annotated = value
 
     def __post_init__(self) -> None:
-        self._ratio_total: float = 0.0
-        self._ratio_annotated: float | None = None
+        self._ratio_total = 0.0
+        self._ratio_annotated = None
 
 
 @dataclass
@@ -185,7 +185,8 @@ def validate_aggregation_invariants(result: AggregationResult) -> list[str]:
                 )
             if node.ratio_total > node.ratio_annotated:
                 violations.append(
-                    f"Taxonomy {tax_id}: ratio_total {node.ratio_total} > ratio_annotated {node.ratio_annotated}"
+                    f"Taxonomy {tax_id}: ratio_total {node.ratio_total} "
+                    f"> ratio_annotated {node.ratio_annotated}"
                 )
 
     # Check GO terms
@@ -207,7 +208,8 @@ def validate_aggregation_invariants(result: AggregationResult) -> list[str]:
                 )
             if node.ratio_total > node.ratio_annotated:
                 violations.append(
-                    f"GO {go_id}: ratio_total {node.ratio_total} > ratio_annotated {node.ratio_annotated}"
+                    f"GO {go_id}: ratio_total {node.ratio_total} "
+                    f"> ratio_annotated {node.ratio_annotated}"
                 )
 
     return violations

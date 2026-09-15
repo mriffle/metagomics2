@@ -6,9 +6,10 @@ the CLI and web server execution modes.
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from metagomics2 import __version__
 from metagomics2.core.aggregation import (
@@ -23,11 +24,19 @@ from metagomics2.core.annotation import (
     annotate_peptide,
     load_subject_annotations_from_dict,
 )
-from metagomics2.core.diamond import DiamondError, run_diamond
-from metagomics2.core.subject_lookup import load_subject_annotations
-from metagomics2.core.fasta import build_protein_dict, compute_file_sha256, parse_fasta, write_subset_fasta
-from metagomics2.core.filtering import FilterPolicy, HomologyHit, filter_all_hits, filter_all_hits_with_hits, parse_blast_tabular
-from metagomics2.core.go import GODAG, load_go_from_dict, load_go_from_json
+from metagomics2.core.diamond import run_diamond
+from metagomics2.core.fasta import (
+    build_protein_dict,
+    parse_fasta,
+    write_subset_fasta,
+)
+from metagomics2.core.filtering import (
+    FilterPolicy,
+    HomologyHit,
+    filter_all_hits,
+    filter_all_hits_with_hits,
+)
+from metagomics2.core.go import GODAG
 from metagomics2.core.matching import MatchResult, match_peptides_to_proteins
 from metagomics2.core.peptides import Peptide, parse_peptide_list
 from metagomics2.core.reference_loader import (
@@ -38,7 +47,6 @@ from metagomics2.core.reference_loader import (
     load_taxonomy_data,
 )
 from metagomics2.core.reporting import (
-    ManifestInfo,
     create_manifest,
     write_coverage_csv,
     write_go_taxonomy_combo_csv,
@@ -47,7 +55,8 @@ from metagomics2.core.reporting import (
     write_peptide_mapping_parquet,
     write_taxonomy_nodes_csv,
 )
-from metagomics2.core.taxonomy import TaxonomyTree, load_taxonomy_from_dict, load_taxonomy_from_json
+from metagomics2.core.subject_lookup import load_subject_annotations
+from metagomics2.core.taxonomy import TaxonomyTree
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +83,7 @@ class PipelineConfig:
     # Reference data paths (if None, uses bundled reference data)
     go_data_path: Path | None = None
     taxonomy_data_path: Path | None = None
-    
+
     # Job directory for snapshots (set automatically for web mode)
     job_dir: Path | None = None
 
@@ -173,12 +182,14 @@ class PipelineRunner:
 
         # Path to the subset FASTA written for DIAMOND input
         self.subset_fasta_path: Path | None = None
-        
+
         # Reference snapshot directory
         self.ref_snapshot_dir: Path | None = None
         self.ref_metadata: dict[str, str] = {}
 
-    def _update_progress(self, stage: str, list_id: str = "", progress_done: int | None = None) -> None:
+    def _update_progress(
+        self, stage: str, list_id: str = "", progress_done: int | None = None
+    ) -> None:
         """Update and report progress."""
         self.progress.current_stage = stage
         self.progress.current_list_id = list_id
@@ -195,7 +206,7 @@ class PipelineRunner:
             PipelineResult with success status and results
         """
         peptide_list_results: list[PeptideListResult] = []
-        
+
         try:
             # Stage 0: Initialize (load FASTA, reference data)
             self._update_progress("Initializing", progress_done=0)
@@ -212,7 +223,9 @@ class PipelineRunner:
                 logger.info(f"Parsed {len(peptides)} peptides from {peptide_list_path.name}")
 
             # Stage 2: Match all peptides against background proteome
-            self._update_progress("Matching peptides to background proteome", progress_done=_PROGRESS_PARSING)
+            self._update_progress(
+                "Matching peptides to background proteome", progress_done=_PROGRESS_PARSING
+            )
             self._match_all_peptides()
 
             # Stage 3: Write subset FASTA of hit proteins (for future DIAMOND search)
@@ -245,7 +258,9 @@ class PipelineRunner:
                 result = self._process_peptide_list(peptide_list_path, list_id)
                 peptide_list_results.append(result)
                 self.progress.completed_peptide_lists = i + 1
-                list_done = _PROGRESS_PER_LIST_START + (per_list_budget * (i + 1)) // max(n_lists, 1)
+                list_done = _PROGRESS_PER_LIST_START + (per_list_budget * (i + 1)) // max(
+                    n_lists, 1
+                )
                 self._update_progress(
                     f"Completed {i + 1}/{n_lists} peptide lists",
                     progress_done=list_done,
@@ -270,7 +285,7 @@ class PipelineRunner:
         """Stage 0: Initialize job - prepare directories, load reference data."""
         # Create output directory structure
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create reference snapshot if job_dir is specified
         if self.config.job_dir:
             self._create_reference_snapshot()
@@ -292,15 +307,15 @@ class PipelineRunner:
         """Create per-job snapshot of reference data."""
         if not self.config.job_dir:
             return
-            
+
         work_dir = self.config.job_dir / "work"
         self.ref_snapshot_dir = work_dir / "ref_snapshot"
-        
+
         logger.info(f"Creating reference snapshot in {self.ref_snapshot_dir}")
-        
+
         # Get bundled reference directory
         bundled_ref = get_bundled_reference_dir()
-        
+
         if bundled_ref.exists():
             # Create snapshot from bundled reference
             create_reference_snapshot(
@@ -308,16 +323,18 @@ class PipelineRunner:
                 self.ref_snapshot_dir,
                 use_hardlinks=True,
             )
-            
+
             # Load metadata
             self.ref_metadata = get_reference_metadata(bundled_ref)
             logger.info(f"Created reference snapshot with metadata: {self.ref_metadata}")
         else:
             logger.warning(f"Bundled reference directory not found: {bundled_ref}")
-    
+
     def _load_reference_data(self) -> None:
         """Load GO and taxonomy reference data."""
         # Determine source paths
+        taxonomy_source: Path | None
+        go_source: Path | None
         if self.ref_snapshot_dir and self.ref_snapshot_dir.exists():
             # Load from snapshot
             taxonomy_source = self.ref_snapshot_dir / "taxonomy"
@@ -334,7 +351,7 @@ class PipelineRunner:
             taxonomy_source = bundled_ref / "taxonomy"
             go_source = bundled_ref / "go" / "go.obo"
             logger.info("Loading reference data from bundled sources")
-        
+
         # Load taxonomy
         if taxonomy_source and taxonomy_source.exists():
             logger.info(f"Loading taxonomy: {taxonomy_source}")
@@ -656,14 +673,16 @@ class PipelineRunner:
                 "go_include_self": self.config.go_include_self,
             },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
-            taxonomy_snapshot_dir=self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None,
+            taxonomy_snapshot_dir=(
+                self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None
+            ),
             annotated_db_path=self.config.annotated_db_path,
         )
-        
+
         # Add reference metadata to manifest
         if self.ref_metadata:
             manifest.parameters["reference_metadata"] = self.ref_metadata
-        
+
         write_manifest_json(manifest, list_output_dir / "run_manifest.json")
 
         logger.info(f"Wrote reports to {list_output_dir}")

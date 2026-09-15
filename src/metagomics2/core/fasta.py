@@ -1,9 +1,10 @@
 """FASTA file parsing and hashing."""
 
 import hashlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, TextIO
+from typing import TextIO
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ def parse_fasta(file_path: Path | str) -> list[FastaRecord]:
     if not file_path.exists():
         raise FastaParsingError(f"File not found: {file_path}")
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         return list(parse_fasta_from_handle(f))
 
 

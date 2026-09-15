@@ -1,12 +1,9 @@
 """Integration tests for CLI end-to-end execution."""
 
-import csv
 import json
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 
 class TestCLIEndToEnd:

@@ -1,15 +1,15 @@
 """Background worker for processing jobs."""
-
 import logging
 import shutil
 import signal
 import time
-from pathlib import Path
+from types import FrameType
+from typing import Any
 
 from metagomics2.config import get_settings
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.db.database import Database
-from metagomics2.models.job import JobStatus, PeptideListStatus
+from metagomics2.models.job import JobInfo, JobStatus, PeptideListStatus
 from metagomics2.notifications.email import SmtpConfig, send_job_notification
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
 
@@ -23,7 +23,7 @@ DB_PATH = _cfg.db_path
 POLL_INTERVAL = _cfg.poll_interval
 THREADS = _cfg.threads
 DATABASES_DIR = _cfg.databases_dir
-DATABASES: list[dict] = _cfg.databases_as_dicts
+DATABASES: list[dict[str, Any]] = _cfg.databases_as_dicts
 
 # Email notification settings (from centralized config)
 SMTP_CONFIG = SmtpConfig(
@@ -52,7 +52,7 @@ class Worker:
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
-    def _handle_signal(self, signum, frame):
+    def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
         """Handle shutdown signals."""
         logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
@@ -92,7 +92,6 @@ class Worker:
                 raise ValueError(f"Job {job_id} not found")
 
             # Build pipeline config
-            job_dir = JOBS_DIR / job_id
             config = self._build_config(job_id, job)
 
             # Create progress callback
@@ -170,7 +169,7 @@ class Worker:
         except Exception:
             logger.exception(f"Error sending notification for job {job_id}")
 
-    def _build_config(self, job_id: str, job) -> PipelineConfig:
+    def _build_config(self, job_id: str, job: JobInfo) -> PipelineConfig:
         """Build pipeline configuration from job info."""
         job_dir = JOBS_DIR / job_id
         params = job.params

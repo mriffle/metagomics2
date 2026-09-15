@@ -1,9 +1,8 @@
 """Gene Ontology (GO) DAG loading and closure computation."""
-
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 
 @dataclass
@@ -119,13 +118,13 @@ def load_go_from_json(file_path: Path | str) -> GODAG:
     """
     file_path = Path(file_path)
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         data = json.load(f)
 
     return load_go_from_dict(data)
 
 
-def load_go_from_dict(data: dict) -> GODAG:
+def load_go_from_dict(data: dict[str, Any]) -> GODAG:
     """Load GO DAG from a dictionary.
 
     Args:

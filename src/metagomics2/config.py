@@ -12,12 +12,12 @@ Precedence (highest → lowest):
     3. JSON config file values
     4. Built-in defaults
 """
-
 import json
 import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class Settings:
         return self.max_upload_mb * 1024 * 1024
 
     @property
-    def databases_as_dicts(self) -> list[dict]:
+    def databases_as_dicts(self) -> list[dict[str, Any]]:
         """Return database entries as plain dicts (for JSON API responses)."""
         return [
             {
@@ -161,7 +161,7 @@ def _load_databases_json(path: Path) -> list[DatabaseEntry]:
     return entries
 
 
-def _load_server_json(path: Path) -> dict:
+def _load_server_json(path: Path) -> dict[str, Any]:
     """Load an optional server JSON config file.
 
     Returns an empty dict if the file does not exist.

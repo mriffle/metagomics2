@@ -1,14 +1,11 @@
 """Unit tests for DIAMOND execution and result parsing."""
 
-import io
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from metagomics2.core.diamond import (
     DiamondError,
-    DiamondResult,
     parse_diamond_output,
     run_diamond,
 )

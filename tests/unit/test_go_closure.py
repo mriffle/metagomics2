@@ -1,8 +1,7 @@
 """Unit tests for GO DAG loading and closure computation."""
 
-import pytest
 
-from metagomics2.core.go import GODAG, GOTerm, get_all_parent_ids, load_go_from_dict
+from metagomics2.core.go import get_all_parent_ids, load_go_from_dict
 
 
 class TestLoadGOFromDict:
@@ -53,7 +52,7 @@ class TestGOClosure:
         closure = dag.get_closure("GO:0000005", include_self=False)
         assert "GO:0000005" not in closure
 
-    def test_closure_is_a_only_for_D(self, small_go: dict):
+    def test_closure_is_a_only_for_d(self, small_go: dict):
         """D (GO:0000005) -> A (GO:0000002) -> root_BP (GO:0000001) via is_a only."""
         dag = load_go_from_dict(small_go)
 
@@ -62,7 +61,7 @@ class TestGOClosure:
         # D, A, root_BP
         assert closure == {"GO:0000005", "GO:0000002", "GO:0000001"}
 
-    def test_closure_is_a_plus_part_of_for_D(self, small_go: dict):
+    def test_closure_is_a_plus_part_of_for_d(self, small_go: dict):
         """D (GO:0000005) has is_a->A and part_of->B."""
         dag = load_go_from_dict(small_go)
 
@@ -76,7 +75,7 @@ class TestGOClosure:
         assert "GO:0000003" in closure  # B (via part_of)
         assert "GO:0000001" in closure  # root_BP
 
-    def test_closure_multi_parent_C(self, small_go: dict):
+    def test_closure_multi_parent_c(self, small_go: dict):
         """C (GO:0000004) has is_a parents A and B."""
         dag = load_go_from_dict(small_go)
 
@@ -85,7 +84,7 @@ class TestGOClosure:
         # C, A, B, root_BP
         assert closure == {"GO:0000004", "GO:0000002", "GO:0000003", "GO:0000001"}
 
-    def test_closure_F_through_C(self, small_go: dict):
+    def test_closure_f_through_c(self, small_go: dict):
         """F (GO:0000007) -> C (GO:0000004) -> A,B -> root_BP."""
         dag = load_go_from_dict(small_go)
 

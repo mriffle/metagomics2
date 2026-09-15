@@ -1,6 +1,5 @@
 """Tests for input sanitization of JobParams fields."""
 
-import math
 
 import pytest
 from pydantic import ValidationError

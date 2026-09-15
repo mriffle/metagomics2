@@ -1,7 +1,7 @@
 """Property-based tests for aggregation invariants."""
 
-import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from metagomics2.core.aggregation import (
     aggregate_peptide_annotations,

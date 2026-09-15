@@ -2,9 +2,10 @@
 
 import gzip
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 logger = logging.getLogger(__name__)
 
@@ -90,5 +91,5 @@ def parse_gaf_file(
         with gzip.open(gaf_path, "rt", encoding="utf-8") as f:
             yield from parse_gaf_stream(f, exclude_not_qualifier, exclude_nd_evidence)
     else:
-        with open(gaf_path, "r", encoding="utf-8") as f:
+        with open(gaf_path, encoding="utf-8") as f:
             yield from parse_gaf_stream(f, exclude_not_qualifier, exclude_nd_evidence)

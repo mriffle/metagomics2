@@ -1,6 +1,5 @@
 """Unit tests for peptide taxonomy annotation semantics."""
 
-import pytest
 
 from metagomics2.core.annotation import (
     SubjectAnnotation,

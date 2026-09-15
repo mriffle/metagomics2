@@ -11,7 +11,7 @@ import pytest
 
 import metagomics2.config as config_module
 from metagomics2.db.database import Database
-from metagomics2.models.job import JobParams, JobStatus, PeptideListStatus
+from metagomics2.models.job import JobParams, JobStatus
 
 
 @pytest.fixture
@@ -100,8 +100,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -119,8 +125,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": params},
         )
@@ -135,9 +147,18 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                ("peptides", ("pep1.tsv", io.BytesIO(pep1), "text/tab-separated-values")),
-                ("peptides", ("pep2.tsv", io.BytesIO(pep2), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("pep1.tsv", io.BytesIO(pep1), "text/tab-separated-values"),
+                ),
+                (
+                    "peptides",
+                    ("pep2.tsv", io.BytesIO(pep2), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -151,8 +172,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": "not valid json"},
         )
@@ -166,8 +193,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -189,8 +222,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("bad.txt", io.BytesIO(bad_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("bad.txt", io.BytesIO(bad_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -206,7 +245,10 @@ class TestCreateJob:
             "/api/jobs",
             files=[
                 ("fasta", ("empty.fasta", io.BytesIO(b""), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -222,8 +264,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("header_only.fasta", io.BytesIO(bad_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("header_only.fasta", io.BytesIO(bad_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -239,8 +287,14 @@ class TestCreateJob:
         response = client.post(
             "/api/jobs",
             files=[
-                ("fasta", ("bad.fasta", io.BytesIO(bad_content), "application/octet-stream")),
-                ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                (
+                    "fasta",
+                    ("bad.fasta", io.BytesIO(bad_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
             ],
             data={"params": json.dumps({"db_choice": "test.dmnd"})},
         )
@@ -279,8 +333,14 @@ class TestUploadSizeLimit:
             response = client.post(
                 "/api/jobs",
                 files=[
-                    ("fasta", ("big.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                    ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                    (
+                        "fasta",
+                        ("big.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                    ),
+                    (
+                        "peptides",
+                        ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                    ),
                 ],
                 data={"params": json.dumps({"db_choice": "test.dmnd"})},
             )
@@ -315,8 +375,14 @@ class TestUploadSizeLimit:
             response = client.post(
                 "/api/jobs",
                 files=[
-                    ("fasta", ("small.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
-                    ("peptides", ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values")),
+                    (
+                        "fasta",
+                        ("small.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                    ),
+                    (
+                        "peptides",
+                        ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                    ),
                 ],
                 data={"params": json.dumps({"db_choice": "test.dmnd"})},
             )
@@ -404,7 +470,9 @@ class TestListJobs:
             test_db.create_job(JobParams())
         token = _get_admin_token(client)
 
-        response = client.get("/api/admin/jobs?limit=3", headers={"Authorization": f"Bearer {token}"})
+        response = client.get(
+            "/api/admin/jobs?limit=3", headers={"Authorization": f"Bearer {token}"}
+        )
         data = response.json()
         assert len(data["jobs"]) == 3
 

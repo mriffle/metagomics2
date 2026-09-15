@@ -135,7 +135,7 @@ def parse_diamond_output(output_path: Path) -> DiamondResult:
             n_hits=0,
         )
 
-    with open(output_path, "r", encoding="utf-8") as f:
+    with open(output_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     hits_by_query = parse_blast_tabular(lines)

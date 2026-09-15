@@ -1,7 +1,7 @@
 """Parser for OBO (Open Biomedical Ontologies) format files."""
 
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from metagomics2.core.go import GODAG, GOTerm
 
@@ -29,7 +29,7 @@ def parse_obo_file(file_path: Path | str) -> GODAG:
     if not file_path.exists():
         raise OBOParsingError(f"File not found: {file_path}")
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         return parse_obo_from_handle(f)
 
 
@@ -161,7 +161,7 @@ def _process_term_stanza(stanza: dict[str, list[str]], dag: GODAG) -> None:
     dag.terms[term_id] = term
 
 
-def convert_obo_to_json_dict(obo_path: Path | str) -> dict:
+def convert_obo_to_json_dict(obo_path: Path | str) -> dict[str, Any]:
     """Convert an OBO file to the JSON dictionary format.
 
     Args:
@@ -173,7 +173,7 @@ def convert_obo_to_json_dict(obo_path: Path | str) -> dict:
     dag = parse_obo_file(obo_path)
 
     # Build the JSON structure
-    result = {
+    result: dict[str, Any] = {
         "terms": {},
         "edges": {},
     }
@@ -186,7 +186,7 @@ def convert_obo_to_json_dict(obo_path: Path | str) -> dict:
         }
 
     # Add edges
-    all_edge_types = set()
+    all_edge_types: set[str] = set()
     for term in dag.terms.values():
         all_edge_types.update(term.parents.keys())
 

@@ -1,12 +1,11 @@
 """SQLite database operations for job tracking."""
 
-import json
 import secrets
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator
 
 from metagomics2.models.job import (
     JobInfo,
@@ -163,7 +162,11 @@ class Database:
                 for r in lists_rows
             ]
 
-            params = JobParams.model_validate_json(row["params_json"]) if row["params_json"] else JobParams()
+            params = (
+                JobParams.model_validate_json(row["params_json"])
+                if row["params_json"]
+                else JobParams()
+            )
 
             return JobInfo(
                 job_id=row["job_id"],

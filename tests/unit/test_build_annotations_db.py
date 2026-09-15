@@ -1,17 +1,15 @@
 """Tests for the annotations database build script."""
 
 import sqlite3
-from pathlib import Path
 
 from metagomics2.scripts.build_annotations_db import build_annotations_db
-
 
 _FASTA_CONTENT = """\
 >sp|Q21HH2|RS2_SACD2 30S ribosomal protein S2 OS=Saccharopolyspora erythraea OX=266940 GN=rpsB PE=3 SV=1
 MKTLQIRNPQRNAARRRSRPFQFERGQTLVHISGEPVTLKECNLVGSTLNPRGVNALTK
 >sp|P12345|MYP_HUMAN Myosin OS=Homo sapiens OX=9606 GN=MYH7 PE=1 SV=4
 MSSDSEMAIFGEAAPYLRKSEKERIEAQNKPFDAKTSVFVAEPDEEVGALVKRQGVMYLFK
-"""
+"""  # noqa: E501
 
 _GAF_CONTENT = """\
 !gaf-version: 2.2
@@ -21,7 +19,7 @@ UniProtKB\tQ21HH2\tRS2\tlocated_in\tGO:0005840\tPMID:12345\tIEA\t\tC\t30S riboso
 UniProtKB\tP12345\tMYP\tinvolved_in\tGO:0006412\tPMID:11111\tIEA\t\tP\tMyosin\t\tprotein\ttaxon:9606\t20200101\tUniProt\t\t
 UniProtKB\tP12345\tMYP\tNOT|enables\tGO:0009999\tPMID:22222\tIEA\t\tF\tMyosin\t\tprotein\ttaxon:9606\t20200101\tInterPro\t\t
 UniProtKB\tP12345\tMYP\tenables\tGO:0005575\tGO_REF:0000015\tND\t\tC\tMyosin\t\tprotein\ttaxon:9606\t20200101\tUniProt\t\t
-"""
+"""  # noqa: E501
 
 
 def test_build_annotations_db(tmp_path):
