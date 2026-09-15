@@ -18,6 +18,10 @@ jobs:
         run: |
           ./venv/bin/python -m pip install --upgrade pip
           ./venv/bin/python -m pip install -e ".[dev]"
+      - name: Run ruff
+        run: ./venv/bin/ruff check src tests
+      - name: Run mypy
+        run: ./venv/bin/mypy src
       - name: Run Python tests
         run: ./venv/bin/python -m pytest tests/
 
