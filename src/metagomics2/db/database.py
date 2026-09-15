@@ -302,6 +302,32 @@ class Database:
 
             return row["job_id"] if row else None
 
+    def get_events(self, job_id: str) -> list[dict[str, str]]:
+        """Return a job's event log, oldest first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT timestamp, event_type, message FROM job_events "
+                "WHERE job_id = ? ORDER BY rowid ASC",
+                (job_id,),
+            ).fetchall()
+        return [
+            {
+                "timestamp": row["timestamp"],
+                "event_type": row["event_type"],
+                "message": row["message"],
+            }
+            for row in rows
+        ]
+
+    def list_job_ids_by_status(self, status: JobStatus) -> list[str]:
+        """Return the IDs of all jobs currently in the given status, oldest first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT job_id FROM jobs WHERE status = ? ORDER BY created_at ASC",
+                (status.value,),
+            ).fetchall()
+        return [row["job_id"] for row in rows]
+
     def add_event(self, job_id: str, event_type: str, message: str) -> None:
         """Add an event log entry.
 

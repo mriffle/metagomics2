@@ -2,11 +2,16 @@
 
 import logging
 import re
+import signal
 import subprocess
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from metagomics2.core.filtering import HomologyHit, parse_blast_tabular
+from metagomics2.logging_setup import format_bytes, process_rss_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +56,54 @@ class DiamondResult:
     n_hits: int
 
 
+def _tail(path: Path, n: int = 30) -> str:
+    """Return the last ``n`` non-empty lines of a text file (best effort)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = [line.rstrip() for line in f if line.strip()]
+    except OSError:
+        return ""
+    return "\n".join(lines[-n:])
+
+
+def _last_line(path: Path) -> str:
+    tail = _tail(path, 1)
+    return tail.splitlines()[-1] if tail else ""
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _wait_with_heartbeat(
+    proc: subprocess.Popen[bytes],
+    log_path: Path,
+    output_path: Path,
+    heartbeat_seconds: float,
+    start: float,
+) -> int:
+    """Wait for DIAMOND to exit, logging a heartbeat while it runs.
+
+    Each heartbeat reports elapsed time, the size of the output file, the
+    DIAMOND process's resident memory, and the last line DIAMOND wrote to its
+    console log, so ``docker logs`` shows which block it is working on.
+    """
+    while True:
+        try:
+            return proc.wait(timeout=heartbeat_seconds)
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - start
+            logger.info(
+                f"DIAMOND still running (pid {proc.pid}): elapsed {elapsed:.0f}s, "
+                f"rss {format_bytes(process_rss_bytes(proc.pid))}, "
+                f"output {format_bytes(_file_size(output_path))}, "
+                f"last console line: {_last_line(log_path) or '(none yet)'}"
+            )
+
+
 def run_diamond(
     query_fasta: Path,
     db_path: Path,
@@ -58,8 +111,14 @@ def run_diamond(
     evalue: float = 1e-10,
     max_target_seqs: int | None = None,
     threads: int = 4,
+    log_path: Path | None = None,
+    heartbeat_seconds: float = 60.0,
 ) -> DiamondResult:
     """Run DIAMOND blastp and parse the results.
+
+    DIAMOND's console output (progress per query/reference block, timings,
+    errors) is appended to ``log_path`` rather than captured in memory, so it
+    survives a crash and can be inspected while the search is running.
 
     Args:
         query_fasta: Path to the query FASTA file (subset of background proteome)
@@ -67,17 +126,24 @@ def run_diamond(
         output_path: Path to write the tabular output
         evalue: Maximum e-value threshold for DIAMOND search
         max_target_seqs: Maximum number of target sequences per query.
-            If None, --max-target-seqs is not passed to DIAMOND and it
-            returns all hits passing the e-value threshold.
+            If None, --max-target-seqs is not passed and DIAMOND uses its
+            own default (25 per query).
         threads: Number of CPU threads to use
+        log_path: File that receives DIAMOND's console output.  Defaults to
+            ``diamond.log`` next to the output file.
+        heartbeat_seconds: Interval between progress log lines while waiting.
 
     Returns:
         DiamondResult with parsed hits
 
     Raises:
-        DiamondError: If DIAMOND execution fails
+        DiamondError: If DIAMOND cannot be started, exits non-zero, or is
+            killed by a signal.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if log_path is None:
+        log_path = output_path.parent / "diamond.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         "diamond", "blastp",
@@ -93,29 +159,61 @@ def run_diamond(
         cmd.extend(["--max-target-seqs", str(max_target_seqs)])
 
     logger.info(f"Running DIAMOND: {' '.join(cmd)}")
+    logger.info(
+        f"DIAMOND inputs: query {format_bytes(_file_size(query_fasta))}, "
+        f"database {format_bytes(_file_size(db_path))}; console output -> {log_path}"
+    )
 
+    start = time.monotonic()
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        with open(log_path, "ab") as log_file:
+            started_at = datetime.now().isoformat(timespec="seconds")
+            log_file.write(f"# {started_at} command: {' '.join(cmd)}\n".encode())
+            log_file.flush()
+            proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            returncode = _wait_with_heartbeat(
+                proc, log_path, output_path, heartbeat_seconds, start
+            )
     except FileNotFoundError:
         raise DiamondError(
             "DIAMOND executable not found. Ensure 'diamond' is installed and on PATH."
         )
+    elapsed = time.monotonic() - start
 
-    if result.returncode != 0:
-        stderr = result.stderr.strip()
-        raise DiamondError(
-            f"DIAMOND exited with code {result.returncode}: {stderr}"
-        )
+    if returncode != 0:
+        tail = _tail(log_path)
+        if returncode < 0:
+            signum = -returncode
+            try:
+                sig_name = signal.Signals(signum).name
+            except ValueError:
+                sig_name = "unknown"
+            message = (
+                f"DIAMOND was killed by signal {signum} ({sig_name}) after {elapsed:.0f}s. "
+                "This usually means it was killed externally, for example by the kernel "
+                "out-of-memory killer or a container memory limit."
+            )
+        else:
+            message = f"DIAMOND exited with code {returncode} after {elapsed:.0f}s"
+        logger.error(message)
+        raise DiamondError(f"{message}. Last lines of {log_path}:\n{tail}")
 
-    logger.info(f"DIAMOND completed. Output: {output_path}")
+    logger.info(
+        f"DIAMOND completed in {elapsed:.0f}s (exit code 0). "
+        f"Output: {output_path} ({format_bytes(_file_size(output_path))})"
+    )
 
     # Parse results
     return parse_diamond_output(output_path)
+
+
+def _iter_lines_with_progress(path: Path, every: int = 1_000_000) -> Iterator[str]:
+    """Yield lines from a file, logging a progress line every ``every`` lines."""
+    with open(path, encoding="utf-8") as f:
+        for i, line in enumerate(f, start=1):
+            if i % every == 0:
+                logger.info(f"Parsing DIAMOND output: {i:,} lines read so far")
+            yield line
 
 
 def parse_diamond_output(output_path: Path) -> DiamondResult:
@@ -135,10 +233,8 @@ def parse_diamond_output(output_path: Path) -> DiamondResult:
             n_hits=0,
         )
 
-    with open(output_path, encoding="utf-8") as f:
-        lines = f.readlines()
-
-    hits_by_query = parse_blast_tabular(lines)
+    logger.info(f"Parsing DIAMOND output: {output_path} ({format_bytes(_file_size(output_path))})")
+    hits_by_query = parse_blast_tabular(_iter_lines_with_progress(output_path))
 
     n_hits = sum(len(hits) for hits in hits_by_query.values())
 

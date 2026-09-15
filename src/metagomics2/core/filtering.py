@@ -1,4 +1,5 @@
 """Homology hit filtering based on user-configurable policies."""
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -171,7 +172,7 @@ def filter_all_hits_with_hits(
 
 
 def parse_blast_tabular(
-    lines: list[str],
+    lines: Iterable[str],
     columns: list[str] | None = None,
 ) -> dict[str, list[HomologyHit]]:
     """Parse BLAST/DIAMOND tabular output.
@@ -180,7 +181,7 @@ def parse_blast_tabular(
     qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
 
     Args:
-        lines: Lines from the tabular output file
+        lines: Lines from the tabular output file (any iterable, e.g. an open file)
         columns: Column names if non-standard format
 
     Returns:

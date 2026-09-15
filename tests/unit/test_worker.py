@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import logging
 import os
 import signal
 from pathlib import Path
@@ -12,6 +13,7 @@ import pytest
 import metagomics2.config as config_module
 from metagomics2.db.database import Database
 from metagomics2.models.job import JobParams, JobStatus
+from metagomics2.pipeline.runner import PipelineProgress
 
 
 def _get_worker_class():
@@ -240,10 +242,62 @@ class TestWorkerProcessJob:
             worker = worker_cls(test_db)
             worker._process_job(job_id)
 
-        # Events should have been added (started + completed)
-        # We can't easily query events directly, but the job should be completed
         job = test_db.get_job(job_id)
         assert job.status == JobStatus.COMPLETED
+        event_types = [e["event_type"] for e in test_db.get_events(job_id)]
+        assert event_types[0] == "started"
+        assert event_types[-1] == "completed"
+
+    def test_process_job_writes_per_job_log(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.peptide_list_results = []
+            mock_pipeline.return_value = mock_result
+
+            worker = worker_cls(test_db)
+            worker._process_job(job_id)
+
+        log_file = jobs_dir / job_id / "logs" / "pipeline.log"
+        assert log_file.exists()
+        text = log_file.read_text()
+        assert f"Processing job {job_id}" in text
+        assert "completed successfully" in text
+        # The per-job handler is removed once the job is done
+        assert not any(
+            getattr(h, "baseFilename", "") == str(log_file)
+            for h in logging.getLogger().handlers
+        )
+
+    def test_process_job_records_stage_events(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+
+        def fake_pipeline(config, progress_callback):
+            progress = PipelineProgress(current_stage="Homology search", progress_done=150)
+            progress_callback(progress)
+            progress_callback(progress)  # same stage again: no duplicate event
+            progress.current_stage = "Annotating peptides"
+            progress.current_list_id = "list_000"
+            progress_callback(progress)
+            result = MagicMock()
+            result.success = True
+            result.peptide_list_results = []
+            return result
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline", side_effect=fake_pipeline):
+            worker = worker_cls(test_db)
+            worker._process_job(job_id)
+
+        stage_events = [
+            e["message"] for e in test_db.get_events(job_id) if e["event_type"] == "stage"
+        ]
+        assert stage_events == ["Homology search", "Annotating peptides (list_000)"]
 
     def test_process_nonexistent_job(self, test_db, jobs_dir):
         worker_cls = _get_worker_class()
@@ -252,6 +306,49 @@ class TestWorkerProcessJob:
             worker._process_job("nonexistent_id")
 
         # Should fail gracefully - job doesn't exist so status update will just be a no-op
+
+
+class TestOrphanRecovery:
+    """Jobs left 'running' by a dead worker are failed on startup."""
+
+    def test_running_jobs_marked_failed(self, test_db, jobs_dir):
+        worker_cls = _get_worker_class()
+        orphan = test_db.create_job(JobParams())
+        test_db.update_job_status(orphan, JobStatus.RUNNING)
+        queued = test_db.create_job(JobParams())
+        test_db.update_job_status(queued, JobStatus.QUEUED)
+        done = test_db.create_job(JobParams())
+        test_db.update_job_status(done, JobStatus.COMPLETED)
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            worker = worker_cls(test_db)
+            worker._recover_orphaned_jobs()
+
+        assert test_db.get_job(orphan).status == JobStatus.FAILED
+        assert "Worker restarted" in test_db.get_job(orphan).error_message
+        assert test_db.get_job(queued).status == JobStatus.QUEUED
+        assert test_db.get_job(done).status == JobStatus.COMPLETED
+        events = test_db.get_events(orphan)
+        assert events[-1]["event_type"] == "error"
+        assert "Worker restarted" in events[-1]["message"]
+
+    def test_run_recovers_before_processing(self, test_db, jobs_dir):
+        worker_cls = _get_worker_class()
+        orphan = test_db.create_job(JobParams())
+        test_db.update_job_status(orphan, JobStatus.RUNNING)
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.POLL_INTERVAL", 0):
+            worker = worker_cls(test_db)
+
+            def stop_after_poll(*args, **kwargs):
+                worker.running = False
+                return None
+
+            with patch.object(test_db, "get_next_queued_job", side_effect=stop_after_poll):
+                worker.run()
+
+        assert test_db.get_job(orphan).status == JobStatus.FAILED
 
 
 class TestWorkerRunLoop:

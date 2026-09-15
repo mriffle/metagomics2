@@ -76,6 +76,9 @@ class Settings:
     site_url: str = ""
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
 
+    # --- Logging ---
+    log_level: str = "INFO"
+
     # --- Worker ---
     poll_interval: int = 5
     cleanup_on_success: bool = True
@@ -87,6 +90,11 @@ class Settings:
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def logs_dir(self) -> Path:
+        """Directory for process log files (worker.log, server.log)."""
+        return self.data_dir / "logs"
 
     @property
     def databases_as_dicts(self) -> list[dict[str, Any]]:
@@ -239,6 +247,7 @@ def load_settings(
     diamond_version = os.environ.get("DIAMOND_VERSION", "")
     site_url = os.environ.get("SITE_URL", "")
     poll_interval = int(os.environ.get("METAGOMICS_POLL_INTERVAL", "5"))
+    log_level = os.environ.get("METAGOMICS_LOG_LEVEL", "INFO").strip().upper() or "INFO"
     cleanup_on_success = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true"))
     cleanup_on_failure = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true"))
 
@@ -348,6 +357,7 @@ def load_settings(
         diamond_version=diamond_version,
         site_url=site_url,
         allowed_origins=allowed_origins,
+        log_level=log_level,
         poll_interval=poll_interval,
         cleanup_on_success=cleanup_on_success,
         cleanup_on_failure=cleanup_on_failure,

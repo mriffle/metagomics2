@@ -6,9 +6,17 @@ import time
 from types import FrameType
 from typing import Any
 
+from metagomics2 import __version__
 from metagomics2.config import get_settings
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.db.database import Database
+from metagomics2.logging_setup import (
+    attach_file_handler,
+    configure_logging,
+    detach_handler,
+    format_bytes,
+    log_system_info,
+)
 from metagomics2.models.job import JobInfo, JobStatus, PeptideListStatus
 from metagomics2.notifications.email import SmtpConfig, send_job_notification
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
@@ -60,6 +68,7 @@ class Worker:
     def run(self) -> None:
         """Main worker loop."""
         logger.info("Worker started")
+        self._recover_orphaned_jobs()
 
         while self.running:
             try:
@@ -76,10 +85,31 @@ class Worker:
 
         logger.info("Worker stopped")
 
+    def _recover_orphaned_jobs(self) -> None:
+        """Fail any job left in 'running' state by a worker that died mid-job.
+
+        Without this, a job whose worker was killed (for example by the kernel
+        out-of-memory killer) would stay 'running' forever with no error.
+        """
+        for job_id in self.db.list_job_ids_by_status(JobStatus.RUNNING):
+            message = (
+                "Worker restarted while this job was running. The previous worker "
+                "process probably died before finishing (killed by the out-of-memory "
+                "killer, a container memory limit, or a container restart). Check "
+                "the worker log and the job's logs/ directory for the last stage reached."
+            )
+            logger.warning(f"Job {job_id} was left in 'running' state; marking it failed")
+            self.db.update_job_status(job_id, JobStatus.FAILED, message)
+            self.db.add_event(job_id, "error", message)
+            self._send_notification(job_id)
+
     def _process_job(self, job_id: str) -> None:
         """Process a single job."""
         self.current_job_id = job_id
-        logger.info(f"Processing job {job_id}")
+        job_log_path = JOBS_DIR / job_id / "logs" / "pipeline.log"
+        job_log_handler = attach_file_handler(job_log_path)
+        logger.info(f"Processing job {job_id} (job log: {job_log_path})")
+        started = time.monotonic()
 
         try:
             # Mark as running
@@ -93,15 +123,33 @@ class Worker:
 
             # Build pipeline config
             config = self._build_config(job_id, job)
+            fasta_size = config.fasta_path.stat().st_size if config.fasta_path.exists() else 0
+            logger.info(
+                f"Job {job_id}: {len(config.peptide_list_paths)} peptide list(s), "
+                f"FASTA {format_bytes(fasta_size)}, "
+                f"database {job.params.db_name or job.params.db_choice!r}, "
+                f"filters {config.filter_policy.to_dict()}, "
+                f"notify {job.params.notification_email or '(none)'}"
+            )
 
-            # Create progress callback
+            # Create progress callback. Every stage change is also recorded as a
+            # job event so the job's history shows a timestamped timeline.
+            last_stage = ""
+
             def progress_callback(progress: PipelineProgress) -> None:
+                nonlocal last_stage
                 self.db.update_job_progress(
                     job_id,
                     progress.progress_done,
                     progress.progress_total,
                     progress.current_stage,
                 )
+                stage_label = progress.current_stage
+                if progress.current_list_id:
+                    stage_label += f" ({progress.current_list_id})"
+                if stage_label != last_stage:
+                    last_stage = stage_label
+                    self.db.add_event(job_id, "stage", stage_label)
 
             # Run pipeline
             result = run_pipeline(config, progress_callback)
@@ -120,13 +168,18 @@ class Worker:
 
                 self.db.update_job_status(job_id, JobStatus.COMPLETED)
                 self.db.add_event(job_id, "completed", "Job completed successfully")
-                logger.info(f"Job {job_id} completed successfully")
+                logger.info(
+                    f"Job {job_id} completed successfully in {time.monotonic() - started:.0f}s"
+                )
             else:
                 self.db.update_job_status(
                     job_id, JobStatus.FAILED, result.error_message
                 )
                 self.db.add_event(job_id, "failed", f"Job failed: {result.error_message}")
-                logger.error(f"Job {job_id} failed: {result.error_message}")
+                logger.error(
+                    f"Job {job_id} failed after {time.monotonic() - started:.0f}s: "
+                    f"{result.error_message}"
+                )
 
             # Send email notification (re-fetch job to get final status)
             self._send_notification(job_id)
@@ -147,6 +200,7 @@ class Worker:
 
         finally:
             self.current_job_id = None
+            detach_handler(job_log_handler)
 
     def _cleanup_job_files(self, job_id: str) -> None:
         """Remove inputs/ and work/ directories to free disk space."""
@@ -227,14 +281,26 @@ class Worker:
 
 def main() -> None:
     """Main entry point for worker."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    configure_logging("worker", _cfg.logs_dir, _cfg.log_level)
+    logger.info(f"Metagomics 2 worker v{__version__} starting")
+    log_system_info(logger)
+    logger.info(
+        f"Config: data_dir={_cfg.data_dir}, jobs_dir={JOBS_DIR}, databases_dir={DATABASES_DIR}, "
+        f"threads={THREADS}, poll_interval={POLL_INTERVAL}s, log_level={_cfg.log_level}, "
+        f"cleanup_on_success={CLEANUP_ON_SUCCESS}, cleanup_on_failure={CLEANUP_ON_FAILURE}"
+    )
+    logger.info(f"Configured databases: {[d.get('name') for d in DATABASES]}")
+    logger.info(
+        f"Worker log: {_cfg.logs_dir / 'worker.log'}; per-job logs: {JOBS_DIR}/<job_id>/logs/"
     )
 
     db = Database(DB_PATH)
     worker = Worker(db)
-    worker.run()
+    try:
+        worker.run()
+    except BaseException:
+        logger.exception("Worker exiting because of an unhandled error")
+        raise
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from metagomics2 import __version__
 from metagomics2.core.filtering import FilterPolicy
+from metagomics2.logging_setup import configure_logging
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -15,12 +16,7 @@ logger = logging.getLogger(__name__)
 
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging for CLI."""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    configure_logging("cli", None, logging.DEBUG if verbose else logging.INFO)
 
 
 def progress_callback(progress: PipelineProgress) -> None:

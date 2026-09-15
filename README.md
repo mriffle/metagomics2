@@ -364,6 +364,7 @@ The `.env` file holds simple scalar settings. Key variables:
 | `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Max upload size in MB |
 | `METAGOMICS_CLEANUP_ON_SUCCESS` | `true` | Delete intermediate files after successful jobs |
 | `METAGOMICS_CLEANUP_ON_FAILURE` | `true` | Delete intermediate files after failed jobs |
+| `METAGOMICS_LOG_LEVEL` | `INFO` | Log level for the worker and server (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `SMTP_HOST` | *(empty)* | SMTP server for email notifications (leave empty to disable) |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USERNAME` | *(empty)* | SMTP username |
@@ -435,6 +436,54 @@ tie-aware `top_k` ranking selects which hits to keep.
 |-----------|-------------|
 | `--go-edge-types` | Edge types for closure (default: `is_a`) |
 | `--go-exclude-self` | Exclude terms themselves from closure |
+
+## Logging and Debugging
+
+Both the worker and the web server log to the container's stdout/stderr, so
+everything is visible with:
+
+```bash
+docker compose logs -f            # or: docker logs -f <container name>
+```
+
+The same lines are also written to files under the persistent data directory,
+so they survive container restarts:
+
+| File | Contents |
+|------|----------|
+| `$METAGOMICS_DATA_DIR/logs/worker.log` | Everything the worker logs (rotated at 20 MB, 5 backups) |
+| `$METAGOMICS_DATA_DIR/logs/server.log` | Web server application log |
+| `$METAGOMICS_DATA_DIR/jobs/<job_id>/logs/pipeline.log` | The full log of that one job, from "Processing job" to completion or failure |
+| `$METAGOMICS_DATA_DIR/jobs/<job_id>/logs/diamond.log` | DIAMOND's own console output for that job (block progress, timings, errors) |
+
+The per-job `logs/` directory is kept even when intermediate files are cleaned
+up after a job finishes.
+
+What the log tells you:
+
+- **At startup** the worker logs its version, the CPUs and memory available to
+  the container (including any cgroup memory limit), the configured directories
+  and databases, and whether the `diamond` executable was found.
+- **Per job** it logs the number of peptide lists, the FASTA size, the chosen
+  database and filter parameters, then one line per pipeline stage with how
+  long the previous stage took and the worker's peak memory use.
+- **While DIAMOND runs** the worker logs a heartbeat every 60 seconds with the
+  elapsed time, DIAMOND's resident memory, the size of the output file so far,
+  and the last line DIAMOND wrote to its console (for example
+  `Processing query block 3, reference block 2/8`). If DIAMOND exits with an
+  error or is killed by a signal, the message says so and includes the last
+  lines of `diamond.log`.
+- **After DIAMOND** parsing progress is logged every million hits.
+- **If the worker itself dies** (for example killed by the out-of-memory
+  killer), the container entrypoint notices, logs a `FATAL` line, and exits so
+  Docker's restart policy restarts it. On startup the new worker marks any job
+  that was left in the `running` state as failed with an explanatory message,
+  instead of leaving it stuck forever.
+
+Every stage change is also recorded as a timestamped event in the job database
+alongside the existing started/completed/failed events.
+
+Set `METAGOMICS_LOG_LEVEL=DEBUG` in `.env` for more detail.
 
 ## Project Structure
 

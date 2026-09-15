@@ -6,6 +6,7 @@ the CLI and web server execution modes.
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +58,7 @@ from metagomics2.core.reporting import (
 )
 from metagomics2.core.subject_lookup import load_subject_annotations
 from metagomics2.core.taxonomy import TaxonomyTree
+from metagomics2.logging_setup import format_bytes, peak_rss_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,9 @@ ProgressCallback = Callable[[PipelineProgress], None]
 
 
 class PipelineRunner:
+    # Monotonic timestamp of the most recent stage change, for stage timing logs.
+    _stage_started: float | None = None
+
     """Orchestrates the metagomics pipeline execution."""
 
     def __init__(
@@ -190,7 +195,19 @@ class PipelineRunner:
     def _update_progress(
         self, stage: str, list_id: str = "", progress_done: int | None = None
     ) -> None:
-        """Update and report progress."""
+        """Update and report progress.
+
+        Also logs how long the previous stage took and the process's peak
+        resident memory, so a stalled job can be located from the log alone.
+        """
+        now = time.monotonic()
+        previous_stage = self.progress.current_stage
+        if previous_stage and self._stage_started is not None:
+            logger.info(
+                f"Finished stage '{previous_stage}' in {now - self._stage_started:.1f}s "
+                f"(peak rss {format_bytes(peak_rss_bytes())})"
+            )
+        self._stage_started = now
         self.progress.current_stage = stage
         self.progress.current_list_id = list_id
         if progress_done is not None:
@@ -206,8 +223,21 @@ class PipelineRunner:
             PipelineResult with success status and results
         """
         peptide_list_results: list[PeptideListResult] = []
+        pipeline_started = time.monotonic()
 
         try:
+            logger.info(
+                f"Pipeline config: {len(self.config.peptide_list_paths)} peptide list(s), "
+                f"fasta={self.config.fasta_path}, "
+                f"annotated_db={self.config.annotated_db_path}, "
+                f"annotations_db={self.config.annotations_db_path}, "
+                f"threads={self.config.threads}, "
+                f"filters={self.config.filter_policy.to_dict()}, "
+                f"go_edge_types={sorted(self.config.go_edge_types)}, "
+                f"go_include_self={self.config.go_include_self}, "
+                f"output_dir={self.config.output_dir}"
+            )
+
             # Stage 0: Initialize (load FASTA, reference data)
             self._update_progress("Initializing", progress_done=0)
             self._initialize()
@@ -267,6 +297,10 @@ class PipelineRunner:
                 )
 
             self._update_progress("Pipeline completed", progress_done=_PROGRESS_TOTAL)
+            logger.info(
+                f"Pipeline finished in {time.monotonic() - pipeline_started:.0f}s "
+                f"(peak rss {format_bytes(peak_rss_bytes())})"
+            )
 
             return PipelineResult(
                 success=True,
@@ -275,7 +309,10 @@ class PipelineRunner:
             )
 
         except Exception as e:
-            logger.exception("Pipeline failed")
+            logger.exception(
+                f"Pipeline failed after {time.monotonic() - pipeline_started:.0f}s "
+                f"in stage '{self.progress.current_stage}'"
+            )
             return PipelineResult(
                 success=False,
                 error_message=str(e),
@@ -291,7 +328,10 @@ class PipelineRunner:
             self._create_reference_snapshot()
 
         # Load background FASTA
-        logger.info(f"Loading background FASTA: {self.config.fasta_path}")
+        fasta_size = self.config.fasta_path.stat().st_size if self.config.fasta_path.exists() else 0
+        logger.info(
+            f"Loading background FASTA: {self.config.fasta_path} ({format_bytes(fasta_size)})"
+        )
         records = parse_fasta(self.config.fasta_path)
         self.proteins = build_protein_dict(records)
         logger.info(f"Loaded {len(self.proteins)} background proteins")
@@ -509,6 +549,9 @@ class PipelineRunner:
 
         work_dir = self.subset_fasta_path.parent
         diamond_output = work_dir / "diamond_results.tsv"
+        # Keep DIAMOND's console log with the job's logs (which survive cleanup)
+        # in web mode; next to the work files in CLI mode.
+        log_dir = self.config.job_dir / "logs" if self.config.job_dir else work_dir
 
         # Let DIAMOND return all hits passing the e-value threshold.
         # The tie-aware top_k cutoff is applied in filter_all_hits.
@@ -518,6 +561,7 @@ class PipelineRunner:
             output_path=diamond_output,
             evalue=self.config.filter_policy.max_evalue or 1e-10,
             threads=self.config.threads,
+            log_path=log_dir / "diamond.log",
         )
 
         logger.info(

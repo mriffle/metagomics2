@@ -1,6 +1,7 @@
 """FastAPI server application."""
 
 import json
+import logging
 import secrets
 import shutil
 from pathlib import Path
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from metagomics2 import __version__
 from metagomics2.config import get_settings
 from metagomics2.db.database import Database
+from metagomics2.logging_setup import configure_logging
 from metagomics2.models.job import (
     JobCreateResponse,
     JobInfo,
@@ -26,6 +28,9 @@ from metagomics2.models.job import (
 
 # Load validated settings from centralized config
 _cfg = get_settings()
+configure_logging("server", _cfg.logs_dir, _cfg.log_level)
+logger = logging.getLogger(__name__)
+logger.info(f"Metagomics 2 server v{__version__} starting (log: {_cfg.logs_dir / 'server.log'})")
 
 DATA_DIR = _cfg.data_dir
 JOBS_DIR = _cfg.jobs_dir

@@ -302,3 +302,36 @@ class TestListJobs:
             db.create_job(JobParams())
         jobs = db.list_jobs(limit=3)
         assert len(jobs) == 3
+
+
+class TestEventsAndStatusQueries:
+    """Tests for the event log and status-based job listing."""
+
+    def test_get_events_in_order(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        job_id = db.create_job(JobParams())
+        db.add_event(job_id, "started", "one")
+        db.add_event(job_id, "stage", "two")
+        db.add_event(job_id, "completed", "three")
+
+        events = db.get_events(job_id)
+        assert [e["event_type"] for e in events] == ["started", "stage", "completed"]
+        assert [e["message"] for e in events] == ["one", "two", "three"]
+        assert all(e["timestamp"] for e in events)
+
+    def test_get_events_empty(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        assert db.get_events("nope") == []
+
+    def test_list_job_ids_by_status(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        a = db.create_job(JobParams())
+        b = db.create_job(JobParams())
+        c = db.create_job(JobParams())
+        db.update_job_status(a, JobStatus.RUNNING)
+        db.update_job_status(b, JobStatus.RUNNING)
+        db.update_job_status(c, JobStatus.QUEUED)
+
+        assert db.list_job_ids_by_status(JobStatus.RUNNING) == [a, b]
+        assert db.list_job_ids_by_status(JobStatus.QUEUED) == [c]
+        assert db.list_job_ids_by_status(JobStatus.FAILED) == []

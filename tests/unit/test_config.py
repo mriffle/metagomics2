@@ -265,3 +265,39 @@ class TestSmtpSettings:
     def test_disabled_when_host_empty(self):
         s = SmtpSettings()
         assert s.enabled is False
+
+
+class TestLogLevel:
+    """METAGOMICS_LOG_LEVEL is read and normalised; logs_dir derives from data_dir."""
+
+    def _load(self, tmp_path: Path, env: dict[str, str]):
+        import os
+        from unittest.mock import patch
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir(exist_ok=True)
+        (config_dir / "databases.json").write_text(
+            '[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}]'
+        )
+        with patch.dict(
+            os.environ,
+            {"METAGOMICS_DATA_DIR": str(tmp_path), "METAGOMICS_CONFIG_DIR": str(config_dir), **env},
+        ):
+            return load_settings(config_dir=config_dir)
+
+    def test_default_is_info(self, tmp_path: Path):
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "METAGOMICS_LOG_LEVEL"}
+        from unittest.mock import patch
+        with patch.dict(os.environ, env, clear=True):
+            settings = self._load(tmp_path, {})
+        assert settings.log_level == "INFO"
+        assert settings.logs_dir == tmp_path / "logs"
+
+    def test_lowercase_is_normalised(self, tmp_path: Path):
+        settings = self._load(tmp_path, {"METAGOMICS_LOG_LEVEL": " debug "})
+        assert settings.log_level == "DEBUG"
+
+    def test_empty_falls_back_to_info(self, tmp_path: Path):
+        settings = self._load(tmp_path, {"METAGOMICS_LOG_LEVEL": ""})
+        assert settings.log_level == "INFO"

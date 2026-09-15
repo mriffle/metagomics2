@@ -609,7 +609,7 @@ The `--go` and `--taxonomy` flags allow using custom reference data files instea
 - If arguments are provided:
   - `metagomics2`, `run`, `version`, or flags (`-*`): passes through to the `metagomics2` CLI
   - Any other command (e.g., `metagomics2-build-annotations`): executed directly via `exec "$@"`
-- If no arguments: starts the **worker** as a background process, then starts the **web server** (uvicorn) in the foreground. Traps SIGTERM/SIGINT to cleanly shut down both processes.
+- If no arguments: starts the **worker** and the **web server** (uvicorn) as sibling background processes and supervises both. Traps SIGTERM/SIGINT to cleanly shut down both. If either process exits on its own, logs a `FATAL` line, stops the other, and exits `1` so Docker's restart policy restarts the container (see Section 19).
 
 ### Docker Compose (`docker-compose.example.yml`)
 
@@ -928,9 +928,11 @@ If no `databases.json` file exists, the config loader falls back to the `METAGOM
 │   └── list_001/
 │       └── (same structure)
 └── logs/
+    ├── pipeline.log                # Full worker log for this job
+    └── diamond.log                 # DIAMOND console output for this job
 ```
 
-After successful completion (with cleanup enabled), `inputs/` and `work/` are deleted to save disk space. Only `results/` persists.
+After successful completion (with cleanup enabled), `inputs/` and `work/` are deleted to save disk space. `results/` and `logs/` persist.
 
 ---
 
@@ -950,7 +952,35 @@ Triggered on GitHub release publish:
 
 ---
 
-## 19. Glossary
+## 19. Logging and Diagnostics
+
+All entry points configure logging through `logging_setup.configure_logging(component, log_dir, level)`:
+
+| Process | stderr (`docker logs`) | File |
+|---------|------------------------|------|
+| Worker | yes | `$METAGOMICS_DATA_DIR/logs/worker.log` (rotating, 20 MB × 5) |
+| Server | yes | `$METAGOMICS_DATA_DIR/logs/server.log` (rotating) |
+| CLI | yes | none |
+
+Format: `time pid logger-name LEVEL message`. The level comes from `METAGOMICS_LOG_LEVEL` (default `INFO`).
+
+**Per-job log.** `Worker._process_job` attaches a plain `FileHandler` for `jobs/<job_id>/logs/pipeline.log` to the root logger for the duration of the job and detaches it in `finally`, so every line logged by the pipeline for that job is captured in one file that survives cleanup.
+
+**Diagnostics logged by the worker:**
+- At startup (`log_system_info`): Python/OS, CPUs available to the process, total memory, cgroup memory limit (read from `/sys/fs/cgroup/memory.max` or the v1 equivalent), and the resolved `diamond` executable.
+- Per job: number of lists, FASTA size, database, filter policy, notification address.
+- Per stage (`PipelineRunner._update_progress`): duration of the previous stage and the process's peak RSS (`resource.getrusage`).
+- DIAMOND (`core/diamond.py`): the command line, input sizes, and the path of `diamond.log`. DIAMOND is started with `Popen` with stdout and stderr redirected to that file; while it runs, a heartbeat (default every 60 s) logs elapsed time, DIAMOND's RSS from `/proc/<pid>/status`, the output file size, and the last console line. On a non-zero exit the `DiamondError` includes the exit code (or the signal name, with an out-of-memory hint for signals) and the last 30 lines of `diamond.log`. DIAMOND output is parsed by streaming the file line by line with a progress line every million lines, rather than `readlines()`.
+
+**Job events.** Besides `started`/`completed`/`failed`/`error`, the worker adds a `stage` event on every stage change (including the list id for per-list stages). `Database.get_events(job_id)` returns them oldest first.
+
+**Orphaned jobs.** `Worker._recover_orphaned_jobs` runs once at startup and marks every job still in `running` as `failed` with a message explaining that the previous worker died mid-job. This is what turns a silent worker death into a visible failure.
+
+**Process supervision.** `docker-entrypoint.sh` starts the worker and uvicorn as sibling background processes and `wait -n`s on both. If either exits, it logs a `FATAL` line to stderr, terminates the other, and exits `1` so `restart: unless-stopped` restarts the container. Previously the worker was an unsupervised background process and its death left the container running with no worker.
+
+---
+
+## 20. Glossary
 
 | Term | Definition |
 |------|------------|
