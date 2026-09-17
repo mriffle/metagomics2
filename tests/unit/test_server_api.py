@@ -25,7 +25,10 @@ def _setup_config_dir(tmp_path: Path, databases=None):
     config_dir = tmp_path / "config"
     config_dir.mkdir(exist_ok=True)
     if databases is None:
-        databases = [{"name": "Test DB", "description": "Test", "path": "test.dmnd"}]
+        databases = [
+            {"name": "Test DB", "description": "Test", "path": "test.dmnd",
+             "annotations": "test.annotations.db"}
+        ]
     (config_dir / "databases.json").write_text(json.dumps(databases))
     return config_dir
 

@@ -876,7 +876,7 @@ Key components:
 
 Stored in `METAGOMICS_CONFIG_DIR` (default `./config`, `/config` in Docker):
 
-- **`databases.json`** (required) — JSON array of database entries. Each entry must have `name`, `description`, and `path`; `annotations` is optional. The server refuses to start if no databases are configured.
+- **`databases.json`** (required) — JSON array of database entries. Each entry must have `name`, `description`, `path`, and a non-empty `annotations` naming the companion `.annotations.db`; an entry without it is a startup error, because the pipeline would otherwise run DIAMOND to completion and only then fail. The server refuses to start if no databases are configured.
 - **`server.json`** (optional) — JSON object with server settings such as `allowed_origins` (list of strings for CORS).
 
 Example files are provided at `config/databases.example.json` and `config/server.example.json`.

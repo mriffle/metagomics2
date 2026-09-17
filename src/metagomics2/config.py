@@ -139,8 +139,9 @@ def _resolve_path(raw: str, base: Path) -> Path:
 def _load_databases_json(path: Path) -> list[DatabaseEntry]:
     """Load and validate a databases JSON config file.
 
-    The file must contain a JSON array of objects.  Each object must have at
-    least ``name``, ``description``, and ``path`` keys.
+    The file must contain a JSON array of objects.  Each object must have
+    ``name``, ``description``, ``path`` and a non-empty ``annotations`` (the
+    companion ``.annotations.db`` the pipeline needs after DIAMOND finishes).
 
     Raises:
         FileNotFoundError: If *path* does not exist.
@@ -165,10 +166,12 @@ def _load_databases_json(path: Path) -> list[DatabaseEntry]:
         if not isinstance(item, dict):
             raise ValueError(f"Database entry {i} must be an object, got {type(item).__name__}")
 
-        missing = [k for k in ("name", "description", "path") if k not in item]
+        missing = [k for k in ("name", "description", "path", "annotations") if not item.get(k)]
         if missing:
             raise ValueError(
-                f"Database entry {i} is missing required field(s): {', '.join(missing)}"
+                f"Database entry {i} is missing required field(s): {', '.join(missing)}. "
+                "Every database needs a companion annotations database "
+                "(build one with metagomics2-build-annotations)"
             )
 
         entries.append(
@@ -344,6 +347,13 @@ def load_settings(
                 legacy_list = json.loads(legacy_raw)
                 if isinstance(legacy_list, list) and legacy_list:
                     for item in legacy_list:
+                        if not item.get("annotations"):
+                            errors.append(
+                                f"METAGOMICS_DATABASES entry {item.get('name', '?')!r} has no "
+                                "'annotations' database; every database needs a companion "
+                                ".annotations.db"
+                            )
+                            continue
                         databases.append(
                             DatabaseEntry(
                                 name=item.get("name", ""),

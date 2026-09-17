@@ -28,7 +28,8 @@ def _setup_worker_config(tmp_path: Path):
     config_dir = tmp_path / "config"
     config_dir.mkdir(exist_ok=True)
     (config_dir / "databases.json").write_text(
-        json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd"}])
+        json.dumps([{"name": "Test DB", "description": "Test", "path": "test.dmnd",
+                     "annotations": "test.annotations.db"}])
     )
     with patch.dict(os.environ, {
         "METAGOMICS_DATA_DIR": str(tmp_path),

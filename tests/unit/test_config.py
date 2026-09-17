@@ -74,18 +74,21 @@ class TestLoadDatabasesJson:
         with pytest.raises(ValueError, match="missing required"):
             _load_databases_json(f)
 
-    def test_annotations_defaults_to_empty(self, tmp_path: Path):
+    @pytest.mark.parametrize("entry", [
+        {"name": "DB", "description": "desc", "path": "db.dmnd"},
+        {"name": "DB", "description": "desc", "path": "db.dmnd", "annotations": ""},
+    ])
+    def test_missing_annotations_rejected(self, tmp_path: Path, entry: dict):
+        """A database without its companion annotations DB would only fail after DIAMOND."""
         f = tmp_path / "databases.json"
-        f.write_text(json.dumps([
-            {"name": "DB", "description": "desc", "path": "db.dmnd"}
-        ]))
-        entries = _load_databases_json(f)
-        assert entries[0].annotations == ""
+        f.write_text(json.dumps([entry]))
+        with pytest.raises(ValueError, match="annotations"):
+            _load_databases_json(f)
 
     def test_multiple_entries(self, tmp_path: Path):
         f = tmp_path / "databases.json"
         f.write_text(json.dumps([
-            {"name": "A", "description": "a", "path": "a.dmnd"},
+            {"name": "A", "description": "a", "path": "a.dmnd", "annotations": "a.ann.db"},
             {"name": "B", "description": "b", "path": "b.dmnd", "annotations": "b.ann.db"},
         ]))
         entries = _load_databases_json(f)
@@ -137,7 +140,7 @@ class TestLoadSettings:
     def test_loads_from_json_files(self, tmp_path: Path):
         config_dir = self._make_config_dir(
             tmp_path,
-            databases=[{"name": "DB", "description": "d", "path": "x.dmnd"}],
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
         )
         with patch.dict(os.environ, {"METAGOMICS_DATA_DIR": str(tmp_path)}, clear=False):
             settings = load_settings(config_dir=config_dir)
@@ -159,7 +162,7 @@ class TestLoadSettings:
     def test_scalar_env_vars(self, tmp_path: Path):
         config_dir = self._make_config_dir(
             tmp_path,
-            databases=[{"name": "DB", "description": "d", "path": "x.dmnd"}],
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
         )
         env = {
             "METAGOMICS_DATA_DIR": str(tmp_path),
@@ -179,7 +182,7 @@ class TestLoadSettings:
     def test_server_json_allowed_origins(self, tmp_path: Path):
         config_dir = self._make_config_dir(
             tmp_path,
-            databases=[{"name": "DB", "description": "d", "path": "x.dmnd"}],
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
             server={"allowed_origins": ["https://a.com", "https://b.com"]},
         )
         with patch.dict(os.environ, {"METAGOMICS_DATA_DIR": str(tmp_path)}, clear=False):
@@ -194,7 +197,7 @@ class TestLoadSettings:
         env = {
             "METAGOMICS_DATA_DIR": str(tmp_path),
             "METAGOMICS_DATABASES": json.dumps([
-                {"name": "Legacy", "description": "d", "path": "old.dmnd"}
+                {"name": "Legacy", "description": "d", "path": "old.dmnd", "annotations": "old.db"}
             ]),
         }
         with patch.dict(os.environ, env, clear=False):
@@ -202,10 +205,23 @@ class TestLoadSettings:
         assert len(settings.databases) == 1
         assert settings.databases[0].name == "Legacy"
 
+    def test_legacy_env_var_requires_annotations(self, tmp_path: Path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        env = {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_DATABASES": json.dumps([
+                {"name": "Legacy", "description": "d", "path": "old.dmnd"}
+            ]),
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(RuntimeError, match="annotations"):
+                load_settings(config_dir=config_dir)
+
     def test_smtp_settings(self, tmp_path: Path):
         config_dir = self._make_config_dir(
             tmp_path,
-            databases=[{"name": "DB", "description": "d", "path": "x.dmnd"}],
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
         )
         env = {
             "METAGOMICS_DATA_DIR": str(tmp_path),
@@ -224,7 +240,7 @@ class TestLoadSettings:
     def test_derived_paths(self, tmp_path: Path):
         config_dir = self._make_config_dir(
             tmp_path,
-            databases=[{"name": "DB", "description": "d", "path": "x.dmnd"}],
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
         )
         with patch.dict(os.environ, {"METAGOMICS_DATA_DIR": str(tmp_path)}, clear=False):
             settings = load_settings(config_dir=config_dir)
