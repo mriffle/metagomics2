@@ -346,6 +346,17 @@ class Database:
                 (job_id, timestamp, event_type, message),
             )
 
+    def delete_job(self, job_id: str) -> None:
+        """Remove a job and its peptide lists and events.
+
+        Used to roll back a job whose upload failed part-way, so no orphan
+        row is left in the ``uploaded`` state.
+        """
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM job_events WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM peptide_lists WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+
     def regenerate_job_id(self, old_job_id: str, jobs_dir: Path) -> str:
         """Generate a new job ID and migrate all references.
 

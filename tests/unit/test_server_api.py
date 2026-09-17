@@ -350,6 +350,89 @@ class TestUploadSizeLimit:
 
             assert response.status_code == 413
             assert "maximum upload size" in response.json()["detail"].lower()
+            # No orphan job row or directory is left behind
+            assert test_db.list_jobs() == []
+            assert list((tmp_path / "jobs").iterdir()) == []
+
+    def test_peptides_exceeding_limit_rejected(self, tmp_path: Path, test_db):
+        """Peptide files are limited by their combined size, and nothing is left behind."""
+        (tmp_path / "jobs").mkdir(exist_ok=True)
+        config_dir = _setup_config_dir(tmp_path)
+
+        with patch.dict(os.environ, {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_ADMIN_PASSWORD": "testpass",
+            "METAGOMICS_CONFIG_DIR": str(config_dir),
+            "METAGOMICS_MAX_UPLOAD_MB": "1",
+        }):
+            config_module.reset_settings()
+            import metagomics2.server.app as app_module
+            importlib.reload(app_module)
+            app_module.db = test_db
+            app_module.JOBS_DIR = tmp_path / "jobs"
+
+            from fastapi.testclient import TestClient
+            client = TestClient(app_module.app)
+
+            fasta_content = b">P1\nMPEPTIDEK\n"
+            # Two peptide files of 600 KB each: fine alone, over 1 MB together
+            big = b"peptide_sequence\tquantity\n" + b"PEPTIDE\t1\n" * 60_000
+            response = client.post(
+                "/api/jobs",
+                files=[
+                    ("fasta", ("s.fasta", io.BytesIO(fasta_content), "application/octet-stream")),
+                    ("peptides", ("a.tsv", io.BytesIO(big), "text/tab-separated-values")),
+                    ("peptides", ("b.tsv", io.BytesIO(big), "text/tab-separated-values")),
+                ],
+                data={"params": json.dumps({"db_choice": "test.dmnd"})},
+            )
+
+            assert response.status_code == 413
+            assert "peptide" in response.json()["detail"].lower()
+            assert test_db.list_jobs() == []
+            assert list((tmp_path / "jobs").iterdir()) == []
+
+    def test_streaming_aborts_past_limit(self, tmp_path: Path):
+        """The stream is abandoned once it passes the limit; the disk is not filled first."""
+        import asyncio
+
+        from fastapi import UploadFile
+
+        from metagomics2.server.app import (
+            _WRITE_CHUNK_SIZE,
+            UploadTooLargeError,
+            _save_upload_streamed,
+        )
+
+        payload = b"x" * (10 * _WRITE_CHUNK_SIZE)  # 10 MB
+        limit = 2 * _WRITE_CHUNK_SIZE
+        dest = tmp_path / "upload.bin"
+
+        async def run():
+            upload = UploadFile(file=io.BytesIO(payload), filename="big.bin")
+            await _save_upload_streamed(upload, dest, limit)
+
+        with pytest.raises(UploadTooLargeError):
+            asyncio.run(run())
+        # At most the chunks up to the limit reached the disk, not the whole payload
+        assert dest.stat().st_size <= limit
+
+    def test_failed_upload_leaves_no_job(self, client, test_db, tmp_path: Path):
+        """An error while storing inputs rolls the job back entirely."""
+        import metagomics2.server.app as app_module
+
+        with patch.object(app_module, "_save_upload_streamed", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                client.post(
+                    "/api/jobs",
+                    files=[
+                        ("fasta", ("s.fasta", io.BytesIO(b">P1\nMPEPTIDEK\n"), "text/plain")),
+                        ("peptides", ("p.tsv", io.BytesIO(b"PEPTIDE\t1\n"), "text/plain")),
+                    ],
+                    data={"params": json.dumps({"db_choice": "test.dmnd"})},
+                )
+        assert test_db.list_jobs() == []
+        assert list((tmp_path / "jobs").iterdir()) == []
 
     def test_fasta_within_limit_accepted(self, tmp_path: Path, test_db):
         """A FASTA file within MAX_UPLOAD_MB should be accepted."""

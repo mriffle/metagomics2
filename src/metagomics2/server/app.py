@@ -127,16 +127,30 @@ async def get_config() -> dict[str, Any]:
     }
 
 
-async def _save_upload_streamed(upload: UploadFile, dest: Path) -> int:
-    """Stream an uploaded file to disk in chunks, returning total bytes written."""
+class UploadTooLargeError(Exception):
+    """Raised by :func:`_save_upload_streamed` when an upload passes its byte limit."""
+
+
+async def _save_upload_streamed(
+    upload: UploadFile, dest: Path, max_bytes: int | None = None
+) -> int:
+    """Stream an uploaded file to disk in chunks, returning total bytes written.
+
+    When ``max_bytes`` is given the stream is abandoned as soon as the running
+    total passes it, so a client cannot fill the disk before the size check.
+    At most one extra chunk (1 MB) beyond the limit reaches the file, and the
+    caller is expected to delete it.
+    """
     total = 0
     async with aiofiles.open(dest, "wb") as f:
         while True:
             chunk = await upload.read(_WRITE_CHUNK_SIZE)
             if not chunk:
                 break
-            await f.write(chunk)
             total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise UploadTooLargeError(total)
+            await f.write(chunk)
     return total
 
 
@@ -238,9 +252,38 @@ async def create_job(
 
     # Create job in database
     job_id = db.create_job(job_params)
-
-    # Create job directory structure
     job_dir = JOBS_DIR / job_id
+
+    # Anything that goes wrong from here until the job is queued (an oversized
+    # upload, a client that disconnects mid-stream, a disk error) must not
+    # leave a half-written job directory or an orphan "uploaded" row behind.
+    try:
+        await _store_job_inputs(job_id, job_dir, fasta, peptides)
+    except UploadTooLargeError as e:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        db.delete_job(job_id)
+        raise HTTPException(status_code=413, detail=str(e))
+    except BaseException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        db.delete_job(job_id)
+        raise
+
+    # Queue the job
+    db.update_job_status(job_id, JobStatus.QUEUED)
+    db.update_job_progress(job_id, 0, 1000)
+
+    return JobCreateResponse(job_id=job_id, status=JobStatus.QUEUED)
+
+
+async def _store_job_inputs(
+    job_id: str, job_dir: Path, fasta: UploadFile, peptides: list[UploadFile]
+) -> None:
+    """Create the job directory, stream the uploads into it and register the lists.
+
+    Raises:
+        UploadTooLargeError: with a user-facing message, when the FASTA or the
+            peptide files together exceed the configured upload limit.
+    """
     inputs_dir = job_dir / "inputs"
     peptides_dir = inputs_dir / "peptides"
     work_dir = job_dir / "work"
@@ -250,17 +293,16 @@ async def create_job(
     for d in [inputs_dir, peptides_dir, work_dir, results_dir, logs_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
-    # Save FASTA file (streamed in chunks)
+    # Save FASTA file (streamed in chunks, abandoned once it passes the limit)
     fasta_path = inputs_dir / "background.fasta"
-    fasta_size = await _save_upload_streamed(fasta, fasta_path)
-    if fasta_size > MAX_UPLOAD_BYTES:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=413,
-            detail=f"FASTA file exceeds the maximum upload size of {MAX_UPLOAD_MB} MB.",
+    try:
+        await _save_upload_streamed(fasta, fasta_path, MAX_UPLOAD_BYTES)
+    except UploadTooLargeError:
+        raise UploadTooLargeError(
+            f"FASTA file exceeds the maximum upload size of {MAX_UPLOAD_MB} MB."
         )
 
-    # Save peptide files (streamed in chunks)
+    # Save peptide files; the limit applies to their combined size
     total_peptide_size = 0
     for i, peptide_file in enumerate(peptides):
         list_id = f"list_{i:03d}"
@@ -268,26 +310,19 @@ async def create_job(
         safe_filename = f"{list_id}_{filename}"
         peptide_path = peptides_dir / safe_filename
 
-        file_size = await _save_upload_streamed(peptide_file, peptide_path)
-        total_peptide_size += file_size
-        if total_peptide_size > MAX_UPLOAD_BYTES:
-            shutil.rmtree(job_dir, ignore_errors=True)
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    "Total peptide file size exceeds the maximum upload size of "
-                    f"{MAX_UPLOAD_MB} MB."
-                ),
+        try:
+            file_size = await _save_upload_streamed(
+                peptide_file, peptide_path, MAX_UPLOAD_BYTES - total_peptide_size
             )
+        except UploadTooLargeError:
+            raise UploadTooLargeError(
+                "Total peptide file size exceeds the maximum upload size of "
+                f"{MAX_UPLOAD_MB} MB."
+            )
+        total_peptide_size += file_size
 
         # Register in database
         db.add_peptide_list(job_id, list_id, filename, str(peptide_path))
-
-    # Queue the job
-    db.update_job_status(job_id, JobStatus.QUEUED)
-    db.update_job_progress(job_id, 0, 1000)
-
-    return JobCreateResponse(job_id=job_id, status=JobStatus.QUEUED)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobInfo)

@@ -480,16 +480,16 @@ Key settings consumed by the server:
 1. Validate FASTA content (first 8KB header check)
 2. Validate `db_choice` against configured databases
 3. Create job record in SQLite
-4. Stream-save uploaded files to `<JOBS_DIR>/<job_id>/inputs/`
+4. Stream-save uploaded files to `<JOBS_DIR>/<job_id>/inputs/`. The stream is abandoned as soon as the FASTA, or the peptide files combined, passes `MAX_UPLOAD_MB` (413); at most one extra 1 MB chunk is ever written
 5. Register peptide lists in database
-6. Set job status to `QUEUED`
+6. Set job status to `QUEUED`. If anything fails between steps 3 and 6 (oversized upload, client disconnect, disk error) the job directory and the job row are removed, so no orphan `uploaded` job is left behind
 
 **Security**:
 - Job IDs are cryptographically random URL-safe tokens (128-bit entropy)
 - Admin auth uses `secrets.compare_digest` and session tokens stored in memory
 - File downloads are restricted to an allowlist of filenames (prevents path traversal)
 - The SPA catch-all route resolves the requested path and serves it only if the resolved file lies inside the frontend directory; `..` segments, percent-encoded dot segments and absolute paths fall back to `index.html`
-- Upload size limits enforced per-file
+- Upload size limits enforced while streaming (FASTA alone, peptide files combined), and a failed upload rolls the job back
 
 **Frontend serving**: The built SPA is served from `frontend/dist/` (override with `METAGOMICS_FRONTEND_DIR`). Static assets are mounted at `/assets/`, and all other non-API routes serve a file from that directory when the path names one (after the containment check above) and otherwise fall back to `index.html` for client-side routing.
 

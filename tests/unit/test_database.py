@@ -335,3 +335,25 @@ class TestEventsAndStatusQueries:
         assert db.list_job_ids_by_status(JobStatus.RUNNING) == [a, b]
         assert db.list_job_ids_by_status(JobStatus.QUEUED) == [c]
         assert db.list_job_ids_by_status(JobStatus.FAILED) == []
+
+
+class TestDeleteJob:
+    """Tests for rolling back a job."""
+
+    def test_delete_removes_job_lists_and_events(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        job_id = db.create_job(JobParams())
+        db.add_peptide_list(job_id, "list_000", "p.tsv", "/p.tsv")
+        db.add_event(job_id, "created", "x")
+        keep = db.create_job(JobParams())
+
+        db.delete_job(job_id)
+
+        assert db.get_job(job_id) is None
+        assert db.get_events(job_id) == []
+        assert db.get_job(keep) is not None
+
+    def test_delete_nonexistent_is_noop(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        db.delete_job("nope")
+        assert db.list_jobs() == []
