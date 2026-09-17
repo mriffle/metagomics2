@@ -357,3 +357,54 @@ class TestDeleteJob:
         db = Database(tmp_path / "test.db")
         db.delete_job("nope")
         assert db.list_jobs() == []
+
+
+class TestRegenerateJobId:
+    """Tests for regenerating a job ID together with its directory."""
+
+    def test_renames_rows_and_directory(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        jobs_dir = tmp_path / "jobs"
+        job_id = db.create_job(JobParams())
+        db.add_peptide_list(job_id, "list_000", "p.tsv", "/p.tsv")
+        db.add_event(job_id, "created", "x")
+        (jobs_dir / job_id / "results").mkdir(parents=True)
+
+        new_id = db.regenerate_job_id(job_id, jobs_dir)
+
+        assert new_id != job_id
+        assert db.get_job(job_id) is None
+        job = db.get_job(new_id)
+        assert job is not None
+        assert [pl.list_id for pl in job.peptide_lists] == ["list_000"]
+        assert len(db.get_events(new_id)) == 1
+        assert (jobs_dir / new_id / "results").is_dir()
+        assert not (jobs_dir / job_id).exists()
+
+    def test_missing_directory_is_fine(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        job_id = db.create_job(JobParams())
+        new_id = db.regenerate_job_id(job_id, tmp_path / "jobs")
+        assert db.get_job(new_id) is not None
+
+    def test_unknown_job_raises(self, tmp_path: Path):
+        db = Database(tmp_path / "test.db")
+        with pytest.raises(ValueError, match="Job not found"):
+            db.regenerate_job_id("nope", tmp_path / "jobs")
+
+    def test_rename_failure_rolls_back_id_change(self, tmp_path: Path):
+        """If the directory cannot be renamed the job keeps its old ID."""
+        from unittest.mock import patch
+
+        db = Database(tmp_path / "test.db")
+        jobs_dir = tmp_path / "jobs"
+        job_id = db.create_job(JobParams())
+        (jobs_dir / job_id).mkdir(parents=True)
+
+        with patch.object(Path, "rename", side_effect=OSError("read-only filesystem")):
+            with pytest.raises(OSError):
+                db.regenerate_job_id(job_id, jobs_dir)
+
+        assert db.get_job(job_id) is not None
+        assert (jobs_dir / job_id).exists()
+        assert db.list_jobs()[0].job_id == job_id

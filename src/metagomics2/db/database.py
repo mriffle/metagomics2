@@ -360,8 +360,11 @@ class Database:
     def regenerate_job_id(self, old_job_id: str, jobs_dir: Path) -> str:
         """Generate a new job ID and migrate all references.
 
-        Atomically updates the job_id in all database tables and renames
-        the job directory on disk.
+        Updates the job_id in all database tables and renames the job
+        directory on disk.  The rename happens inside the database
+        transaction, so if it fails the ID change is rolled back and the job
+        stays reachable under its old ID.  Callers must not do this while
+        the worker is processing the job.
 
         Args:
             old_job_id: Current job ID
@@ -372,7 +375,7 @@ class Database:
 
         Raises:
             ValueError: If the old job ID does not exist
-            OSError: If the directory rename fails
+            OSError: If the directory rename fails (no database change is kept)
         """
         new_job_id = generate_job_id()
 
@@ -398,11 +401,11 @@ class Database:
                 (new_job_id, old_job_id),
             )
 
-        # Rename directory on disk (if it exists)
-        old_dir = jobs_dir / old_job_id
-        if old_dir.exists():
-            new_dir = jobs_dir / new_job_id
-            old_dir.rename(new_dir)
+            # Rename directory on disk (if it exists) before the transaction
+            # commits; an OSError here rolls the ID change back.
+            old_dir = jobs_dir / old_job_id
+            if old_dir.exists():
+                old_dir.rename(jobs_dir / new_job_id)
 
         return new_job_id
 

@@ -353,6 +353,17 @@ async def regenerate_job_id(job_id: str) -> RegenerateIdResponse:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # The worker addresses a running job by its ID and directory; renaming
+    # either underneath it would fail the pipeline and strand the job.
+    if job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The job ID can only be regenerated once the job has completed or failed "
+                f"(current status: {job.status.value})."
+            ),
+        )
+
     try:
         new_job_id = db.regenerate_job_id(job_id, JOBS_DIR)
     except ValueError:

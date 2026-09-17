@@ -622,6 +622,47 @@ class TestDownloadResult:
             assert response.status_code == 200, f"Failed for {fname}"
 
 
+class TestRegenerateJobId:
+    """Tests for revoking a shared job link."""
+
+    def test_regenerates_completed_job(self, client, test_db, tmp_path: Path):
+        job_id = test_db.create_job(JobParams())
+        test_db.update_job_status(job_id, JobStatus.COMPLETED)
+        job_dir = tmp_path / "jobs" / job_id
+        (job_dir / "results").mkdir(parents=True)
+
+        response = client.post(f"/api/jobs/{job_id}/regenerate-id")
+
+        assert response.status_code == 200
+        new_id = response.json()["new_job_id"]
+        assert new_id != job_id
+        assert client.get(f"/api/jobs/{new_id}").status_code == 200
+        assert client.get(f"/api/jobs/{job_id}").status_code == 404
+        assert (tmp_path / "jobs" / new_id / "results").is_dir()
+        assert not job_dir.exists()
+
+    @pytest.mark.parametrize("status", [JobStatus.UPLOADED, JobStatus.QUEUED, JobStatus.RUNNING])
+    def test_refuses_unfinished_job(self, client, test_db, status: JobStatus):
+        """Renaming a job the worker may be processing would strand it."""
+        job_id = test_db.create_job(JobParams())
+        test_db.update_job_status(job_id, status)
+
+        response = client.post(f"/api/jobs/{job_id}/regenerate-id")
+
+        assert response.status_code == 409
+        assert status.value in response.json()["detail"]
+        assert client.get(f"/api/jobs/{job_id}").status_code == 200
+
+    def test_failed_job_can_be_regenerated(self, client, test_db):
+        job_id = test_db.create_job(JobParams())
+        test_db.update_job_status(job_id, JobStatus.FAILED, "boom")
+
+        assert client.post(f"/api/jobs/{job_id}/regenerate-id").status_code == 200
+
+    def test_nonexistent_job(self, client):
+        assert client.post("/api/jobs/nope/regenerate-id").status_code == 404
+
+
 class TestDownloadAllResults:
     """Tests for ZIP download endpoint."""
 

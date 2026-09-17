@@ -470,7 +470,7 @@ Key settings consumed by the server:
 | POST | `/api/admin/auth` | No | Admin login (returns session token) |
 | POST | `/api/jobs` | No | Create job (multipart: FASTA + peptide files + params JSON) |
 | GET | `/api/jobs/{job_id}` | No | Get job status and info |
-| POST | `/api/jobs/{job_id}/regenerate-id` | No | Regenerate job URL (revoke old link) |
+| POST | `/api/jobs/{job_id}/regenerate-id` | No | Regenerate job URL (revoke old link). 409 unless the job is `completed` or `failed`, because the worker addresses a running job by ID and directory |
 | GET | `/api/admin/jobs` | Admin | List all jobs |
 | GET | `/api/jobs/{job_id}/peptide-lists` | No | Get peptide list info for a job |
 | GET | `/api/jobs/{job_id}/results/{list_id}/{filename}` | No | Download result file |
@@ -527,7 +527,7 @@ SQLite database at `<DATA_DIR>/metagomics2.db` with three tables:
 
 Job statuses: `uploaded → queued → running → completed | failed`
 
-The `regenerate_job_id()` method atomically updates the job_id across all tables and renames the filesystem directory, enabling users to revoke shared links.
+The `regenerate_job_id()` method updates the job_id across all tables and renames the filesystem directory inside the same transaction, so a failed rename rolls the ID change back and the job stays reachable under its old ID. The API only allows it for completed or failed jobs.
 
 ### 9.4 Job Models (`models/job.py`)
 
