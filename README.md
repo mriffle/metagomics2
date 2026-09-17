@@ -369,6 +369,7 @@ The `.env` file holds simple scalar settings. Key variables:
 | `METAGOMICS_DIAMOND_BLOCK_SIZE` | *(DIAMOND default, 2.0)* | DIAMOND `--block-size`; the main memory/speed knob. See [DIAMOND performance and memory](#diamond-performance-and-memory) |
 | `METAGOMICS_DIAMOND_INDEX_CHUNKS` | *(DIAMOND default, 4)* | DIAMOND `--index-chunks`; 1 is fastest but uses more memory |
 | `METAGOMICS_DIAMOND_TMPDIR` | *(job work dir)* | DIAMOND `--tmpdir` for intermediate files, e.g. `/dev/shm` |
+| `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` | `500` | DIAMOND `--max-target-seqs`; hits kept per query before filtering, `0` = unlimited |
 | `SMTP_HOST` | *(empty)* | SMTP server for email notifications (leave empty to disable) |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USERNAME` | *(empty)* | SMTP username |
@@ -432,7 +433,7 @@ tie-aware `top_k` ranking selects which hits to keep.
 | `--min-pident` | `80` | Minimum percent identity. Applied in post-filtering (not passed to DIAMOND). |
 | `--min-qcov` | *(none)* | Minimum query coverage (percent of the query covered by the alignment, DIAMOND's `qcovhsp`). Applied in post-filtering. |
 | `--min-alnlen` | *(none)* | Minimum alignment length (residues). Applied in post-filtering. |
-| `--top-k` | `1` | Number of top-scoring hits to keep per query protein, ranked by bitscore. **Tie-aware**: if multiple hits share the same bitscore at the Kth position, all tied hits are retained. For example, with `top_k=1` and five hits tied at the best bitscore, all five are kept. This ensures annotation is not biased by arbitrary tie-breaking. |
+| `--top-k` | `1` | Number of top-scoring hits to keep per query protein, ranked by bitscore. **Tie-aware**: if multiple hits share the same bitscore at the Kth position, all tied hits are retained. For example, with `top_k=1` and five hits tied at the best bitscore, all five are kept. This ensures annotation is not biased by arbitrary tie-breaking. DIAMOND itself keeps at most `--diamond-max-target-seqs` hits per query (default 500, raised to `top_k` if larger), so ties beyond that cap cannot be recovered. |
 
 ### DIAMOND performance and memory
 
@@ -446,15 +447,17 @@ alternating between one busy core and all of them, and the results file stays
 empty until the very last block, because output is only written after all
 blocks are joined.
 
-Three optional settings control this. They map directly onto DIAMOND
-command-line options and are logged, together with an approximate memory
-budget, at the start of every job.
+Three optional settings control this, and a fourth caps the number of hits
+DIAMOND reports per query. They map directly onto DIAMOND command-line options
+and are logged, together with an approximate memory budget, at the start of
+every job.
 
 | Setting | DIAMOND option | Effect |
 |---------|----------------|--------|
 | `METAGOMICS_DIAMOND_BLOCK_SIZE` | `--block-size` | Billions of letters per block. Bigger means fewer blocks and a much faster search, at the cost of memory: budget about **6 GB per unit** (the DIAMOND manual's rule of thumb; real use is often lower). Roughly, blocks = database size in GB / block size. |
 | `METAGOMICS_DIAMOND_INDEX_CHUNKS` | `--index-chunks` | Chunks per block for index processing. `1` is fastest and recommended by the DIAMOND manual for high-memory servers, but raises memory use for a given block size. Leave at the default `4` unless you have headroom. |
 | `METAGOMICS_DIAMOND_TMPDIR` | `--tmpdir` | Where per-block intermediate results go. `/dev/shm` keeps them in RAM. Inside Docker `/dev/shm` is 64 MB unless you set `shm_size`, and it counts against the container's memory. |
+| `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` | `--max-target-seqs` | Hits DIAMOND keeps per query protein before the pipeline filters them (default `500`; `0` = unlimited). DIAMOND's own default of 25 is not tie-aware and would silently truncate the list that `--top-k` ranks. The pipeline raises this to `top_k` when that is larger and logs a warning naming how many query proteins hit the cap. |
 
 Guidance:
 
@@ -471,7 +474,7 @@ Guidance:
 - **Small machine**: leave all three empty.
 
 The same options are available on the CLI as `--diamond-block-size`,
-`--diamond-index-chunks`, and `--diamond-tmpdir`.
+`--diamond-index-chunks`, `--diamond-tmpdir`, and `--diamond-max-target-seqs`.
 
 ### GO Closure Settings
 

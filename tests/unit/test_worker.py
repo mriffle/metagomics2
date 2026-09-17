@@ -171,6 +171,7 @@ class TestWorkerDiamondTuning:
         assert config.diamond_block_size is None
         assert config.diamond_index_chunks is None
         assert config.diamond_tmpdir is None
+        assert config.diamond_max_target_seqs == 500
 
     def test_settings_passed_through(self, test_db, jobs_dir, fixtures_dir, tmp_path):
         config_dir = tmp_path / "config"
@@ -180,6 +181,7 @@ class TestWorkerDiamondTuning:
             "METAGOMICS_DIAMOND_BLOCK_SIZE": "12",
             "METAGOMICS_DIAMOND_INDEX_CHUNKS": "1",
             "METAGOMICS_DIAMOND_TMPDIR": "/dev/shm",
+            "METAGOMICS_DIAMOND_MAX_TARGET_SEQS": "0",
         }
         with patch.dict(os.environ, env):
             config_module.reset_settings()
@@ -192,6 +194,7 @@ class TestWorkerDiamondTuning:
         assert config.diamond_block_size == 12.0
         assert config.diamond_index_chunks == 1
         assert config.diamond_tmpdir == Path("/dev/shm")
+        assert config.diamond_max_target_seqs == 0
 
 
 class TestWorkerProcessJob:

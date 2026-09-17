@@ -25,7 +25,11 @@ from metagomics2.core.annotation import (
     annotate_peptide,
     load_subject_annotations_from_dict,
 )
-from metagomics2.core.diamond import run_diamond
+from metagomics2.core.diamond import (
+    DEFAULT_MAX_TARGET_SEQS,
+    count_queries_at_cap,
+    run_diamond,
+)
 from metagomics2.core.fasta import (
     build_protein_dict,
     parse_fasta,
@@ -105,6 +109,16 @@ class PipelineConfig:
     diamond_block_size: float | None = None
     diamond_index_chunks: int | None = None
     diamond_tmpdir: Path | None = None
+    # Per-query hit cap passed to DIAMOND (0 = unlimited).  Raised to top_k if
+    # top_k is larger, so the tie-aware top_k filter never sees a list that
+    # DIAMOND cut shorter than K.
+    diamond_max_target_seqs: int = DEFAULT_MAX_TARGET_SEQS
+
+    def effective_max_target_seqs(self) -> int:
+        """The ``--max-target-seqs`` value actually passed to DIAMOND."""
+        if self.diamond_max_target_seqs == 0:
+            return 0
+        return max(self.diamond_max_target_seqs, self.filter_policy.top_k or 0)
 
 
 # Weighted progress milestones (out of 1000) for each pipeline stage.
@@ -243,6 +257,7 @@ class PipelineRunner:
                 f"diamond_block_size={self.config.diamond_block_size}, "
                 f"diamond_index_chunks={self.config.diamond_index_chunks}, "
                 f"diamond_tmpdir={self.config.diamond_tmpdir}, "
+                f"diamond_max_target_seqs={self.config.effective_max_target_seqs()}, "
                 f"filters={self.config.filter_policy.to_dict()}, "
                 f"go_edge_types={sorted(self.config.go_edge_types)}, "
                 f"go_include_self={self.config.go_include_self}, "
@@ -564,13 +579,17 @@ class PipelineRunner:
         # in web mode; next to the work files in CLI mode.
         log_dir = self.config.job_dir / "logs" if self.config.job_dir else work_dir
 
-        # Let DIAMOND return all hits passing the e-value threshold.
-        # The tie-aware top_k cutoff is applied in filter_all_hits.
+        # DIAMOND applies its own per-query hit cap (--max-target-seqs) before
+        # the pipeline's tie-aware top_k filter runs, and that cap is not
+        # tie-aware.  Pass it explicitly, never below top_k, and report
+        # queries that hit it so truncation is visible in the log.
+        max_target_seqs = self.config.effective_max_target_seqs()
         diamond_result = run_diamond(
             query_fasta=self.subset_fasta_path,
             db_path=self.config.annotated_db_path,
             output_path=diamond_output,
             evalue=self.config.filter_policy.max_evalue or 1e-10,
+            max_target_seqs=max_target_seqs,
             threads=self.config.threads,
             log_path=log_dir / "diamond.log",
             block_size=self.config.diamond_block_size,
@@ -583,6 +602,15 @@ class PipelineRunner:
             f"DIAMOND returned {diamond_result.n_hits} hits "
             f"for {diamond_result.n_queries} query proteins"
         )
+        n_capped = count_queries_at_cap(diamond_result.hits_by_query, max_target_seqs)
+        if n_capped:
+            logger.warning(
+                f"{n_capped} of {diamond_result.n_queries} query proteins returned the "
+                f"DIAMOND per-query hit cap of {max_target_seqs}; further hits, including "
+                "any tied with the last one kept, were discarded by DIAMOND. Raise "
+                "METAGOMICS_DIAMOND_MAX_TARGET_SEQS (or --diamond-max-target-seqs; 0 = "
+                "unlimited) if those hits matter."
+            )
 
         # Apply filter policy (pident, evalue thresholds, top_k ranking, etc.)
         self._update_progress("Filtering homology hits", progress_done=_PROGRESS_HOMOLOGY)
@@ -736,6 +764,7 @@ class PipelineRunner:
                 "diamond_tmpdir": (
                     str(self.config.diamond_tmpdir) if self.config.diamond_tmpdir else None
                 ),
+                "diamond_max_target_seqs": self.config.effective_max_target_seqs(),
             },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=(

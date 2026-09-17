@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from metagomics2 import __version__
+from metagomics2.core.diamond import DEFAULT_MAX_TARGET_SEQS
 from metagomics2.core.filtering import FilterPolicy
 from metagomics2.logging_setup import configure_logging
 from metagomics2.pipeline.runner import PipelineConfig, PipelineProgress, run_pipeline
@@ -105,6 +106,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.diamond_index_chunks is not None and args.diamond_index_chunks < 1:
         print("Error: --diamond-index-chunks must be at least 1", file=sys.stderr)
         return 1
+    if args.diamond_max_target_seqs is not None and args.diamond_max_target_seqs < 0:
+        print(
+            "Error: --diamond-max-target-seqs must be 0 (unlimited) or a positive integer",
+            file=sys.stderr,
+        )
+        return 1
 
     # Build config
     config = PipelineConfig(
@@ -129,6 +136,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         diamond_block_size=args.diamond_block_size,
         diamond_index_chunks=args.diamond_index_chunks,
         diamond_tmpdir=Path(args.diamond_tmpdir) if args.diamond_tmpdir else None,
+        diamond_max_target_seqs=(
+            args.diamond_max_target_seqs
+            if args.diamond_max_target_seqs is not None
+            else DEFAULT_MAX_TARGET_SEQS
+        ),
     )
 
     # Run pipeline
@@ -239,6 +251,16 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="DIAMOND --tmpdir for intermediate files, e.g. /dev/shm to keep them in RAM "
              "(default: the work directory).",
+    )
+    diamond_group.add_argument(
+        "--diamond-max-target-seqs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="DIAMOND --max-target-seqs: hits kept per query protein before filtering; "
+             "raised to --top-k if that is larger, 0 means unlimited "
+             f"(default: {DEFAULT_MAX_TARGET_SEQS}). DIAMOND's own default of 25 would "
+             "silently drop hits, including ties, before the tie-aware top-k filter.",
     )
 
     # Filter parameters

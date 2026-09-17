@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from metagomics2.core.diamond import DEFAULT_MAX_TARGET_SEQS
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,6 +86,9 @@ class Settings:
     diamond_block_size: float | None = None
     diamond_index_chunks: int | None = None
     diamond_tmpdir: Path | None = None
+    # Per-query hit cap passed as --max-target-seqs (0 = unlimited). Always
+    # raised to at least the job's top_k by the pipeline.
+    diamond_max_target_seqs: int = DEFAULT_MAX_TARGET_SEQS
 
     # --- Logging ---
     log_level: str = "INFO"
@@ -290,6 +295,18 @@ def load_settings(
     raw_tmpdir = os.environ.get("METAGOMICS_DIAMOND_TMPDIR", "").strip()
     if raw_tmpdir:
         diamond_tmpdir = Path(raw_tmpdir)
+    diamond_max_target_seqs = DEFAULT_MAX_TARGET_SEQS
+    raw_max_target_seqs = os.environ.get("METAGOMICS_DIAMOND_MAX_TARGET_SEQS", "").strip()
+    if raw_max_target_seqs:
+        try:
+            diamond_max_target_seqs = int(raw_max_target_seqs)
+            if diamond_max_target_seqs < 0:
+                raise ValueError
+        except ValueError:
+            errors.append(
+                f"METAGOMICS_DIAMOND_MAX_TARGET_SEQS must be a non-negative integer "
+                f"(0 = unlimited), got {raw_max_target_seqs!r}"
+            )
     cleanup_on_success = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_SUCCESS", "true"))
     cleanup_on_failure = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true"))
 
@@ -402,6 +419,7 @@ def load_settings(
         diamond_block_size=diamond_block_size,
         diamond_index_chunks=diamond_index_chunks,
         diamond_tmpdir=diamond_tmpdir,
+        diamond_max_target_seqs=diamond_max_target_seqs,
         log_level=log_level,
         poll_interval=poll_interval,
         cleanup_on_success=cleanup_on_success,

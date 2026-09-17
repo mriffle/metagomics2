@@ -32,6 +32,12 @@ DIAMOND_OUTFMT_COLUMNS = [
     "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovhsp",
 ]
 
+# Default for ``--max-target-seqs``.  DIAMOND's own default is 25, which
+# silently truncates the hit list before the pipeline's tie-aware top_k filter
+# ever sees it.  500 is far above any realistic top_k while still bounding the
+# output size on TrEMBL-scale databases.  0 means unlimited.
+DEFAULT_MAX_TARGET_SEQS = 500
+
 
 def parse_uniprot_accession(subject_id: str) -> str:
     """Extract the bare UniProt accession from a DIAMOND subject ID.
@@ -143,9 +149,11 @@ def run_diamond(
         db_path: Path to the DIAMOND-formatted database (.dmnd)
         output_path: Path to write the tabular output
         evalue: Maximum e-value threshold for DIAMOND search
-        max_target_seqs: Maximum number of target sequences per query.
-            If None, --max-target-seqs is not passed and DIAMOND uses its
-            own default (25 per query).
+        max_target_seqs: Maximum number of target sequences per query
+            (``--max-target-seqs``; 0 means unlimited).  If None the flag is
+            not passed and DIAMOND uses its own default of 25 per query,
+            which is too few for the pipeline; callers should pass
+            ``DEFAULT_MAX_TARGET_SEQS`` or a larger value.
         threads: Number of CPU threads to use
         log_path: File that receives DIAMOND's console output.  Defaults to
             ``diamond.log`` next to the output file.
@@ -239,6 +247,18 @@ def run_diamond(
     result = parse_diamond_output(output_path)
     result.command = cmd
     return result
+
+
+def count_queries_at_cap(hits_by_query: dict[str, list[HomologyHit]], cap: int) -> int:
+    """Number of queries whose hit count reached DIAMOND's per-query cap.
+
+    A query with exactly ``cap`` hits may have had further hits, including
+    ties at the cutoff, discarded by DIAMOND.  Returns 0 when ``cap`` is 0
+    (unlimited).
+    """
+    if cap <= 0:
+        return 0
+    return sum(1 for hits in hits_by_query.values() if len(hits) >= cap)
 
 
 # DIAMOND's documentation says to expect roughly six times the block size in

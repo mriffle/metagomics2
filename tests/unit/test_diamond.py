@@ -10,6 +10,7 @@ from metagomics2.core.diamond import (
     DIAMOND_OUTFMT_COLUMNS,
     DiamondError,
     _iter_lines_with_progress,
+    count_queries_at_cap,
     estimate_diamond_memory_bytes,
     parse_diamond_output,
     run_diamond,
@@ -271,6 +272,15 @@ class TestDiamondTuningOptions:
         assert cmd[start + 2 + len(DIAMOND_OUTFMT_COLUMNS)].startswith("--")
 
     @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_max_target_seqs_flag_pairing(self, mock_popen, tmp_path):
+        cmd, _ = self._run(mock_popen, tmp_path, max_target_seqs=500)
+        assert cmd[cmd.index("--max-target-seqs") + 1] == "500"
+        cmd, _ = self._run(mock_popen, tmp_path, max_target_seqs=0)
+        assert cmd[cmd.index("--max-target-seqs") + 1] == "0"
+        cmd, _ = self._run(mock_popen, tmp_path)
+        assert "--max-target-seqs" not in cmd
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
     def test_fractional_block_size_formatting(self, mock_popen, tmp_path):
         cmd, _ = self._run(mock_popen, tmp_path, block_size=0.5)
         assert cmd[cmd.index("--block-size") + 1] == "0.5"
@@ -337,3 +347,22 @@ class TestStreamingParse:
             "Parsing DIAMOND output: 2 lines read so far",
             "Parsing DIAMOND output: 4 lines read so far",
         ]
+
+
+class TestCountQueriesAtCap:
+    def _hits(self, n):
+        from metagomics2.core.filtering import HomologyHit
+        return [
+            HomologyHit("q", f"s{i}", evalue=1e-9, bitscore=50.0, pident=90.0, qcov=90.0, alnlen=10)
+            for i in range(n)
+        ]
+
+    def test_counts_queries_at_or_above_cap(self):
+        hits = {"a": self._hits(3), "b": self._hits(2), "c": self._hits(4)}
+        assert count_queries_at_cap(hits, 3) == 2
+
+    def test_zero_cap_means_unlimited(self):
+        assert count_queries_at_cap({"a": self._hits(3)}, 0) == 0
+
+    def test_empty(self):
+        assert count_queries_at_cap({}, 25) == 0

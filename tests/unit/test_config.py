@@ -347,3 +347,17 @@ class TestDiamondTuning:
     def test_invalid_index_chunks_rejected(self, tmp_path: Path, bad: str):
         with pytest.raises(RuntimeError, match="METAGOMICS_DIAMOND_INDEX_CHUNKS"):
             self._load(tmp_path, {"METAGOMICS_DIAMOND_INDEX_CHUNKS": bad})
+
+    def test_max_target_seqs_default(self, tmp_path: Path):
+        settings = self._load(tmp_path, {"METAGOMICS_DIAMOND_MAX_TARGET_SEQS": ""})
+        assert settings.diamond_max_target_seqs == 500
+
+    @pytest.mark.parametrize(("raw", "expected"), [("0", 0), (" 1000 ", 1000), ("25", 25)])
+    def test_max_target_seqs_parsed(self, tmp_path: Path, raw: str, expected: int):
+        settings = self._load(tmp_path, {"METAGOMICS_DIAMOND_MAX_TARGET_SEQS": raw})
+        assert settings.diamond_max_target_seqs == expected
+
+    @pytest.mark.parametrize("bad", ["-1", "2.5", "abc"])
+    def test_invalid_max_target_seqs_rejected(self, tmp_path: Path, bad: str):
+        with pytest.raises(RuntimeError, match="METAGOMICS_DIAMOND_MAX_TARGET_SEQS"):
+            self._load(tmp_path, {"METAGOMICS_DIAMOND_MAX_TARGET_SEQS": bad})

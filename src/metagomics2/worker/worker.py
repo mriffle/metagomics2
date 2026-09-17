@@ -279,6 +279,7 @@ class Worker:
             diamond_block_size=_cfg.diamond_block_size,
             diamond_index_chunks=_cfg.diamond_index_chunks,
             diamond_tmpdir=_cfg.diamond_tmpdir,
+            diamond_max_target_seqs=_cfg.diamond_max_target_seqs,
         )
 
 
@@ -299,7 +300,8 @@ def main() -> None:
         "DIAMOND tuning: "
         f"block_size={block_size if block_size is not None else 'default (2.0)'}, "
         f"index_chunks={index_chunks if index_chunks is not None else 'default (4)'}, "
-        f"tmpdir={_cfg.diamond_tmpdir or 'default (job work dir)'}"
+        f"tmpdir={_cfg.diamond_tmpdir or 'default (job work dir)'}, "
+        f"max_target_seqs={_cfg.diamond_max_target_seqs or 'unlimited'}"
     )
     logger.info(
         f"Worker log: {_cfg.logs_dir / 'worker.log'}; per-job logs: {JOBS_DIR}/<job_id>/logs/"

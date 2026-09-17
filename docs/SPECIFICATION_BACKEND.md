@@ -142,7 +142,7 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 - Write a FASTA file containing only the hit proteins from Stage 2 (`core/fasta.py: write_subset_fasta`). This becomes the query input for DIAMOND.
 
 ### Stage 4: Homology Search (DIAMOND)
-- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter.
+- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter. `--max-target-seqs` is always passed explicitly: `PipelineConfig.diamond_max_target_seqs` (default 500 from `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` / `--diamond-max-target-seqs`, `0` = unlimited) raised to `top_k` when that is larger, because DIAMOND's own default of 25 is not tie-aware. After parsing, `count_queries_at_cap` reports how many query proteins returned exactly the cap and the runner logs a warning if any did; the effective cap is recorded in the manifest as `diamond_max_target_seqs`.
 - **Parse results** (`core/filtering.py: parse_blast_tabular`): Parse the tabular output into `HomologyHit` objects grouped by query protein.
 - **Filter hits** (`core/filtering.py: filter_all_hits`):
   1. **Threshold filters** (AND logic): `max_evalue`, `min_pident`, `min_qcov`, `min_alnlen`
@@ -318,6 +318,12 @@ class PipelineConfig:
     go_include_self: bool = True
     mock_hits_path: Path | None = None   # Testing only
     mock_subject_annotations_path: Path | None = None  # Testing only
+    diamond_block_size: float | None = None      # DIAMOND --block-size (None = DIAMOND default)
+    diamond_index_chunks: int | None = None      # DIAMOND --index-chunks
+    diamond_tmpdir: Path | None = None           # DIAMOND --tmpdir
+    diamond_max_target_seqs: int = 500           # DIAMOND --max-target-seqs (0 = unlimited)
+
+    def effective_max_target_seqs(self) -> int: ...  # 0, or max(diamond_max_target_seqs, top_k)
 ```
 
 ### `PipelineProgress` (`pipeline/runner.py`)
@@ -375,6 +381,8 @@ This produces a non-redundant set of all GO terms that describe the peptide's fu
 ### 7.4 Tie-Aware Top-K Filtering (`core/filtering.py`)
 
 The top_k filter ranks hits by bitscore descending. At the boundary (Kth position), if multiple hits share the same bitscore, **all tied hits are retained**. Example: `top_k=1` with 5 hits all scoring 200.0 → all 5 kept. This prevents arbitrary bias from tie-breaking.
+
+The guarantee only holds for hits DIAMOND actually reported. DIAMOND applies its own per-query cap (`--max-target-seqs`) first, and that cap is not tie-aware, so the pipeline passes a cap that is never below `top_k` (default 500) and warns when any query fills it (see Stage 4).
 
 ### 7.5 Aggregation (`core/aggregation.py`)
 
@@ -893,6 +901,7 @@ If no `databases.json` file exists, the config loader falls back to the `METAGOM
 | `METAGOMICS_DIAMOND_BLOCK_SIZE` | *(empty = DIAMOND default 2.0)* | Worker | Passed as `--block-size`; validated as a positive number. Main DIAMOND memory/speed knob (~6 GB per unit) |
 | `METAGOMICS_DIAMOND_INDEX_CHUNKS` | *(empty = DIAMOND default 4)* | Worker | Passed as `--index-chunks`; validated as a positive integer |
 | `METAGOMICS_DIAMOND_TMPDIR` | *(empty = job work dir)* | Worker | Passed as `--tmpdir`; created if missing |
+| `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` | `500` | Worker | Passed as `--max-target-seqs` (raised to `top_k` if larger); non-negative integer, `0` = unlimited |
 | `METAGOMICS_VERSION` | `0.1.0` | All | Runtime version (set by Docker build) |
 | `DIAMOND_VERSION` | *(set at build)* | Server | DIAMOND version string for config API |
 | `SMTP_HOST` | *(empty)* | Worker | SMTP server for notifications |
