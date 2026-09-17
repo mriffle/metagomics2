@@ -401,7 +401,28 @@ async def download_all_results(job_id: str) -> FileResponse:
 
 
 # Frontend SPA support
-FRONTEND_DIR = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+_DEFAULT_FRONTEND_DIR = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+FRONTEND_DIR = _cfg.frontend_dir or _DEFAULT_FRONTEND_DIR
+
+
+def _resolve_frontend_file(frontend_dir: Path, full_path: str) -> Path | None:
+    """Return the file inside ``frontend_dir`` that ``full_path`` names, or None.
+
+    The URL path is untrusted. Joining it onto the directory and resolving the
+    result lets ``..`` segments and absolute paths escape the directory, so the
+    resolved candidate must still lie inside the resolved directory and must be
+    a regular file. Anything else falls back to ``index.html``.
+    """
+    base = frontend_dir.resolve()
+    try:
+        candidate = (base / full_path).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not candidate.is_relative_to(base) or not candidate.is_file():
+        return None
+    return candidate
+
+
 if FRONTEND_DIR.exists():
     # Serve static assets (JS, CSS, images, etc.)
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
@@ -409,9 +430,9 @@ if FRONTEND_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:
         """Serve the SPA index.html for all non-API routes."""
-        # Try to serve the exact file first
-        file_path = FRONTEND_DIR / full_path
-        if full_path and file_path.is_file():
+        # Serve a real file from the dist directory if the path names one
+        file_path = _resolve_frontend_file(FRONTEND_DIR, full_path) if full_path else None
+        if file_path is not None:
             return FileResponse(file_path)
         # Fall back to index.html for SPA routing
         return FileResponse(FRONTEND_DIR / "index.html")

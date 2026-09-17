@@ -449,6 +449,7 @@ Key settings consumed by the server:
 | `threads` | `METAGOMICS_THREADS` env var | DIAMOND thread count |
 | `max_upload_mb` | `METAGOMICS_MAX_UPLOAD_MB` env var | Max upload size |
 | `allowed_origins` | `server.json` config file | CORS allowed origins (default: `["*"]`) |
+| `frontend_dir` | `METAGOMICS_FRONTEND_DIR` env var | Built SPA directory (default: `frontend/dist` next to the package) |
 
 **API Endpoints**:
 | Method | Path | Auth | Description |
@@ -477,9 +478,10 @@ Key settings consumed by the server:
 - Job IDs are cryptographically random URL-safe tokens (128-bit entropy)
 - Admin auth uses `secrets.compare_digest` and session tokens stored in memory
 - File downloads are restricted to an allowlist of filenames (prevents path traversal)
+- The SPA catch-all route resolves the requested path and serves it only if the resolved file lies inside the frontend directory; `..` segments, percent-encoded dot segments and absolute paths fall back to `index.html`
 - Upload size limits enforced per-file
 
-**Frontend serving**: The built SPA is served from `frontend/dist/`. Static assets are mounted at `/assets/`, and all other non-API routes fall back to `index.html` for client-side routing.
+**Frontend serving**: The built SPA is served from `frontend/dist/` (override with `METAGOMICS_FRONTEND_DIR`). Static assets are mounted at `/assets/`, and all other non-API routes serve a file from that directory when the path names one (after the containment check above) and otherwise fall back to `index.html` for client-side routing.
 
 ### 9.2 Background Worker (`worker/worker.py`)
 
@@ -880,6 +882,7 @@ If no `databases.json` file exists, the config loader falls back to the `METAGOM
 | `METAGOMICS_DATA_DIR` | `/data` | Server, Worker | Base directory for persistent storage |
 | `METAGOMICS_DATABASES_DIR` | `/databases` | Server, Worker | Directory containing .dmnd and .annotations.db files |
 | `METAGOMICS_CONFIG_DIR` | `./config` | Server, Worker | Directory containing JSON config files (`databases.json`, `server.json`) |
+| `METAGOMICS_FRONTEND_DIR` | *(empty = `frontend/dist` next to the package)* | Server | Directory holding the built SPA (`index.html`, `assets/`) |
 | `METAGOMICS_ADMIN_PASSWORD` | *(empty)* | Server | Admin panel password |
 | `METAGOMICS_THREADS` | `4` | Server, Worker | DIAMOND thread count |
 | `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Server | Maximum upload file size in MB |

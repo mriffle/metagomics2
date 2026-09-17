@@ -359,6 +359,7 @@ The `.env` file holds simple scalar settings. Key variables:
 | `METAGOMICS_DATA_DIR` | `/data` | Persistent data directory (jobs, SQLite DB) |
 | `METAGOMICS_DATABASES_DIR` | `/databases` | Directory containing `.dmnd` and `.annotations.db` files |
 | `METAGOMICS_CONFIG_DIR` | `./config` | Directory containing JSON config files |
+| `METAGOMICS_FRONTEND_DIR` | *(bundled `frontend/dist`)* | Directory holding the built web frontend; only needed when serving a build from elsewhere |
 | `METAGOMICS_THREADS` | `4` | CPU threads for DIAMOND |
 | `METAGOMICS_ADMIN_PASSWORD` | *(empty)* | Password for the admin dashboard |
 | `METAGOMICS_MAX_UPLOAD_MB` | `1024` | Max upload size in MB |

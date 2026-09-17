@@ -13,6 +13,7 @@ services:
       - METAGOMICS_DATA_DIR=/data
       - METAGOMICS_DATABASES_DIR=/databases
       - METAGOMICS_CONFIG_DIR=/config
+      - METAGOMICS_FRONTEND_DIR=${METAGOMICS_FRONTEND_DIR:-}
       - METAGOMICS_THREADS=${METAGOMICS_THREADS:-4}
       # DIAMOND performance/memory tuning; see the comments in .env.example
       # before setting these. Empty means DIAMOND's defaults.

@@ -65,6 +65,9 @@ class Settings:
     jobs_dir: Path = field(default=Path("/data/jobs"))
     db_path: Path = field(default=Path("/data/metagomics2.db"))
     databases_dir: Path = Path("/databases")
+    # Built frontend (SPA) directory served by the web server; None means the
+    # server's built-in default (<repo>/frontend/dist).
+    frontend_dir: Path | None = None
 
     # --- Annotated databases (loaded from JSON config) ---
     databases: list[DatabaseEntry] = field(default_factory=list)
@@ -254,6 +257,8 @@ def load_settings(
     site_url = os.environ.get("SITE_URL", "")
     poll_interval = int(os.environ.get("METAGOMICS_POLL_INTERVAL", "5"))
     log_level = os.environ.get("METAGOMICS_LOG_LEVEL", "INFO").strip().upper() or "INFO"
+    raw_frontend_dir = os.environ.get("METAGOMICS_FRONTEND_DIR", "").strip()
+    frontend_dir = Path(raw_frontend_dir) if raw_frontend_dir else None
 
     # --- DIAMOND tuning (all optional; empty means use DIAMOND's defaults) ---
     errors: list[str] = []
@@ -386,6 +391,7 @@ def load_settings(
         jobs_dir=jobs_dir,
         db_path=db_path,
         databases_dir=databases_dir,
+        frontend_dir=frontend_dir,
         databases=databases,
         threads=threads,
         admin_password=admin_password,

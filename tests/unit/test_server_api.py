@@ -562,3 +562,67 @@ class TestDownloadAllResults:
     def test_download_all_nonexistent_job(self, client):
         response = client.get("/api/jobs/nonexistent/results/all_results.zip")
         assert response.status_code == 404
+
+
+class TestFrontendPathTraversal:
+    """The SPA catch-all must never serve files outside the frontend directory."""
+
+    @staticmethod
+    def _make_dist(tmp_path: Path) -> Path:
+        dist = tmp_path / "dist"
+        (dist / "assets").mkdir(parents=True)
+        (dist / "index.html").write_text("<html>index</html>")
+        (dist / "app.js").write_text("console.log('app')")
+        (tmp_path / "secret.txt").write_text("SECRET")
+        return dist
+
+    def test_resolve_file_inside_dist(self, tmp_path: Path):
+        from metagomics2.server.app import _resolve_frontend_file
+
+        dist = self._make_dist(tmp_path)
+        assert _resolve_frontend_file(dist, "app.js") == (dist / "app.js").resolve()
+
+    @pytest.mark.parametrize(
+        "full_path",
+        ["../secret.txt", "foo/../../secret.txt", "/etc/passwd", "", "missing.js", "assets"],
+    )
+    def test_resolve_rejects_escapes_and_non_files(self, tmp_path: Path, full_path: str):
+        from metagomics2.server.app import _resolve_frontend_file
+
+        dist = self._make_dist(tmp_path)
+        assert _resolve_frontend_file(dist, full_path) is None
+
+    def test_http_requests_cannot_escape_dist(self, tmp_path: Path, test_db):
+        """Percent-encoded dot segments and absolute paths fall back to index.html.
+
+        The test client normalises a raw ``..`` before sending, but delivers
+        ``%2e%2e`` decoded, which is exactly what a hand-crafted request does.
+        """
+        (tmp_path / "jobs").mkdir(exist_ok=True)
+        config_dir = _setup_config_dir(tmp_path)
+        dist = self._make_dist(tmp_path)
+
+        with patch.dict(os.environ, {
+            "METAGOMICS_DATA_DIR": str(tmp_path),
+            "METAGOMICS_ADMIN_PASSWORD": "testpass",
+            "METAGOMICS_CONFIG_DIR": str(config_dir),
+            "METAGOMICS_FRONTEND_DIR": str(dist),
+        }):
+            config_module.reset_settings()
+            import metagomics2.server.app as app_module
+            importlib.reload(app_module)
+            app_module.db = test_db
+            app_module.JOBS_DIR = tmp_path / "jobs"
+
+            from fastapi.testclient import TestClient
+            client = TestClient(app_module.app)
+
+            assert client.get("/app.js").text == "console.log('app')"
+            assert client.get("/job/abc").text == "<html>index</html>"
+
+            for path in ("/%2e%2e/secret.txt", "/foo/%2e%2e/%2e%2e/secret.txt", "/%2Fetc/passwd"):
+                response = client.get(path)
+                assert response.status_code == 200, path
+                assert response.text == "<html>index</html>", path
+
+        config_module.reset_settings()
