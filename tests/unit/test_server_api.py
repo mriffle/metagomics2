@@ -638,6 +638,49 @@ class TestDownloadAllResults:
         assert response.status_code == 200
         assert "zip" in response.headers.get("content-type", "")
 
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            assert zf.namelist() == ["list_000/coverage.csv"]
+            assert zf.read("list_000/coverage.csv") == b"test"
+        # No stray temporary file is left in the job directory
+        job_dir = tmp_path / "jobs" / job_id
+        assert [p.name for p in job_dir.iterdir()] == ["results"]
+
+    def test_zip_never_nests_a_previous_archive(self, tmp_path: Path):
+        """A stale all_results.zip inside results/ is skipped, not zipped into itself."""
+        import zipfile
+
+        from metagomics2.server.app import _build_results_zip
+
+        results_dir = tmp_path / "job" / "results"
+        (results_dir / "list_000").mkdir(parents=True)
+        (results_dir / "list_000" / "go_terms.csv").write_text("go")
+        (results_dir / "list_001").mkdir()
+        (results_dir / "list_001" / "coverage.csv").write_text("cov")
+        zip_path = results_dir / "all_results.zip"
+        zip_path.write_bytes(b"stale partial archive")
+
+        _build_results_zip(results_dir, zip_path)
+
+        with zipfile.ZipFile(zip_path) as zf:
+            assert zf.namelist() == ["list_000/go_terms.csv", "list_001/coverage.csv"]
+        assert [p.name for p in (tmp_path / "job").iterdir()] == ["results"]
+
+    def test_zip_build_failure_leaves_no_partial(self, tmp_path: Path):
+        from metagomics2.server.app import _build_results_zip
+
+        results_dir = tmp_path / "job" / "results"
+        results_dir.mkdir(parents=True)
+        (results_dir / "coverage.csv").write_text("x")
+        zip_path = results_dir / "all_results.zip"
+
+        with patch("metagomics2.server.app.os.replace", side_effect=OSError("boom")):
+            with pytest.raises(OSError):
+                _build_results_zip(results_dir, zip_path)
+
+        assert not zip_path.exists()
+        assert [p.name for p in (tmp_path / "job").iterdir()] == ["results"]
+
     def test_download_all_incomplete_job(self, client, test_db):
         job_id = test_db.create_job(JobParams())
         test_db.update_job_status(job_id, JobStatus.RUNNING)

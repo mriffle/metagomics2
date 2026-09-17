@@ -2,13 +2,17 @@
 
 import json
 import logging
+import os
 import secrets
 import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Annotated, Any
 
 import aiofiles
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -420,19 +424,42 @@ async def download_all_results(job_id: str) -> FileResponse:
     results_dir = JOBS_DIR / job_id / "results"
     zip_path = results_dir / "all_results.zip"
 
-    # Create ZIP if it doesn't exist
+    # Create ZIP if it doesn't exist. Building it is blocking I/O, so it runs
+    # in a worker thread rather than stalling every other request.
     if not zip_path.exists():
-        shutil.make_archive(
-            str(zip_path.with_suffix("")),
-            "zip",
-            results_dir,
-        )
+        await run_in_threadpool(_build_results_zip, results_dir, zip_path)
 
     return FileResponse(
         zip_path,
         filename=f"metagomics2_results_{job_id[:8]}.zip",
         media_type="application/zip",
     )
+
+
+def _build_results_zip(results_dir: Path, zip_path: Path) -> None:
+    """Archive ``results_dir`` into ``zip_path`` without ever exposing a partial file.
+
+    The archive is written to a temporary file in the job directory (outside
+    ``results_dir``, so it cannot include itself) and moved into place with an
+    atomic rename once complete.  Any earlier archive of the same name inside
+    ``results_dir`` is skipped rather than nested.  Two concurrent builds each
+    produce a complete file and the last rename wins.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".all_results.", suffix=".zip.part", dir=zip_path.parent.parent
+    )
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in sorted(results_dir.rglob("*")):
+                if not file_path.is_file() or file_path.name == zip_path.name:
+                    continue
+                zf.write(file_path, file_path.relative_to(results_dir))
+        os.replace(tmp_path, zip_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 # Frontend SPA support

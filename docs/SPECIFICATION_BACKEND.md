@@ -474,7 +474,7 @@ Key settings consumed by the server:
 | GET | `/api/admin/jobs` | Admin | List all jobs |
 | GET | `/api/jobs/{job_id}/peptide-lists` | No | Get peptide list info for a job |
 | GET | `/api/jobs/{job_id}/results/{list_id}/{filename}` | No | Download result file |
-| GET | `/api/jobs/{job_id}/results/all_results.zip` | No | Download all results as ZIP |
+| GET | `/api/jobs/{job_id}/results/all_results.zip` | No | Download all results as ZIP. Built once on first request in a worker thread, written to a temporary file in the job directory and renamed into `results/` atomically, so a partial archive is never served and the archive never contains itself |
 
 **Job creation flow**:
 1. Validate FASTA content (first 8KB header check)
