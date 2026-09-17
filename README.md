@@ -94,6 +94,10 @@ metagomics2 run \
   --min-pident 80
 ```
 
+Per-list results are written to `<outdir>/list_000/`, `<outdir>/list_001/`, and
+so on. Intermediate files (the subset FASTA sent to DIAMOND, DIAMOND's tabular
+output and its console log `diamond.log`) are kept in `<outdir>/work/`.
+
 ### Run the CLI with the Docker Image
 
 The Docker image bundles GO and NCBI taxonomy reference data at `/app/reference`, so you can omit `--go` and `--taxonomy` unless you want to override them.

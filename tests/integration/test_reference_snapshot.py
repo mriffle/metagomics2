@@ -82,8 +82,10 @@ class TestReferenceSnapshot:
 
         assert result.success, f"Pipeline failed: {result.error_message}"
 
-        # Verify no snapshot directory was created
-        assert not (tmp_path / "work" / "ref_snapshot").exists()
+        # Verify no snapshot directory was created, and that nothing was written
+        # beside the output directory
+        assert not (tmp_path / "work").exists()
+        assert not (tmp_path / "results" / "work" / "ref_snapshot").exists()
 
     def test_manifest_includes_reference_metadata(
         self,

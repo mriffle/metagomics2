@@ -274,6 +274,7 @@ class Worker:
             threads=THREADS,
             filter_policy=filter_policy,
             job_dir=job_dir,  # Enable reference snapshot creation
+            work_dir=job_dir / "work",
             go_edge_types=set(params.go_edge_types.split(",")),
             go_include_self=params.go_include_self,
             diamond_block_size=_cfg.diamond_block_size,

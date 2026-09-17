@@ -93,6 +93,11 @@ class PipelineConfig:
     # Job directory for snapshots (set automatically for web mode)
     job_dir: Path | None = None
 
+    # Directory for intermediate files (subset FASTA, DIAMOND output, reference
+    # snapshot).  None means ``job_dir / "work"`` when job_dir is set (web
+    # mode) and ``output_dir / "work"`` otherwise (CLI mode).
+    work_dir: Path | None = None
+
     # GO closure settings
     go_edge_types: set[str] = field(default_factory=lambda: {"is_a", "part_of"})
     go_include_self: bool = True
@@ -213,6 +218,14 @@ class PipelineRunner:
         # Reference snapshot directory
         self.ref_snapshot_dir: Path | None = None
         self.ref_metadata: dict[str, str] = {}
+
+    def _work_dir(self) -> Path:
+        """Directory for intermediate files (see ``PipelineConfig.work_dir``)."""
+        if self.config.work_dir is not None:
+            return self.config.work_dir
+        if self.config.job_dir is not None:
+            return self.config.job_dir / "work"
+        return self.config.output_dir / "work"
 
     def _update_progress(
         self, stage: str, list_id: str = "", progress_done: int | None = None
@@ -374,8 +387,7 @@ class PipelineRunner:
         if not self.config.job_dir:
             return
 
-        work_dir = self.config.job_dir / "work"
-        self.ref_snapshot_dir = work_dir / "ref_snapshot"
+        self.ref_snapshot_dir = self._work_dir() / "ref_snapshot"
 
         logger.info(f"Creating reference snapshot in {self.ref_snapshot_dir}")
 
@@ -546,7 +558,7 @@ class PipelineRunner:
             logger.warning("No proteins matched any peptides, skipping subset FASTA")
             return
 
-        self.subset_fasta_path = self.config.output_dir.parent / "work" / "hit_proteins.fasta"
+        self.subset_fasta_path = self._work_dir() / "hit_proteins.fasta"
         n_written = write_subset_fasta(
             self.proteins, self.all_hit_proteins, self.subset_fasta_path
         )

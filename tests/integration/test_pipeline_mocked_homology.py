@@ -39,6 +39,10 @@ class TestPipelineMockedHomology:
 
         assert result.success, f"Pipeline failed: {result.error_message}"
 
+        # Intermediate files live under the output directory, never beside it
+        assert (tmp_path / "results" / "work" / "hit_proteins.fasta").exists()
+        assert not (tmp_path / "work").exists()
+
         # Check output files exist
         list_dir = tmp_path / "results" / "list_000"
         assert list_dir.exists()

@@ -139,7 +139,8 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 - Produces `all_hit_proteins`: the union of all background proteins that contain at least one peptide.
 
 ### Stage 3: Write Subset FASTA
-- Write a FASTA file containing only the hit proteins from Stage 2 (`core/fasta.py: write_subset_fasta`). This becomes the query input for DIAMOND.
+- Write a FASTA file containing only the hit proteins from Stage 2 (`core/fasta.py: write_subset_fasta`) to `<work_dir>/hit_proteins.fasta`. This becomes the query input for DIAMOND.
+- `work_dir` is `PipelineConfig.work_dir`; when unset it is `<job_dir>/work/` in web mode (job_dir set, layout in Section 17) and `<output_dir>/work/` in CLI mode. It is never placed beside the output directory. DIAMOND's tabular output and, in CLI mode, `diamond.log` are written there too.
 
 ### Stage 4: Homology Search (DIAMOND)
 - **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter. `--max-target-seqs` is always passed explicitly: `PipelineConfig.diamond_max_target_seqs` (default 500 from `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` / `--diamond-max-target-seqs`, `0` = unlimited) raised to `top_k` when that is larger, because DIAMOND's own default of 25 is not tie-aware. After parsing, `count_queries_at_cap` reports how many query proteins returned exactly the cap and the runner logs a warning if any did; the effective cap is recorded in the manifest as `diamond_max_target_seqs`.
@@ -314,6 +315,7 @@ class PipelineConfig:
     go_data_path: Path | None = None
     taxonomy_data_path: Path | None = None
     job_dir: Path | None = None          # Set for web mode (enables reference snapshots)
+    work_dir: Path | None = None         # Intermediate files; None = job_dir/work or output_dir/work
     go_edge_types: set[str] = {"is_a", "part_of"}
     go_include_self: bool = True
     mock_hits_path: Path | None = None   # Testing only
@@ -417,7 +419,7 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 |----------|----------|-------------|
 | `--fasta` | Yes | Background proteome FASTA |
 | `--peptides` | Yes (repeatable) | Peptide list CSV/TSV |
-| `--outdir` | Yes | Output directory |
+| `--outdir` | Yes | Output directory. Per-list results go to `<outdir>/<list_id>/`; intermediate files (subset FASTA, DIAMOND output, `diamond.log`) go to `<outdir>/work/` |
 | `--db` | Yes* | DIAMOND database (.dmnd) |
 | `--annotations-db` | Yes* | Companion SQLite (.annotations.db) |
 | `--threads` | No (default: 1) | DIAMOND threads |

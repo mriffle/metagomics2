@@ -121,6 +121,7 @@ class TestWorkerBuildConfig:
         assert config.fasta_path == jobs_dir / job_id / "inputs" / "background.fasta"
         assert config.output_dir == jobs_dir / job_id / "results"
         assert config.job_dir == jobs_dir / job_id
+        assert config.work_dir == jobs_dir / job_id / "work"
         assert len(config.peptide_list_paths) == 1
 
     def test_config_includes_filter_policy(self, test_db, jobs_dir, fixtures_dir):
