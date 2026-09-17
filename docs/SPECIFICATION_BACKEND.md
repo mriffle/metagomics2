@@ -142,7 +142,7 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 - Write a FASTA file containing only the hit proteins from Stage 2 (`core/fasta.py: write_subset_fasta`). This becomes the query input for DIAMOND.
 
 ### Stage 4: Homology Search (DIAMOND)
-- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (outfmt 6). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter.
+- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter.
 - **Parse results** (`core/filtering.py: parse_blast_tabular`): Parse the tabular output into `HomologyHit` objects grouped by query protein.
 - **Filter hits** (`core/filtering.py: filter_all_hits`):
   1. **Threshold filters** (AND logic): `max_evalue`, `min_pident`, `min_qcov`, `min_alnlen`

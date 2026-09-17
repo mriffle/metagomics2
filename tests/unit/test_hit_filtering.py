@@ -1,5 +1,6 @@
 """Unit tests for homology hit filtering."""
 
+import pytest
 
 from metagomics2.core.filtering import (
     FilterPolicy,
@@ -308,3 +309,53 @@ class TestFilterPolicy:
         assert d["max_evalue"] == 1e-5
         assert d["min_pident"] == 80.0
         assert d["top_k"] == 10
+
+    def test_qcovhsp_column_sets_query_coverage(self):
+        columns = [
+            "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+            "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovhsp",
+        ]
+        lines = ["Q1\tS1\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200\t87.5"]
+
+        hits_by_query = parse_blast_tabular(lines, columns=columns)
+
+        assert hits_by_query["Q1"][0].qcov == 87.5
+
+    def test_qlen_column_computes_query_coverage(self):
+        columns = ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore", "qlen"]
+        lines = ["Q1\tS1\t95.0\t50\t1e-50\t200\t200"]
+
+        hits_by_query = parse_blast_tabular(lines, columns=columns)
+
+        assert hits_by_query["Q1"][0].qcov == 25.0
+
+    def test_default_columns_have_no_coverage(self):
+        """Plain outfmt 6 carries no coverage, so qcov is 0.0 (documented fallback)."""
+        lines = ["Q1\tS1\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200"]
+
+        hits_by_query = parse_blast_tabular(lines)
+
+        assert hits_by_query["Q1"][0].qcov == 0.0
+
+    def test_short_line_raises(self):
+        columns = ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore", "qcovhsp"]
+        lines = ["Q1\tS1\t95.0\t100\t1e-50\t200"]
+
+        with pytest.raises(ValueError, match="Line 1: expected 7"):
+            parse_blast_tabular(lines, columns=columns)
+
+    def test_min_qcov_filters_on_parsed_coverage(self):
+        """Regression: with a real coverage column, min_qcov keeps good hits."""
+        columns = [
+            "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+            "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovhsp",
+        ]
+        lines = [
+            "Q1\tHIGH\t95.0\t180\t5\t0\t1\t180\t1\t180\t1e-50\t300\t90.0",
+            "Q1\tLOW\t95.0\t60\t5\t0\t1\t60\t1\t60\t1e-20\t100\t30.0",
+        ]
+
+        hits_by_query = parse_blast_tabular(lines, columns=columns)
+        accepted = filter_all_hits(hits_by_query, FilterPolicy(min_qcov=50.0))
+
+        assert accepted == {"Q1": {"HIGH"}}

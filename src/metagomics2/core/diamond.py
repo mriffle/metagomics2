@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 # Matches UniProt-style subject IDs: db|ACCESSION|ENTRY_NAME
 _UNIPROT_ID_RE = re.compile(r"^[a-z]{2}\|([A-Za-z0-9_-]+)\|")
 
+# Columns requested from DIAMOND with ``--outfmt 6``.  The first twelve are
+# the BLAST tabular defaults; ``qcovhsp`` (percent of the query covered by
+# the HSP) is added because the ``min_qcov`` filter needs it and plain
+# ``--outfmt 6`` does not include any coverage column.
+DIAMOND_OUTFMT_COLUMNS = [
+    "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+    "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovhsp",
+]
+
 
 def parse_uniprot_accession(subject_id: str) -> str:
     """Extract the bare UniProt accession from a DIAMOND subject ID.
@@ -164,7 +173,7 @@ def run_diamond(
         "diamond", "blastp",
         "--query", str(query_fasta),
         "--db", str(db_path),
-        "--outfmt", "6",
+        "--outfmt", "6", *DIAMOND_OUTFMT_COLUMNS,
         "--evalue", str(evalue),
         "--threads", str(threads),
         "--out", str(output_path),
@@ -277,7 +286,7 @@ def _iter_lines_with_progress(path: Path, every: int = 1_000_000) -> Iterator[st
 
 
 def parse_diamond_output(output_path: Path) -> DiamondResult:
-    """Parse DIAMOND outfmt 6 tabular output.
+    """Parse DIAMOND tabular output written with ``DIAMOND_OUTFMT_COLUMNS``.
 
     Args:
         output_path: Path to the DIAMOND output file
@@ -294,7 +303,9 @@ def parse_diamond_output(output_path: Path) -> DiamondResult:
         )
 
     logger.info(f"Parsing DIAMOND output: {output_path} ({format_bytes(_file_size(output_path))})")
-    hits_by_query = parse_blast_tabular(_iter_lines_with_progress(output_path))
+    hits_by_query = parse_blast_tabular(
+        _iter_lines_with_progress(output_path), columns=DIAMOND_OUTFMT_COLUMNS
+    )
 
     n_hits = sum(len(hits) for hits in hits_by_query.values())
 

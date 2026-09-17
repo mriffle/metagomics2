@@ -430,7 +430,7 @@ tie-aware `top_k` ranking selects which hits to keep.
 |-----------|---------|-------------|
 | `--max-evalue` | `1e-10` | Maximum e-value threshold. Also passed to DIAMOND as a pre-filter so low-quality alignments are skipped early. Lower values are more stringent. |
 | `--min-pident` | `80` | Minimum percent identity. Applied in post-filtering (not passed to DIAMOND). |
-| `--min-qcov` | *(none)* | Minimum query coverage (percent). Applied in post-filtering. |
+| `--min-qcov` | *(none)* | Minimum query coverage (percent of the query covered by the alignment, DIAMOND's `qcovhsp`). Applied in post-filtering. |
 | `--min-alnlen` | *(none)* | Minimum alignment length (residues). Applied in post-filtering. |
 | `--top-k` | `1` | Number of top-scoring hits to keep per query protein, ranked by bitscore. **Tie-aware**: if multiple hits share the same bitscore at the Kth position, all tied hits are retained. For example, with `top_k=1` and five hits tied at the best bitscore, all five are kept. This ensures annotation is not biased by arbitrary tie-breaking. |
 

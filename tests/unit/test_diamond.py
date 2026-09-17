@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from metagomics2.core.diamond import (
+    DIAMOND_OUTFMT_COLUMNS,
     DiamondError,
     _iter_lines_with_progress,
     estimate_diamond_memory_bytes,
@@ -21,9 +22,9 @@ class TestParseDiamondOutput:
     def test_parse_standard_output(self, tmp_path):
         output = tmp_path / "results.tsv"
         output.write_text(
-            "protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\n"
-            "protA\tsp|P67890|UNIPROT\t85.0\t90\t10\t1\t1\t90\t1\t90\t1e-30\t150.0\n"
-            "protB\tsp|P11111|UNIPROT\t99.0\t200\t2\t0\t1\t200\t1\t200\t1e-80\t400.0\n"
+            "protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\t100.0\n"
+            "protA\tsp|P67890|UNIPROT\t85.0\t90\t10\t1\t1\t90\t1\t90\t1e-30\t150.0\t90.0\n"
+            "protB\tsp|P11111|UNIPROT\t99.0\t200\t2\t0\t1\t200\t1\t200\t1e-80\t400.0\t66.7\n"
         )
         result = parse_diamond_output(output)
         assert result.n_queries == 2
@@ -33,6 +34,9 @@ class TestParseDiamondOutput:
         assert result.hits_by_query["protA"][0].subject_id == "sp|P12345|UNIPROT"
         assert result.hits_by_query["protA"][0].pident == 95.0
         assert result.hits_by_query["protB"][0].evalue == 1e-80
+        # Query coverage comes from the qcovhsp column DIAMOND is asked for
+        assert result.hits_by_query["protA"][1].qcov == 90.0
+        assert result.hits_by_query["protB"][0].qcov == 66.7
 
     def test_parse_empty_output(self, tmp_path):
         output = tmp_path / "results.tsv"
@@ -51,11 +55,20 @@ class TestParseDiamondOutput:
         output = tmp_path / "results.tsv"
         output.write_text(
             "# comment line\n"
-            "protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\n"
+            "protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\t100.0\n"
         )
         result = parse_diamond_output(output)
         assert result.n_queries == 1
         assert result.n_hits == 1
+
+    def test_parse_rejects_rows_without_coverage_column(self, tmp_path):
+        """A file written with plain --outfmt 6 (12 columns) is a column mismatch."""
+        output = tmp_path / "results.tsv"
+        output.write_text(
+            "protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\n"
+        )
+        with pytest.raises(ValueError, match="expected 13 tab-separated columns"):
+            parse_diamond_output(output)
 
 
 def _fake_popen(returncode: int = 0, console: str = "", output_text: str | None = None,
@@ -97,7 +110,7 @@ class TestRunDiamond:
 
         mock_popen.side_effect = _fake_popen(
             console="Processing query block 1, reference block 1/1\nTotal time = 1.0s\n",
-            output_text="protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\n",
+            output_text="protA\tsp|P12345|UNIPROT\t95.0\t100\t5\t0\t1\t100\t1\t100\t1e-50\t200.0\t100.0\n",
             output_path=output,
         )
 
@@ -247,6 +260,17 @@ class TestDiamondTuningOptions:
         assert tmpdir.is_dir()
 
     @patch("metagomics2.core.diamond.subprocess.Popen")
+    def test_outfmt_requests_query_coverage_column(self, mock_popen, tmp_path):
+        """--outfmt names every column explicitly, ending with qcovhsp."""
+        cmd, _ = self._run(mock_popen, tmp_path)
+        start = cmd.index("--outfmt")
+        assert cmd[start + 1] == "6"
+        assert cmd[start + 2 : start + 2 + len(DIAMOND_OUTFMT_COLUMNS)] == DIAMOND_OUTFMT_COLUMNS
+        assert DIAMOND_OUTFMT_COLUMNS[-1] == "qcovhsp"
+        # The next argument after the column list is another option, not a column
+        assert cmd[start + 2 + len(DIAMOND_OUTFMT_COLUMNS)].startswith("--")
+
+    @patch("metagomics2.core.diamond.subprocess.Popen")
     def test_fractional_block_size_formatting(self, mock_popen, tmp_path):
         cmd, _ = self._run(mock_popen, tmp_path, block_size=0.5)
         assert cmd[cmd.index("--block-size") + 1] == "0.5"
@@ -301,7 +325,7 @@ class TestStreamingParse:
 
     def test_progress_logged_every_n_lines(self, tmp_path, caplog):
         output = tmp_path / "results.tsv"
-        row = "q{i}\ts\t90\t10\t0\t0\t1\t10\t1\t10\t1e-5\t50\n"
+        row = "q{i}\ts\t90\t10\t0\t0\t1\t10\t1\t10\t1e-5\t50\t100\n"
         output.write_text("".join(row.format(i=i) for i in range(5)))
 
         with caplog.at_level(logging.INFO, logger="metagomics2.core.diamond"):

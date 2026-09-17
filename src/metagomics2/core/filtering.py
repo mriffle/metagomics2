@@ -180,12 +180,20 @@ def parse_blast_tabular(
     Default expected columns (outfmt 6 style):
     qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
 
+    Query coverage is taken from a ``qcovhsp`` or ``qcov`` column when present,
+    computed from ``qlen`` otherwise, and set to 0.0 when neither is available
+    (in which case any positive ``min_qcov`` filter would reject every hit).
+
     Args:
         lines: Lines from the tabular output file (any iterable, e.g. an open file)
         columns: Column names if non-standard format
 
     Returns:
         Dictionary mapping query_id to list of HomologyHit objects
+
+    Raises:
+        ValueError: If a required column is missing from ``columns`` or a data
+            line has fewer fields than ``columns``.
     """
     if columns is None:
         columns = [
@@ -205,17 +213,26 @@ def parse_blast_tabular(
         raise ValueError(f"Missing required column: {e}")
 
     # qcov might not be in standard output, compute if qlen available
-    qcov_idx = columns.index("qcov") if "qcov" in columns else None
+    qcov_idx: int | None = None
+    for name in ("qcovhsp", "qcov"):
+        if name in columns:
+            qcov_idx = columns.index(name)
+            break
     qlen_idx = columns.index("qlen") if "qlen" in columns else None
 
     hits_by_query: dict[str, list[HomologyHit]] = {}
 
-    for line in lines:
+    for line_num, line in enumerate(lines, start=1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
 
         parts = line.split("\t")
+        if len(parts) < len(columns):
+            raise ValueError(
+                f"Line {line_num}: expected {len(columns)} tab-separated columns "
+                f"({' '.join(columns)}), found {len(parts)}"
+            )
 
         query_id = parts[qseqid_idx]
         subject_id = parts[sseqid_idx]
