@@ -1,6 +1,7 @@
 """Peptide list parsing and normalization."""
 
 import csv
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,7 +80,7 @@ def parse_quantity(value: str) -> float:
         Parsed quantity as float
 
     Raises:
-        PeptideParsingError: If value is not a valid non-negative number
+        PeptideParsingError: If value is not a finite, non-negative number
     """
     value = value.strip()
 
@@ -94,8 +95,11 @@ def parse_quantity(value: str) -> float:
     if quantity < 0:
         raise PeptideParsingError(f"Negative quantity not allowed: {quantity}")
 
-    if not (quantity == quantity):  # NaN check
+    if math.isnan(quantity):
         raise PeptideParsingError("NaN quantity not allowed")
+
+    if math.isinf(quantity):
+        raise PeptideParsingError(f"Infinite quantity not allowed: '{value}'")
 
     return quantity
 

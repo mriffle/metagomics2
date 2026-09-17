@@ -106,6 +106,12 @@ class TestParseQuantity:
             parse_quantity("nan")
         assert "NaN" in str(exc_info.value)
 
+    @pytest.mark.parametrize("value", ["inf", "-inf", "Infinity", "1e999"])
+    def test_rejects_infinite(self, value: str):
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_quantity(value)
+        assert "finite" in str(exc_info.value).lower() or "Negative" in str(exc_info.value)
+
 
 class TestParsePeptideListTSV:
     """Tests for parsing TSV peptide lists."""
