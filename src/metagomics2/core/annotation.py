@@ -1,9 +1,12 @@
 """Peptide annotation semantics: taxonomy LCA and GO union."""
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from metagomics2.core.go import GODAG
 from metagomics2.core.taxonomy import TaxonomyTree
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -21,6 +24,10 @@ class PeptideAnnotation:
 
     peptide: str
     quantity: float
+    # True when the peptide received at least one taxonomy node or GO term.
+    # A peptide whose homology hits carry no usable annotation (accessions
+    # absent from the annotations database, or taxonomy IDs unknown to the
+    # tree) is *not* annotated, so it does not inflate coverage.
     is_annotated: bool = False
 
     # Taxonomy annotation
@@ -72,6 +79,10 @@ def annotate_peptide_taxonomy(
     Uses LCA intersection: find the lowest common ancestor of all
     implied subjects' tax_ids, then return lineage from LCA to root.
 
+    Each subject's tax_id is first resolved through the tree (retired IDs
+    follow NCBI's merged mapping).  IDs the tree cannot place are ignored
+    rather than allowed to void the LCA of the subjects that can be placed.
+
     Args:
         implied_subjects: Set of subject IDs
         subject_annotations: Mapping from subject ID to annotation
@@ -83,12 +94,20 @@ def annotate_peptide_taxonomy(
     if not implied_subjects:
         return None, set()
 
-    # Collect tax_ids from all subjects
+    # Collect tax_ids from all subjects, resolved to nodes the tree knows
     tax_ids: set[int] = set()
     for subject_id in implied_subjects:
         annotation = subject_annotations.get(subject_id)
-        if annotation and annotation.tax_id is not None:
-            tax_ids.add(annotation.tax_id)
+        if annotation is None or annotation.tax_id is None:
+            continue
+        resolved = taxonomy_tree.resolve_tax_id(annotation.tax_id)
+        if resolved is None:
+            logger.debug(
+                f"Subject {subject_id}: tax_id {annotation.tax_id} is not in the "
+                "taxonomy tree (nor merged into a node); ignored for LCA"
+            )
+            continue
+        tax_ids.add(resolved)
 
     if not tax_ids:
         return None, set()
@@ -175,8 +194,6 @@ def annotate_peptide(
         peptide, peptide_to_proteins, protein_to_subjects
     )
 
-    is_annotated = len(implied_subjects) > 0
-
     # Taxonomy annotation
     lca_tax_id, taxonomy_nodes = annotate_peptide_taxonomy(
         implied_subjects, subject_annotations, taxonomy_tree
@@ -190,6 +207,9 @@ def annotate_peptide(
         go_edge_types,
         go_include_self,
     )
+
+    # Annotated means the peptide actually received something to aggregate.
+    is_annotated = bool(taxonomy_nodes or go_terms)
 
     return PeptideAnnotation(
         peptide=peptide,

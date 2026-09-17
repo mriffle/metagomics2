@@ -231,3 +231,84 @@ class TestLoadSubjectAnnotations:
 
         # U5 has empty go_terms
         assert annotations["U5"].go_terms == set()
+
+
+class TestUnusableSubjects:
+    """Subjects with nothing usable behind them must not count as annotation."""
+
+    def _annotate(self, tree, go_dag, annotations, subjects):
+        return annotate_peptide(
+            peptide="PEP",
+            quantity=1.0,
+            peptide_to_proteins={"PEP": {"B1"}},
+            protein_to_subjects={"B1": set(subjects)},
+            subject_annotations=annotations,
+            taxonomy_tree=tree,
+            go_dag=go_dag,
+        )
+
+    def test_subjects_without_any_annotation_are_unannotated(
+        self, small_taxonomy: dict, small_go: dict
+    ):
+        """Accessions absent from the annotations DB yield empty records."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        annotations = {
+            "X1": SubjectAnnotation(subject_id="X1"),
+            "X2": SubjectAnnotation(subject_id="X2"),
+        }
+
+        result = self._annotate(tree, go_dag, annotations, {"X1", "X2"})
+
+        assert result.is_annotated is False
+        assert result.implied_subjects == {"X1", "X2"}
+        assert result.taxonomy_nodes == set()
+        assert result.go_terms == set()
+
+    def test_go_only_subject_is_annotated(self, small_taxonomy: dict, small_go: dict):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        annotations = {"X1": SubjectAnnotation(subject_id="X1", go_terms={"GO:0000004"})}
+
+        result = self._annotate(tree, go_dag, annotations, {"X1"})
+
+        assert result.is_annotated is True
+        assert result.lca_tax_id is None
+        assert "GO:0000004" in result.go_terms
+
+    def test_unknown_tax_id_is_ignored_for_lca(self, small_taxonomy: dict, small_go: dict):
+        """One subject with a tax ID the tree lacks must not void the others' LCA."""
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        annotations = {
+            "U1": SubjectAnnotation(subject_id="U1", tax_id=70),
+            "U2": SubjectAnnotation(subject_id="U2", tax_id=71),
+            "UX": SubjectAnnotation(subject_id="UX", tax_id=424242),
+        }
+
+        result = self._annotate(tree, go_dag, annotations, {"U1", "U2", "UX"})
+
+        assert result.is_annotated is True
+        assert result.lca_tax_id == 60  # genus of species 70 and 71
+        assert result.taxonomy_nodes == {60, 50, 40, 30, 20, 10, 1}
+
+    def test_only_unknown_tax_ids_gives_no_taxonomy(self, small_taxonomy: dict, small_go: dict):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        go_dag = load_go_from_dict(small_go)
+        annotations = {"UX": SubjectAnnotation(subject_id="UX", tax_id=424242)}
+
+        result = self._annotate(tree, go_dag, annotations, {"UX"})
+
+        assert result.is_annotated is False
+        assert result.lca_tax_id is None
+
+    def test_merged_tax_id_resolves(self, small_taxonomy: dict, small_go: dict):
+        """A retired tax ID from an older UniProt release maps to its current node."""
+        tree = load_taxonomy_from_dict({**small_taxonomy, "merged": {"700": 70}})
+        go_dag = load_go_from_dict(small_go)
+        annotations = {"U1": SubjectAnnotation(subject_id="U1", tax_id=700)}
+
+        result = self._annotate(tree, go_dag, annotations, {"U1"})
+
+        assert result.lca_tax_id == 70
+        assert 70 in result.taxonomy_nodes

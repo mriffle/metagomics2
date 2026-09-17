@@ -700,6 +700,18 @@ class PipelineRunner:
             )
             annotations.append(ann)
 
+        # Peptides with homology hits but nothing usable behind them are
+        # counted as unannotated; say so, because it usually means the
+        # annotations database or taxonomy dump is stale or mismatched.
+        n_silent = sum(1 for a in annotations if a.implied_subjects and not a.is_annotated)
+        if n_silent:
+            logger.warning(
+                f"{n_silent} of {len(annotations)} peptides matched homology hits but "
+                "received no taxonomy or GO annotation (hit accessions missing from the "
+                "annotations database, or taxonomy IDs unknown to the taxonomy tree); "
+                "they are counted as unannotated"
+            )
+
         return annotations
 
     def _write_reports(

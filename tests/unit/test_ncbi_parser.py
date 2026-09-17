@@ -194,3 +194,39 @@ class TestNCBIParser:
 
         # Should use fallback name
         assert tree.nodes[999].name == "taxid_999"
+
+
+class TestMergedDmp:
+    """merged.dmp maps retired tax IDs to their replacements."""
+
+    @staticmethod
+    def _write_minimal(tmp_path: Path) -> None:
+        (tmp_path / "nodes.dmp").write_text(
+            "1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n"
+            "2\t|\t1\t|\tdomain\t|\t\t|\t0\t|\t0\t|\t11\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n"
+        )
+        (tmp_path / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n2\t|\tBacteria\t|\t\t|\tscientific name\t|\n"
+        )
+
+    def test_parses_merged_file(self, tmp_path: Path):
+        self._write_minimal(tmp_path)
+        (tmp_path / "merged.dmp").write_text("12\t|\t2\t|\n30\t|\t1\t|\n")
+
+        tree = parse_ncbi_taxonomy_dump(tmp_path)
+
+        assert tree.merged == {12: 2, 30: 1}
+        assert tree.resolve_tax_id(12) == 2
+
+    def test_missing_merged_file_is_optional(self, tmp_path: Path):
+        self._write_minimal(tmp_path)
+        tree = parse_ncbi_taxonomy_dump(tmp_path)
+        assert tree.merged == {}
+
+    def test_json_conversion_includes_merged(self, tmp_path: Path):
+        self._write_minimal(tmp_path)
+        (tmp_path / "merged.dmp").write_text("12\t|\t2\t|\n")
+
+        result = convert_ncbi_dump_to_json_dict(tmp_path)
+
+        assert result["merged"] == {"12": 2}

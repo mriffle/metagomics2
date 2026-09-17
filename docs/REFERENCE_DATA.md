@@ -16,7 +16,7 @@ The Docker image includes:
 
 ### NCBI Taxonomy
 - **Location**: `/app/reference/taxonomy/`
-- **Files**: `nodes.dmp`, `names.dmp`, and other taxonomy dump files
+- **Files**: `nodes.dmp`, `names.dmp`, `merged.dmp` (retired IDs), and other taxonomy dump files
 - **Format**: NCBI taxonomy dump
 - **Version**: Derived from the upstream `Last-Modified` header for `taxdump.tar.gz`, with a fallback to the UTC fetch date during `docker build`
 - **Source**: https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
@@ -50,6 +50,7 @@ When a job runs in web mode, the pipeline creates a snapshot of reference data:
    └── taxonomy/
        ├── nodes.dmp
        ├── names.dmp
+       ├── merged.dmp
        └── VERSION
    ```
 
@@ -113,6 +114,7 @@ metagomics2 run \
 - Parses:
   - `nodes.dmp` for hierarchy and ranks
   - `names.dmp` for scientific names
+  - `merged.dmp` (if present) so tax IDs retired since the UniProt release still resolve
 
 ### Reference Loader
 - **Module**: `metagomics2.core.reference_loader`

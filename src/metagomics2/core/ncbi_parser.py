@@ -17,6 +17,7 @@ def parse_ncbi_taxonomy_dump(dump_dir: Path | str) -> TaxonomyTree:
     Expected files in dump_dir:
     - nodes.dmp: taxonomy nodes with parent relationships
     - names.dmp: taxonomy names
+    - merged.dmp (optional): retired tax IDs and the nodes they were merged into
 
     Args:
         dump_dir: Directory containing NCBI taxonomy dump files
@@ -65,7 +66,31 @@ def parse_ncbi_taxonomy_dump(dump_dir: Path | str) -> TaxonomyTree:
             parent_tax_id=parent_tax_id,
         )
 
+    merged_file = dump_dir / "merged.dmp"
+    if merged_file.exists():
+        tree.merged = _parse_merged_dmp(merged_file)
+
     return tree
+
+
+def _parse_merged_dmp(file_path: Path) -> dict[int, int]:
+    """Parse merged.dmp.
+
+    Format: old_tax_id | new_tax_id | (pipe-delimited)
+
+    Returns:
+        Dictionary mapping retired tax_id to the tax_id it was merged into
+    """
+    merged: dict[int, int] = {}
+
+    with open(file_path, encoding="utf-8") as f:
+        for line in f:
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) < 2 or not parts[0] or not parts[1]:
+                continue
+            merged[int(parts[0])] = int(parts[1])
+
+    return merged
 
 
 def _parse_nodes_dmp(file_path: Path) -> dict[int, dict[str, Any]]:
@@ -155,5 +180,8 @@ def convert_ncbi_dump_to_json_dict(dump_dir: Path | str) -> dict[str, Any]:
             "rank": node.rank,
             "parent_tax_id": node.parent_tax_id,
         }
+
+    if tree.merged:
+        result["merged"] = {str(old): new for old, new in tree.merged.items()}
 
     return result

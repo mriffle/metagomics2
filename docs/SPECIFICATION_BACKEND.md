@@ -159,8 +159,9 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 For each peptide in the list (`core/annotation.py`):
 
 1. **Implied subjects**: `S(p) = ⋃_{b∈B(p)} subjects(b)` — union of all annotated-DB subjects across all background proteins that contain this peptide.
-2. **Taxonomy annotation (LCA intersection)**: Collect all `tax_id` values from implied subjects. Compute the Lowest Common Ancestor (LCA) using lineage intersection (`core/taxonomy.py: TaxonomyTree.compute_lca`). The LCA is the deepest node that is an ancestor of *all* subject tax_ids. Then `taxonomy_nodes = lineage(LCA → root)`.
+2. **Taxonomy annotation (LCA intersection)**: Collect all `tax_id` values from implied subjects, resolving each through `TaxonomyTree.resolve_tax_id` (retired IDs follow NCBI's `merged.dmp` mapping; IDs the tree cannot place are ignored rather than allowed to void the LCA of the others). Compute the Lowest Common Ancestor (LCA) using lineage intersection (`core/taxonomy.py: TaxonomyTree.compute_lca`). The LCA is the deepest node that is an ancestor of *all* subject tax_ids. Then `taxonomy_nodes = lineage(LCA → root)`.
 3. **GO annotation (non-redundant union)**: Collect all direct GO terms from implied subjects. For each term, compute the transitive closure (ancestors via `is_a` and/or `part_of` edges) using `core/go.py: GODAG.get_closure`. The peptide's GO terms are the union of all closures: `GO(p) = ⋃_{s∈S(p)} closure(go_terms(s))`.
+4. **Annotated means something was received**: `is_annotated = bool(taxonomy_nodes or go_terms)`. A peptide whose hits carry no usable annotation (accessions absent from the annotations database, or taxonomy IDs unknown to the tree) is unannotated, so it neither inflates `annotated_peptide_quantity` nor the `ratio_annotated` denominator. The runner logs a warning with the count of such peptides per list, since it usually means the annotations database or taxonomy dump is stale.
 
 ### Stage 6: Aggregate (per list)
 - **Taxonomy aggregation** (`core/aggregation.py`): For each taxonomy node `t`: `quantity(t) = Σ_p q(p) * 1[t ∈ TAX(p)]`. Computes `ratio_total = quantity / total_quantity` and `ratio_annotated = quantity / annotated_quantity`.
@@ -242,7 +243,7 @@ class SubjectAnnotation:
 class PeptideAnnotation:
     peptide: str
     quantity: float
-    is_annotated: bool = False
+    is_annotated: bool = False           # True iff taxonomy_nodes or go_terms is non-empty
     lca_tax_id: int | None = None
     taxonomy_nodes: set[int] = field(default_factory=set)  # Lineage LCA→root
     go_terms: set[str] = field(default_factory=set)         # Union of closures
@@ -262,7 +263,8 @@ class TaxonNode:
 @dataclass
 class TaxonomyTree:
     nodes: dict[int, TaxonNode]
-    # Methods: get_lineage(), compute_lca(), get_lineage_set()
+    merged: dict[int, int]               # retired tax_id -> current tax_id (merged.dmp)
+    # Methods: get_lineage(), compute_lca(), get_lineage_set(), resolve_tax_id()
 ```
 LCA is computed by intersecting lineage sets and finding the deepest common ancestor.
 

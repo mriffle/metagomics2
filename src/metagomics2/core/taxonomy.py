@@ -20,6 +20,25 @@ class TaxonomyTree:
     """NCBI-style taxonomy tree."""
 
     nodes: dict[int, TaxonNode] = field(default_factory=dict)
+    # Retired tax IDs mapped to their replacements (NCBI merged.dmp).  UniProt
+    # releases can reference IDs that NCBI has since merged into another node.
+    merged: dict[int, int] = field(default_factory=dict)
+
+    def resolve_tax_id(self, tax_id: int) -> int | None:
+        """Map a tax ID to the node that represents it today, or None if unknown.
+
+        Returns ``tax_id`` itself when it is a node in the tree, follows the
+        merged-ID mapping (transitively) when it has been retired, and returns
+        None when neither leads to a node.
+        """
+        current = tax_id
+        seen: set[int] = set()
+        while current not in self.nodes:
+            if current in seen or current not in self.merged:
+                return None
+            seen.add(current)
+            current = self.merged[current]
+        return current
 
     def get_lineage(self, tax_id: int) -> list[int]:
         """Get the lineage from a taxon to the root.
@@ -125,7 +144,8 @@ def load_taxonomy_from_json(file_path: Path | str) -> TaxonomyTree:
             "1": {"name": "root", "rank": "no rank", "parent_tax_id": null},
             "10": {"name": "KingdomA", "rank": "kingdom", "parent_tax_id": 1},
             ...
-        }
+        },
+        "merged": {"12": 10, ...}      # optional: retired tax_id -> current tax_id
     }
 
     Args:
@@ -146,12 +166,15 @@ def load_taxonomy_from_dict(data: dict[str, Any]) -> TaxonomyTree:
     """Load taxonomy tree from a dictionary.
 
     Args:
-        data: Dictionary with 'nodes' key
+        data: Dictionary with 'nodes' key and an optional 'merged' key
 
     Returns:
         TaxonomyTree object
     """
     tree = TaxonomyTree()
+
+    for old_str, new_id in data.get("merged", {}).items():
+        tree.merged[int(old_str)] = int(new_id)
 
     for tax_id_str, node_data in data.get("nodes", {}).items():
         tax_id = int(tax_id_str)

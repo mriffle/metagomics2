@@ -122,3 +122,47 @@ class TestHomologySearchCap:
         runner.config.annotated_db_path = None
         with pytest.raises(ValueError, match="No annotated database"):
             runner._run_homology_search()
+
+
+class TestSilentAnnotationWarning:
+    """Peptides with hits but no usable annotation are reported, not hidden."""
+
+    def _runner_with_subjects(self, tmp_path, subject_annotations):
+        from metagomics2.core.annotation import SubjectAnnotation
+        from metagomics2.core.go import GODAG
+        from metagomics2.core.peptides import Peptide
+        from metagomics2.core.taxonomy import TaxonomyTree
+
+        runner = _runner(tmp_path)
+        runner.taxonomy_tree = TaxonomyTree()
+        runner.go_dag = GODAG()
+        runner.protein_to_subjects = {"B1": {"S1"}}
+        runner.subject_annotations = {
+            sid: SubjectAnnotation(subject_id=sid, **fields)
+            for sid, fields in subject_annotations.items()
+        }
+        peptides = [Peptide("PEP", 2.0), Peptide("NOHIT", 1.0)]
+        peptide_to_proteins = {"PEP": {"B1"}, "NOHIT": set()}
+        return runner, peptides, peptide_to_proteins
+
+    def test_warns_when_hits_carry_nothing(self, tmp_path, caplog):
+        runner, peptides, p2p = self._runner_with_subjects(tmp_path, {"S1": {}})
+
+        with caplog.at_level(logging.WARNING, logger="metagomics2.pipeline.runner"):
+            annotations = runner._annotate_peptides(peptides, p2p)
+
+        assert [a.is_annotated for a in annotations] == [False, False]
+        messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(messages) == 1
+        assert messages[0].startswith("1 of 2 peptides matched homology hits but received no")
+
+    def test_no_warning_when_hits_annotate(self, tmp_path, caplog):
+        runner, peptides, p2p = self._runner_with_subjects(
+            tmp_path, {"S1": {"go_terms": {"GO:0000001"}}}
+        )
+
+        with caplog.at_level(logging.WARNING, logger="metagomics2.pipeline.runner"):
+            annotations = runner._annotate_peptides(peptides, p2p)
+
+        assert annotations[0].is_annotated is True
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]

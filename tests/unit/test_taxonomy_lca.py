@@ -205,3 +205,35 @@ class TestTaxonomyTreeEdgeCases:
 
         assert tree.compute_lca({1}) == 1
         assert tree.get_lineage(1) == [1]
+
+
+class TestResolveTaxId:
+    """Retired (merged) tax IDs resolve to their current node; unknown IDs do not."""
+
+    def test_known_id_resolves_to_itself(self, small_taxonomy: dict):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        assert tree.resolve_tax_id(70) == 70
+
+    def test_unknown_id_resolves_to_none(self, small_taxonomy: dict):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        assert tree.resolve_tax_id(99999) is None
+
+    def test_merged_id_follows_mapping(self, small_taxonomy: dict):
+        data = {**small_taxonomy, "merged": {"700": 70}}
+        tree = load_taxonomy_from_dict(data)
+        assert tree.merged == {700: 70}
+        assert tree.resolve_tax_id(700) == 70
+
+    def test_merged_chain_is_followed(self, small_taxonomy: dict):
+        data = {**small_taxonomy, "merged": {"7000": 700, "700": 70}}
+        tree = load_taxonomy_from_dict(data)
+        assert tree.resolve_tax_id(7000) == 70
+
+    def test_merged_into_unknown_is_none(self, small_taxonomy: dict):
+        data = {**small_taxonomy, "merged": {"700": 88888}}
+        tree = load_taxonomy_from_dict(data)
+        assert tree.resolve_tax_id(700) is None
+
+    def test_merged_cycle_terminates(self):
+        tree = load_taxonomy_from_dict({"nodes": {}, "merged": {"1": 2, "2": 1}})
+        assert tree.resolve_tax_id(1) is None
