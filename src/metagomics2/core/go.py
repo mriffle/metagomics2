@@ -4,17 +4,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Relationship types that can appear as edges in a GO release: ``is_a`` plus
-# every ``relationship:`` predicate used by the ontology.  Anything else in a
-# user-supplied edge-type list is a typo and must be rejected, because an
-# unknown type silently matches no edges and quietly shrinks every closure.
+# Relationship types a closure may follow: ``is_a`` and ``part_of`` are the
+# ones the GO Consortium propagates annotations over; the rest are offered as
+# explicit opt-ins for exploratory use.  ``has_part`` is deliberately absent:
+# it is the inverse of ``part_of``, so following it upward would propagate an
+# annotation from a whole to each of its parts, which is not an inference the
+# ontology supports.  Anything else in a user-supplied edge-type list is a
+# typo and must be rejected, because an unknown type silently matches no edges
+# and quietly shrinks every closure.
 GO_EDGE_TYPES = frozenset({
     "is_a",
     "part_of",
     "regulates",
     "positively_regulates",
     "negatively_regulates",
-    "has_part",
     "occurs_in",
     "happens_during",
     "ends_during",
