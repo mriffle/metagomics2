@@ -133,6 +133,68 @@ class TestManifestFileHashCorrectness:
         assert manifest.peptide_list_hash == expected_hash
 
 
+class TestManifestAnnotatedDbHash:
+    """Tests for the annotated database hash."""
+
+    def _inputs(self, tmp_path: Path) -> tuple[Path, Path]:
+        fasta_file = tmp_path / "test.fasta"
+        fasta_file.write_text(">P1\nMPEPTIDE\n")
+        peptide_file = tmp_path / "peptides.tsv"
+        peptide_file.write_text("peptide_sequence\tquantity\nPEPTIDE\t10\n")
+        return fasta_file, peptide_file
+
+    def test_hashes_database_file_when_no_digest_given(self, tmp_path: Path):
+        fasta_file, peptide_file = self._inputs(tmp_path)
+        db_file = tmp_path / "db.dmnd"
+        db_file.write_bytes(b"not a real diamond database")
+
+        manifest = create_manifest(
+            metagomics2_version="0.1.0",
+            search_tool="diamond",
+            search_tool_command="",
+            annotated_db_choice="db.dmnd",
+            input_fasta_path=fasta_file,
+            peptide_list_path=peptide_file,
+            parameters={},
+            annotated_db_path=db_file,
+        )
+
+        assert manifest.annotated_db_hash == compute_file_hash(db_file)
+
+    def test_uses_precomputed_digest_without_reading_file(self, tmp_path: Path):
+        fasta_file, peptide_file = self._inputs(tmp_path)
+        missing_db = tmp_path / "does_not_exist.dmnd"
+
+        manifest = create_manifest(
+            metagomics2_version="0.1.0",
+            search_tool="diamond",
+            search_tool_command="",
+            annotated_db_choice="db.dmnd",
+            input_fasta_path=fasta_file,
+            peptide_list_path=peptide_file,
+            parameters={},
+            annotated_db_path=missing_db,
+            annotated_db_hash="a" * 64,
+        )
+
+        assert manifest.annotated_db_hash == "a" * 64
+
+    def test_empty_when_no_database(self, tmp_path: Path):
+        fasta_file, peptide_file = self._inputs(tmp_path)
+
+        manifest = create_manifest(
+            metagomics2_version="0.1.0",
+            search_tool="diamond",
+            search_tool_command="",
+            annotated_db_choice="mock",
+            input_fasta_path=fasta_file,
+            peptide_list_path=peptide_file,
+            parameters={},
+        )
+
+        assert manifest.annotated_db_hash == ""
+
+
 class TestManifestTimestamp:
     """Tests for timestamp format."""
 

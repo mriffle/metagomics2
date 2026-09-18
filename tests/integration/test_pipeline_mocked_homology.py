@@ -3,9 +3,11 @@
 import csv
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from metagomics2.core.reporting import compute_file_hash
 from metagomics2.pipeline.runner import (
     _PROGRESS_PER_LIST_END,
     _PROGRESS_PER_LIST_START,
@@ -387,6 +389,46 @@ class TestPipelineMockedHomology:
         # Should have output for both lists
         assert (tmp_path / "results" / "list_000").exists()
         assert (tmp_path / "results" / "list_001").exists()
+
+    def test_annotated_db_hashed_once_for_all_lists(
+        self,
+        fixtures_dir: Path,
+        tmp_path: Path,
+    ):
+        """The database digest is computed once and shared by every manifest."""
+        peptide_path = fixtures_dir / "peptides" / "small_peptides.tsv"
+        db_file = tmp_path / "db.dmnd"
+        db_file.write_bytes(b"stand-in for a multi-gigabyte DIAMOND database")
+
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[peptide_path, peptide_path, peptide_path],
+            output_dir=tmp_path / "results",
+            annotated_db_path=db_file,
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        hashed_paths: list[Path] = []
+
+        def counting_hash(path: Path) -> str:
+            hashed_paths.append(path)
+            return compute_file_hash(path)
+
+        with patch("metagomics2.pipeline.runner.compute_file_hash", side_effect=counting_hash):
+            result = run_pipeline(config)
+        assert result.success, f"Pipeline failed: {result.error_message}"
+
+        assert hashed_paths.count(db_file) == 1
+
+        expected = compute_file_hash(db_file)
+        for list_id in ("list_000", "list_001", "list_002"):
+            with open(tmp_path / "results" / list_id / "run_manifest.json") as f:
+                manifest = json.load(f)
+            assert manifest["annotated_db"]["hash"] == expected
+            assert len(manifest["annotated_db"]["hash"]) == 64
 
 
 class TestPipelineErrorHandling:

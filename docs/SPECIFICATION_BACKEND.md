@@ -847,7 +847,7 @@ Every pipeline run produces a `run_manifest.json` capturing:
 - Python version
 - Search tool and version (e.g., "diamond version 2.1.21")
 - Input file SHA256 hashes (FASTA, peptide lists)
-- Annotated database hash
+- Annotated database hash. The `.dmnd` file can be tens of gigabytes and a manifest is written per peptide list, so `PipelineRunner` hashes it once on first use (`_get_annotated_db_hash`, logged with size and duration) and passes the digest to `create_manifest` via `annotated_db_hash`; every list's manifest carries the same value
 - Reference data file hashes (GO OBO, taxonomy dumps)
 - All filter parameters, plus the e-value and per-query hit cap actually passed to DIAMOND (`diamond_evalue`, `diamond_max_target_seqs`), which can differ from the policy values when the policy leaves them unset
 - UTC timestamp

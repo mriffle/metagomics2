@@ -53,6 +53,7 @@ from metagomics2.core.reference_loader import (
     load_taxonomy_data,
 )
 from metagomics2.core.reporting import (
+    compute_file_hash,
     create_manifest,
     write_coverage_csv,
     write_go_taxonomy_combo_csv,
@@ -229,6 +230,10 @@ class PipelineRunner:
         # Reference snapshot directory
         self.ref_snapshot_dir: Path | None = None
         self.ref_metadata: dict[str, str] = {}
+
+        # SHA256 of the annotated database, computed on first use and shared
+        # by every list's manifest (None = not computed yet).
+        self._annotated_db_hash: str | None = None
 
     def _work_dir(self) -> Path:
         """Directory for intermediate files (see ``PipelineConfig.work_dir``)."""
@@ -725,6 +730,31 @@ class PipelineRunner:
 
         return annotations
 
+    def _get_annotated_db_hash(self) -> str:
+        """SHA256 of the annotated database, hashed once per run.
+
+        A TrEMBL-scale ``.dmnd`` is tens of gigabytes, and a manifest is
+        written for every peptide list, so the digest is computed on first
+        use and reused.  Empty when no database was configured or the file
+        is missing (mock mode).
+        """
+        if self._annotated_db_hash is None:
+            db_path = self.config.annotated_db_path
+            if db_path and db_path.exists():
+                size = db_path.stat().st_size
+                logger.info(
+                    f"Hashing annotated database for the manifest: {db_path} "
+                    f"({format_bytes(size)})"
+                )
+                started = time.monotonic()
+                self._annotated_db_hash = compute_file_hash(db_path)
+                logger.info(
+                    f"Hashed annotated database in {time.monotonic() - started:.1f}s"
+                )
+            else:
+                self._annotated_db_hash = ""
+        return self._annotated_db_hash
+
     def _write_reports(
         self,
         list_id: str,
@@ -811,6 +841,7 @@ class PipelineRunner:
                 self.ref_snapshot_dir / "taxonomy" if self.ref_snapshot_dir else None
             ),
             annotated_db_path=self.config.annotated_db_path,
+            annotated_db_hash=self._get_annotated_db_hash(),
         )
 
         # Add reference metadata to manifest

@@ -524,6 +524,7 @@ def create_manifest(
     go_snapshot_dir: Path | None = None,
     taxonomy_snapshot_dir: Path | None = None,
     annotated_db_path: Path | None = None,
+    annotated_db_hash: str | None = None,
 ) -> ManifestInfo:
     """Create a manifest with all provenance information.
 
@@ -537,7 +538,12 @@ def create_manifest(
         parameters: Dictionary of parameters used
         go_snapshot_dir: Directory containing GO snapshot files
         taxonomy_snapshot_dir: Directory containing taxonomy snapshot files
-        annotated_db_path: Path to annotated database file
+        annotated_db_path: Path to annotated database file, hashed here
+            unless ``annotated_db_hash`` is given
+        annotated_db_hash: Precomputed SHA256 of the annotated database.
+            The pipeline writes one manifest per peptide list and the
+            database can be tens of gigabytes, so the runner hashes it once
+            and passes the digest in rather than re-reading the file per list.
 
     Returns:
         ManifestInfo object
@@ -572,8 +578,10 @@ def create_manifest(
             if file_path.is_file():
                 manifest.taxonomy_snapshot_files[file_path.name] = compute_file_hash(file_path)
 
-    # Hash annotated database
-    if annotated_db_path and annotated_db_path.exists():
+    # Hash annotated database (or use the digest the caller already computed)
+    if annotated_db_hash is not None:
+        manifest.annotated_db_hash = annotated_db_hash
+    elif annotated_db_path and annotated_db_path.exists():
         manifest.annotated_db_hash = compute_file_hash(annotated_db_path)
 
     return manifest
