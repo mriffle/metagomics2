@@ -181,6 +181,30 @@ class TestBuildProteinDict:
         protein_dict = build_protein_dict([])
         assert protein_dict == {}
 
+    def test_duplicate_id_is_an_error(self):
+        # Silently keeping one record would drop the peptides in the other
+        records = [
+            FastaRecord(id="P1", description="first", sequence="AAA"),
+            FastaRecord(id="P2", description="", sequence="BBB"),
+            FastaRecord(id="P1", description="second", sequence="CCC"),
+        ]
+        with pytest.raises(FastaParsingError) as exc_info:
+            build_protein_dict(records)
+        message = str(exc_info.value)
+        assert "P1 (x2)" in message
+        assert "P2" not in message
+
+    def test_duplicate_id_error_counts_every_repeat(self):
+        records = [FastaRecord(id="P1", description="", sequence="A")] * 3 + [
+            FastaRecord(id="P2", description="", sequence="B"),
+            FastaRecord(id="P2", description="", sequence="C"),
+        ]
+        with pytest.raises(FastaParsingError) as exc_info:
+            build_protein_dict(records)
+        assert "2 protein ID(s)" in str(exc_info.value)
+        assert "P1 (x3)" in str(exc_info.value)
+        assert "P2 (x2)" in str(exc_info.value)
+
 
 class TestFastaRecord:
     """Tests for the FastaRecord dataclass."""

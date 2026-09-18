@@ -46,6 +46,7 @@ from metagomics2.core.go import GODAG
 from metagomics2.core.matching import MatchResult, match_peptides_to_proteins
 from metagomics2.core.peptides import Peptide, parse_peptide_list
 from metagomics2.core.reference_loader import (
+    ReferenceDataError,
     create_reference_snapshot,
     get_bundled_reference_dir,
     get_reference_metadata,
@@ -446,21 +447,28 @@ class PipelineRunner:
             go_source = bundled_ref / "go" / "go.obo"
             logger.info("Loading reference data from bundled sources")
 
-        # Load taxonomy
-        if taxonomy_source and taxonomy_source.exists():
-            logger.info(f"Loading taxonomy: {taxonomy_source}")
-            self.taxonomy_tree = load_taxonomy_data(taxonomy_source)
-            logger.info(f"Loaded {len(self.taxonomy_tree.nodes)} taxonomy nodes")
-        else:
-            logger.warning("No taxonomy data available")
+        # Both references are required.  Without them every peptide would be
+        # "unannotated" and the run would still report success with empty
+        # results, so a missing source is an error, not a warning.
+        if not taxonomy_source or not taxonomy_source.exists():
+            raise ReferenceDataError(
+                f"NCBI taxonomy data not found at {taxonomy_source}. In Docker it is "
+                "bundled under /app/reference; outside Docker pass --taxonomy with a "
+                "taxdump directory (nodes.dmp, names.dmp) or a taxonomy JSON file."
+            )
+        if not go_source or not go_source.exists():
+            raise ReferenceDataError(
+                f"Gene Ontology data not found at {go_source}. In Docker it is bundled "
+                "under /app/reference; outside Docker pass --go with a go.obo or GO JSON file."
+            )
 
-        # Load GO
-        if go_source and go_source.exists():
-            logger.info(f"Loading GO: {go_source}")
-            self.go_dag = load_go_data(go_source)
-            logger.info(f"Loaded {len(self.go_dag.terms)} GO terms")
-        else:
-            logger.warning("No GO data available")
+        logger.info(f"Loading taxonomy: {taxonomy_source}")
+        self.taxonomy_tree = load_taxonomy_data(taxonomy_source)
+        logger.info(f"Loaded {len(self.taxonomy_tree.nodes)} taxonomy nodes")
+
+        logger.info(f"Loading GO: {go_source}")
+        self.go_dag = load_go_data(go_source)
+        logger.info(f"Loaded {len(self.go_dag.terms)} GO terms")
 
         # Load subject annotations
         if self.config.mock_subject_annotations_path:

@@ -165,8 +165,32 @@ def build_protein_dict(records: list[FastaRecord]) -> dict[str, str]:
 
     Returns:
         Dictionary mapping protein ID to sequence
+
+    Raises:
+        FastaParsingError: If an ID appears more than once.  Keeping only one
+            of the records would silently drop every peptide that occurs only
+            in the others, and renaming them would change the IDs DIAMOND and
+            the peptide mapping report, so the file has to be fixed instead.
     """
-    return {record.id: record.sequence for record in records}
+    proteins: dict[str, str] = {}
+    duplicates: dict[str, int] = {}
+    for record in records:
+        if record.id in proteins:
+            duplicates[record.id] = duplicates.get(record.id, 1) + 1
+        proteins[record.id] = record.sequence
+
+    if duplicates:
+        shown = ", ".join(
+            f"{pid} (x{count})" for pid, count in sorted(duplicates.items())[:10]
+        )
+        more = f" and {len(duplicates) - 10} more" if len(duplicates) > 10 else ""
+        raise FastaParsingError(
+            f"{len(duplicates)} protein ID(s) appear more than once in the FASTA file: "
+            f"{shown}{more}. Every record needs a unique ID (the header text up to the "
+            "first space)."
+        )
+
+    return proteins
 
 
 def write_subset_fasta(

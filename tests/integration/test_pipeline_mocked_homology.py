@@ -447,6 +447,51 @@ class TestPipelineErrorHandling:
         assert not result.success
         assert result.error_message is not None
 
+    @pytest.mark.parametrize("missing", ["go", "taxonomy"])
+    def test_missing_reference_data_fails_the_run(
+        self, fixtures_dir: Path, tmp_path: Path, missing: str
+    ):
+        """No reference data must be an error, not a successful run with no annotations."""
+        go_path = fixtures_dir / "go" / "small_go.json"
+        tax_path = fixtures_dir / "taxonomy" / "small_taxonomy.json"
+        config = PipelineConfig(
+            fasta_path=fixtures_dir / "fasta" / "small_background.fasta",
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=tmp_path / "missing.obo" if missing == "go" else go_path,
+            taxonomy_data_path=tmp_path / "missing_taxdump" if missing == "taxonomy" else tax_path,
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        result = run_pipeline(config)
+
+        assert not result.success
+        assert result.error_message is not None
+        expected = "Gene Ontology data not found" if missing == "go" else "taxonomy data not found"
+        assert expected in result.error_message
+        assert not (tmp_path / "results" / "list_000").exists()
+
+    def test_duplicate_fasta_ids_fail_the_run(self, fixtures_dir: Path, tmp_path: Path):
+        """A repeated protein ID must not silently drop one of the sequences."""
+        fasta = tmp_path / "dup.fasta"
+        fasta.write_text(">B1 one\nAAAPEPTIDEAAA\n>B1 two\nCCCC\n")
+        config = PipelineConfig(
+            fasta_path=fasta,
+            peptide_list_paths=[fixtures_dir / "peptides" / "small_peptides.tsv"],
+            output_dir=tmp_path / "results",
+            go_data_path=fixtures_dir / "go" / "small_go.json",
+            taxonomy_data_path=fixtures_dir / "taxonomy" / "small_taxonomy.json",
+            mock_hits_path=fixtures_dir / "hits" / "accepted_hits.json",
+            mock_subject_annotations_path=fixtures_dir / "annotations" / "subjects.json",
+        )
+
+        result = run_pipeline(config)
+
+        assert not result.success
+        assert result.error_message is not None
+        assert "B1 (x2)" in result.error_message
+
     def test_missing_peptide_file(self, fixtures_dir: Path, tmp_path: Path):
         """Pipeline should fail gracefully with missing peptide file."""
         config = PipelineConfig(
