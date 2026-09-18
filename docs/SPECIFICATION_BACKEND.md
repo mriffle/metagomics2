@@ -519,7 +519,7 @@ The worker runs as a separate process (started by `docker-entrypoint.sh`). It us
 
 ### 9.3 Job Database (`db/database.py`)
 
-SQLite database at `<DATA_DIR>/metagomics2.db` with three tables:
+SQLite database at `<DATA_DIR>/metagomics2.db` with three tables. It runs in write-ahead-logging mode (set once at initialisation, so `metagomics2.db-wal` and `metagomics2.db-shm` sidecar files live beside it) and every connection waits up to 30 s for a lock, because the server and the worker write it from separate processes:
 
 **`jobs`**: `job_id (PK), created_at, status, params_json, db_choice, search_tool, progress_total, progress_done, current_step, error_message`
 

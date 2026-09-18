@@ -37,8 +37,16 @@ class Database:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Initialize database schema."""
+        """Initialize database schema.
+
+        Also switches the file to write-ahead logging.  The web server and the
+        worker write this database from separate processes; WAL lets readers
+        proceed during a write and, with the connect timeout, keeps the two from
+        tripping over each other with "database is locked" errors.  The mode is
+        persistent in the file, so setting it here once is enough.
+        """
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -86,7 +94,9 @@ class Database:
     @contextmanager
     def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Get a database connection."""
-        conn = sqlite3.connect(str(self.db_path))
+        # Wait up to 30 s for a lock held by the other process instead of the
+        # 5 s default; progress updates and job creation are short writes.
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
         conn.row_factory = sqlite3.Row
         try:
             yield conn

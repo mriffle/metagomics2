@@ -50,6 +50,33 @@ class TestDatabaseInit:
         Database(db_path)  # Should not raise
         assert db_path.exists()
 
+    def test_uses_write_ahead_logging(self, tmp_path: Path):
+        import sqlite3
+
+        db_path = tmp_path / "test.db"
+        Database(db_path)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        finally:
+            conn.close()
+
+    def test_two_instances_interleave_writes(self, tmp_path: Path):
+        """The server and worker each hold their own Database on the same file."""
+        db_path = tmp_path / "test.db"
+        server_db = Database(db_path)
+        worker_db = Database(db_path)
+
+        job_id = server_db.create_job(JobParams())
+        server_db.update_job_status(job_id, JobStatus.QUEUED)
+        assert worker_db.get_next_queued_job() == job_id
+        worker_db.update_job_status(job_id, JobStatus.RUNNING)
+        for i in range(50):
+            worker_db.update_job_progress(job_id, i, 1000, f"step {i}")
+            assert server_db.get_job(job_id).progress_done == i
+        worker_db.update_job_status(job_id, JobStatus.COMPLETED)
+        assert server_db.get_job(job_id).status == JobStatus.COMPLETED
+
 
 class TestCreateJob:
     """Tests for job creation."""
