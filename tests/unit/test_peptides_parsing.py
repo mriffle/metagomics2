@@ -42,9 +42,79 @@ class TestNormalizeSequence:
         assert normalize_sequence("[+42]PEPTIDE") == "PEPTIDE"
         assert normalize_sequence("PEPTIDE[+80]") == "PEPTIDE"
 
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            # Named modifications: the letters of the name must not leak in
+            ("C[Carbamidomethyl]PEPTIDE", "CPEPTIDE"),
+            ("M(Oxidation)PEPTIDE", "MPEPTIDE"),
+            ("PEPTIDE(UniMod:4)", "PEPTIDE"),
+            ("PEPTC(+57.02)IDE", "PEPTCIDE"),
+            ("PEPTIDE{Phospho}", "PEPTIDE"),
+            # Nested groups (MaxQuant, Spectronaut, Skyline)
+            ("_M(Oxidation (M))PEPTIDE_", "MPEPTIDE"),
+            ("PEPTIDE[Phospho (STY)]", "PEPTIDE"),
+            ("_C[Carbamidomethyl (C)]PEPTIDE_", "CPEPTIDE"),
+            # ProForma-style terminal modification
+            ("[Acetyl]-PEPTIDE", "PEPTIDE"),
+            # Unbalanced bracket falls through to the non-letter strip
+            ("PEPT[IDE", "PEPTIDE"),
+            ("PEPT]+80[IDE", "PEPTIDE"),
+        ],
+    )
+    def test_strips_named_and_nested_modifications(self, raw: str, expected: str):
+        assert normalize_sequence(raw) == expected
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("K.PEPTIDE.R", "PEPTIDE"),
+            ("-.PEPTIDE.K", "PEPTIDE"),
+            ("K.PEPTIDE.-", "PEPTIDE"),
+            ("K.PEPT[+80]IDE.R", "PEPTIDE"),
+            ("R.M(ox)PEPTIDE.K", "MPEPTIDE"),
+            ("K.C[Carbamidomethyl]PEPTIDE.R", "CPEPTIDE"),
+            ("k.peptide.r", "PEPTIDE"),
+        ],
+    )
+    def test_strips_flanking_residues(self, raw: str, expected: str):
+        assert normalize_sequence(raw) == expected
+
+    def test_dot_separated_letters_are_not_flanks(self):
+        # Only a single residue (or '-') on each side of a dot-free peptide
+        # counts as flanking notation
+        assert normalize_sequence("P.E.P.T.I.D.E") == "PEPTIDE"
+        assert normalize_sequence("KR.PEPTIDE.R") == "KRPEPTIDER"
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("n[42.0106]PEPTIDE", "PEPTIDE"),
+            ("n(42.0106)PEPTIDE", "PEPTIDE"),
+            ("PEPTIDEKc[-0.98]", "PEPTIDEK"),
+            ("K.n[42.0106]PEPTIDE.R", "PEPTIDE"),
+            ("K.PEPTIDEKc[-0.98].R", "PEPTIDEK"),
+            ("n[42.0106]M[15.9949]PEPTIDE", "MPEPTIDE"),
+        ],
+    )
+    def test_strips_terminal_modification_markers(self, raw: str, expected: str):
+        assert normalize_sequence(raw) == expected
+
+    def test_lowercase_residues_elsewhere_are_kept(self):
+        # A lowercase letter that is not a terminal marker is a residue
+        assert normalize_sequence("PEPTcIDE") == "PEPTCIDE"
+        assert normalize_sequence("nPEPTIDE") == "NPEPTIDE"
+        assert normalize_sequence("PEPTIDEc") == "PEPTIDEC"
+        assert normalize_sequence("PEPTIDEC[+57]") == "PEPTIDEC"
+
     def test_rejects_empty_after_stripping(self):
         with pytest.raises(PeptideParsingError) as exc_info:
             normalize_sequence("[+80]")
+        assert "Empty" in str(exc_info.value)
+
+    def test_rejects_empty_after_stripping_named_modification(self):
+        with pytest.raises(PeptideParsingError) as exc_info:
+            normalize_sequence("(Oxidation)")
         assert "Empty" in str(exc_info.value)
 
     def test_accepts_custom_alphabet(self):
@@ -357,6 +427,22 @@ class TestModificationStrippingAndAggregation:
         assert len(peptides) == 1
         assert peptides[0].sequence == "PEPTIDE"
         assert peptides[0].quantity == 118.0
+
+    def test_named_modifications_and_flanks_merge_with_plain_form(self):
+        content = (
+            "seq\tqty\n"
+            "PEPTIDE\t100\n"
+            "K.PEPTIDE.R\t10\n"
+            "_PEPT(Phospho (STY))IDE_\t5\n"
+            "K.n[42.0106]PEPTIDE.R\t3\n"
+            "CPEPTIDE\t20\n"
+            "C[Carbamidomethyl]PEPTIDE\t7\n"
+        )
+        handle = io.StringIO(content)
+        peptides = parse_peptide_list_from_handle(handle)
+
+        by_seq = {p.sequence: p.quantity for p in peptides}
+        assert by_seq == {"PEPTIDE": 118.0, "CPEPTIDE": 27.0}
 
     def test_different_sequences_stay_separate(self):
         content = "seq\tqty\nPEPTIDE\t10\nANOTHER\t5\nPEPT[+80]IDE\t3\n"

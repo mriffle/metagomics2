@@ -313,9 +313,11 @@ The service will refuse to start if no databases are configured.
 Protein sequences (unannotated) that peptides will be matched against.
 
 ### Peptide Lists (CSV/TSV)
-Required columns:
+Two columns, in this order (a header row is optional and its names are not read):
 - `peptide_sequence`: The peptide sequence
 - `quantity`: Numeric quantity/count
+
+Sequences are normalized before matching, so search-engine output can be used directly. Modification annotations in square brackets, parentheses or braces are removed, whether they hold a mass delta or a name and even when nested (`PEPT[+79.966]IDE`, `C[Carbamidomethyl]PEPTIDE`, `_M(Oxidation (M))PEPTIDE_`, `PEPTIDE(UniMod:4)`), together with a lowercase `n`/`c` terminal-modification marker attached to them (`n[42.0106]PEPTIDE`). Flanking residues written as `K.PEPTIDE.R` or `-.PEPTIDE.K` are stripped. Everything is then uppercased and any remaining non-letter (underscores, `*`, dashes) is dropped. Rows whose raw text differs but normalizes to the same sequence are merged by summing their quantities.
 
 ## Output Files
 

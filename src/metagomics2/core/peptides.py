@@ -29,6 +29,27 @@ class PeptideParsingError(Exception):
 
 _NON_UPPER_RE = re.compile(r"[^A-Z]")
 
+# One innermost bracketed group: ``[...]``, ``(...)`` or ``{...}`` with no
+# bracket of the same kind inside.  Applied repeatedly so nested annotations
+# such as ``(Oxidation (M))`` or ``[Phospho (STY)]`` are removed from the
+# inside out.  Search engines put modification names and mass deltas in these
+# groups, and the letters in a name must never leak into the sequence.
+_BRACKET_GROUP_RE = re.compile(r"\[[^\[\]]*\]|\([^()]*\)|\{[^{}]*\}")
+
+# Comet/MSFragger terminal-modification markers: a lowercase ``n`` at the
+# start, or a lowercase ``c`` at the end, immediately attached to a bracketed
+# group (``n[42.0106]PEPTIDE``, ``PEPTIDEKc[-0.98]``), optionally inside
+# flanking-residue notation (``K.n[42.0106]PEPTIDE.R``).  Anchored to the ends
+# so a lowercase ``c`` anywhere else is still cysteine.
+_NTERM_MARKER_RE = re.compile(r"^((?:[A-Za-z]|-)\.)?n(?=[\[({])")
+_CTERM_MARKER_RE = re.compile(r"c(?=[\[({][^\[\](){}]*[\])}](?:\.(?:[A-Za-z]|-))?$)")
+
+# Flanking-residue notation ``K.PEPTIDE.R`` (``-`` for a protein terminus):
+# a single letter or dash, a dot, the peptide, a dot, a single letter or dash.
+# The peptide part must contain no dot, so a string of dot-separated letters
+# is not mistaken for a flanked peptide.
+_FLANKED_RE = re.compile(r"^(?:[A-Za-z]|-)\.([^.]+)\.(?:[A-Za-z]|-)$")
+
 
 def normalize_sequence(
     sequence: str,
@@ -36,11 +57,20 @@ def normalize_sequence(
 ) -> str:
     """Normalize a peptide sequence.
 
-    - Strip whitespace
-    - Convert to uppercase
-    - Remove all non-uppercase-letter characters (e.g. modification
-      annotations like ``[+80]``, dots, dashes, etc.)
-    - Validate against allowed alphabet (if provided)
+    Rules, applied in this order:
+
+    1. Strip surrounding whitespace.
+    2. Remove modification annotations: every bracketed group ``[...]``,
+       ``(...)`` or ``{...}``, including nested ones, whether it holds a mass
+       delta (``PEPT[+79.966]IDE``) or a name (``C[Carbamidomethyl]``,
+       ``M(Oxidation (M))``, ``(UniMod:4)``).  A lowercase ``n`` at the start or
+       ``c`` at the end that is attached to such a group is a terminal-
+       modification marker and is removed with it.
+    3. Strip flanking residues: ``K.PEPTIDE.R`` or ``-.PEPTIDE.K`` becomes
+       ``PEPTIDE``.
+    4. Convert to uppercase and remove every remaining character that is not a
+       letter (``_PEPTIDE_``, ``PEP*TIDE``, ``PEPT-IDE``, charge suffixes).
+    5. Validate against the allowed alphabet.
 
     Args:
         sequence: Raw peptide sequence
@@ -50,13 +80,31 @@ def normalize_sequence(
         Normalized sequence containing only uppercase amino-acid letters
 
     Raises:
-        PeptideParsingError: If the resulting sequence is empty
+        PeptideParsingError: If the resulting sequence is empty or contains
+            characters outside the allowed alphabet
     """
     if allowed_alphabet is None:
         allowed_alphabet = EXTENDED_AA_ALPHABET
 
-    # Uppercase first, then strip everything that isn't A-Z
-    normalized = _NON_UPPER_RE.sub("", sequence.strip().upper())
+    stripped = sequence.strip()
+
+    # Terminal markers first: they are only meaningful next to a bracket group
+    stripped = _NTERM_MARKER_RE.sub(r"\1", stripped)
+    stripped = _CTERM_MARKER_RE.sub("", stripped)
+
+    # Remove bracketed groups from the inside out until none are left
+    while True:
+        without_groups = _BRACKET_GROUP_RE.sub("", stripped)
+        if without_groups == stripped:
+            break
+        stripped = without_groups
+
+    flanked = _FLANKED_RE.match(stripped)
+    if flanked:
+        stripped = flanked.group(1)
+
+    # Uppercase, then strip everything that isn't A-Z
+    normalized = _NON_UPPER_RE.sub("", stripped.upper())
 
     if not normalized:
         raise PeptideParsingError("Empty peptide sequence after removing non-letter characters")
