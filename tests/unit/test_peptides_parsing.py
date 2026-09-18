@@ -258,6 +258,38 @@ class TestParsePeptideListTSV:
         assert "Line 2" in str(exc_info.value)
 
 
+class TestExtraColumns:
+    """A non-empty value beyond the two expected columns is an error."""
+
+    def test_thousands_separator_split_into_third_column_is_rejected(self):
+        content = "peptide_sequence,quantity\nPEPTIDE,1,000\n"
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(io.StringIO(content))
+        assert "Line 2" in str(exc_info.value)
+        assert "'000'" in str(exc_info.value)
+
+    def test_extra_value_on_first_data_row_without_header_is_rejected(self):
+        content = "PEPTIDE\t10\tsampleA\n"
+        with pytest.raises(PeptideParsingError) as exc_info:
+            parse_peptide_list_from_handle(io.StringIO(content))
+        assert "Line 1" in str(exc_info.value)
+        assert "'sampleA'" in str(exc_info.value)
+
+    def test_trailing_empty_cells_are_allowed(self):
+        content = "peptide_sequence,quantity,,\nPEPTIDE,10,,\nABC,5, ,\n"
+        peptides = parse_peptide_list_from_handle(io.StringIO(content))
+        assert peptides == [
+            Peptide(sequence="PEPTIDE", quantity=10.0),
+            Peptide(sequence="ABC", quantity=5.0),
+        ]
+
+    def test_header_may_name_extra_columns(self):
+        # Only data rows are checked; a wider header is harmless on its own
+        content = "peptide_sequence\tquantity\tnotes\nPEPTIDE\t10\t\n"
+        peptides = parse_peptide_list_from_handle(io.StringIO(content))
+        assert peptides == [Peptide(sequence="PEPTIDE", quantity=10.0)]
+
+
 class TestParsePeptideListCSV:
     """Tests for parsing CSV peptide lists."""
 

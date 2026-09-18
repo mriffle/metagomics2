@@ -175,6 +175,24 @@ def _is_numeric(value: str) -> bool:
         return False
 
 
+def _check_no_extra_values(row: list[str], line_num: int) -> None:
+    """Reject a data row that carries a value beyond the two expected columns.
+
+    Trailing empty cells (``PEPTIDE,10,,`` as spreadsheets export them) are
+    fine.  A non-empty third value is not: it usually means the quantity was
+    written with a thousands separator (``PEPTIDE,1,000``) and has just been
+    split into two columns, so reading only the second one would silently
+    record the wrong number.
+    """
+    extra = [cell.strip() for cell in row[2:] if cell.strip()]
+    if extra:
+        raise PeptideParsingError(
+            f"Line {line_num}: expected 2 columns (sequence, quantity) but found "
+            f"an extra value '{extra[0]}'. Check for thousands separators in the "
+            "quantity column or remove the additional columns."
+        )
+
+
 def parse_peptide_list(
     file_path: Path | str,
     allowed_alphabet: set[str] | None = None,
@@ -260,6 +278,7 @@ def parse_peptide_list_from_handle(
             raise PeptideParsingError(
                 "Line 1: Not enough columns (expected at least 2)"
             )
+        _check_no_extra_values(first_row, 1)
         raw_seq = first_row[seq_idx].strip()
         if raw_seq in seen_raw:
             raise PeptideParsingError(
@@ -285,6 +304,7 @@ def parse_peptide_list_from_handle(
             raise PeptideParsingError(
                 f"Line {line_num}: Not enough columns (expected at least 2)"
             )
+        _check_no_extra_values(row, line_num)
 
         raw_seq = row[seq_idx].strip()
         if raw_seq in seen_raw:
