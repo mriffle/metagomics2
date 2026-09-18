@@ -143,7 +143,7 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 - `work_dir` is `PipelineConfig.work_dir`; when unset it is `<job_dir>/work/` in web mode (job_dir set, layout in Section 17) and `<output_dir>/work/` in CLI mode. It is never placed beside the output directory. DIAMOND's tabular output and, in CLI mode, `diamond.log` are written there too.
 
 ### Stage 4: Homology Search (DIAMOND)
-- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter. `--max-target-seqs` is always passed explicitly: `PipelineConfig.diamond_max_target_seqs` (default 500 from `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` / `--diamond-max-target-seqs`, `0` = unlimited) raised to `top_k` when that is larger, because DIAMOND's own default of 25 is not tie-aware. After parsing, `count_queries_at_cap` reports how many query proteins returned exactly the cap and the runner logs a warning if any did; the effective cap is recorded in the manifest as `diamond_max_target_seqs`.
+- **Run DIAMOND blastp** (`core/diamond.py`): Searches the subset FASTA against an annotated database (e.g., UniProt SwissProt `.dmnd`). Output format: BLAST tabular (`--outfmt 6` with the twelve standard columns plus `qcovhsp`, listed in `core/diamond.py: DIAMOND_OUTFMT_COLUMNS`; the extra column supplies the query coverage that `min_qcov` filters on). The `max_evalue` from filter policy is passed to DIAMOND as a pre-filter; when the policy sets none, `DEFAULT_DIAMOND_EVALUE` (1e-10) is used so DIAMOND still has a threshold, and the value actually passed is recorded in the manifest as `diamond_evalue` (null when the homology stage is mocked). `--max-target-seqs` is always passed explicitly: `PipelineConfig.diamond_max_target_seqs` (default 500 from `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` / `--diamond-max-target-seqs`, `0` = unlimited) raised to `top_k` when that is larger, because DIAMOND's own default of 25 is not tie-aware. After parsing, `count_queries_at_cap` reports how many query proteins returned exactly the cap and the runner logs a warning if any did; the effective cap is recorded in the manifest as `diamond_max_target_seqs`.
 - **Parse results** (`core/filtering.py: parse_blast_tabular`): Parse the tabular output into `HomologyHit` objects grouped by query protein.
 - **Filter hits** (`core/filtering.py: filter_all_hits`):
   1. **Threshold filters** (AND logic): `max_evalue`, `min_pident`, `min_qcov`, `min_alnlen`
@@ -849,7 +849,7 @@ Every pipeline run produces a `run_manifest.json` capturing:
 - Input file SHA256 hashes (FASTA, peptide lists)
 - Annotated database hash
 - Reference data file hashes (GO OBO, taxonomy dumps)
-- All filter parameters
+- All filter parameters, plus the e-value and per-query hit cap actually passed to DIAMOND (`diamond_evalue`, `diamond_max_target_seqs`), which can differ from the policy values when the policy leaves them unset
 - UTC timestamp
 
 This enables full reproducibility: given the same inputs, same software version, and same reference data, the output should be identical.

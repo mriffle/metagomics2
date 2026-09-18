@@ -197,6 +197,9 @@ class TestPipelineMockedHomology:
         assert "fasta" in manifest["inputs"]
         assert "sha256" in manifest["inputs"]["fasta"]
         assert "parameters" in manifest
+        # DIAMOND did not run in mock mode, so no e-value was passed to it
+        assert manifest["parameters"]["diamond_evalue"] is None
+        assert manifest["parameters"]["diamond_max_target_seqs"] == 500
         assert "timestamp_utc" in manifest
 
     def test_progress_callback_called(

@@ -6,7 +6,11 @@ from unittest.mock import patch
 
 import pytest
 
-from metagomics2.core.diamond import DEFAULT_MAX_TARGET_SEQS, DiamondResult
+from metagomics2.core.diamond import (
+    DEFAULT_DIAMOND_EVALUE,
+    DEFAULT_MAX_TARGET_SEQS,
+    DiamondResult,
+)
 from metagomics2.core.filtering import FilterPolicy, HomologyHit
 from metagomics2.pipeline.runner import PipelineConfig, PipelineRunner
 
@@ -66,6 +70,20 @@ class TestEffectiveMaxTargetSeqs:
         assert config.effective_max_target_seqs() == 0
 
 
+class TestEffectiveDiamondEvalue:
+    def _config(self, **kwargs) -> PipelineConfig:
+        return PipelineConfig(
+            fasta_path=Path("bg.fasta"), peptide_list_paths=[], output_dir=Path("out"), **kwargs
+        )
+
+    def test_default_when_policy_unset(self):
+        assert self._config().effective_diamond_evalue() == DEFAULT_DIAMOND_EVALUE
+
+    def test_policy_value_used(self):
+        config = self._config(filter_policy=FilterPolicy(max_evalue=1e-5))
+        assert config.effective_diamond_evalue() == 1e-5
+
+
 class TestHomologySearchCap:
     @patch("metagomics2.pipeline.runner.run_diamond")
     def test_cap_passed_to_diamond(self, mock_run, tmp_path):
@@ -75,6 +93,7 @@ class TestHomologySearchCap:
         runner._run_homology_search()
 
         assert mock_run.call_args.kwargs["max_target_seqs"] == 60
+        assert mock_run.call_args.kwargs["evalue"] == DEFAULT_DIAMOND_EVALUE
         assert runner.protein_to_subjects == {"protA": {"S1"}}
         assert runner.diamond_command == "diamond blastp"
 

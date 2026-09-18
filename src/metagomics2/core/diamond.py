@@ -38,6 +38,9 @@ DIAMOND_OUTFMT_COLUMNS = [
 # output size on TrEMBL-scale databases.  0 means unlimited.
 DEFAULT_MAX_TARGET_SEQS = 500
 
+# E-value passed to DIAMOND as a pre-filter when the filter policy sets none.
+DEFAULT_DIAMOND_EVALUE = 1e-10
+
 
 def parse_uniprot_accession(subject_id: str) -> str:
     """Extract the bare UniProt accession from a DIAMOND subject ID.
@@ -129,7 +132,7 @@ def run_diamond(
     query_fasta: Path,
     db_path: Path,
     output_path: Path,
-    evalue: float = 1e-10,
+    evalue: float = DEFAULT_DIAMOND_EVALUE,
     max_target_seqs: int | None = None,
     threads: int = 4,
     log_path: Path | None = None,

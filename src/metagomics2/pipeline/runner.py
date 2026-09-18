@@ -26,6 +26,7 @@ from metagomics2.core.annotation import (
     load_subject_annotations_from_dict,
 )
 from metagomics2.core.diamond import (
+    DEFAULT_DIAMOND_EVALUE,
     DEFAULT_MAX_TARGET_SEQS,
     count_queries_at_cap,
     run_diamond,
@@ -124,6 +125,16 @@ class PipelineConfig:
         if self.diamond_max_target_seqs == 0:
             return 0
         return max(self.diamond_max_target_seqs, self.filter_policy.top_k or 0)
+
+    def effective_diamond_evalue(self) -> float:
+        """The ``--evalue`` pre-filter actually passed to DIAMOND.
+
+        The filter policy's ``max_evalue`` when set; otherwise DIAMOND still
+        needs a threshold, and ``DEFAULT_DIAMOND_EVALUE`` is used.
+        """
+        if self.filter_policy.max_evalue is not None:
+            return self.filter_policy.max_evalue
+        return DEFAULT_DIAMOND_EVALUE
 
 
 # Weighted progress milestones (out of 1000) for each pipeline stage.
@@ -600,7 +611,7 @@ class PipelineRunner:
             query_fasta=self.subset_fasta_path,
             db_path=self.config.annotated_db_path,
             output_path=diamond_output,
-            evalue=self.config.filter_policy.max_evalue or 1e-10,
+            evalue=self.config.effective_diamond_evalue(),
             max_target_seqs=max_target_seqs,
             threads=self.config.threads,
             log_path=log_dir / "diamond.log",
@@ -789,6 +800,11 @@ class PipelineRunner:
                     str(self.config.diamond_tmpdir) if self.config.diamond_tmpdir else None
                 ),
                 "diamond_max_target_seqs": self.config.effective_max_target_seqs(),
+                # What DIAMOND was actually run with; null when the homology
+                # stage was mocked and DIAMOND did not run.
+                "diamond_evalue": (
+                    None if self.config.mock_hits_path else self.config.effective_diamond_evalue()
+                ),
             },
             go_snapshot_dir=self.ref_snapshot_dir / "go" if self.ref_snapshot_dir else None,
             taxonomy_snapshot_dir=(
