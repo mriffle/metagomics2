@@ -40,10 +40,16 @@ class FilterPolicy:
 
 @dataclass
 class FilterResult:
-    """Result of filtering hits for a query."""
+    """Result of filtering hits for a query.
+
+    ``accepted_hits`` holds one ``HomologyHit`` per accepted subject: the HSP
+    that represented the subject in the ranking.  ``accepted_subjects`` is the
+    same set of subjects as plain IDs.
+    """
 
     query_id: str
     accepted_subjects: set[str] = field(default_factory=set)
+    accepted_hits: list[HomologyHit] = field(default_factory=list)
     total_hits: int = 0
     passed_threshold_hits: int = 0
 
@@ -73,6 +79,22 @@ def passes_thresholds(hit: HomologyHit, policy: FilterPolicy) -> bool:
     return True
 
 
+def _best_hit_per_subject(hits: list[HomologyHit]) -> list[HomologyHit]:
+    """Collapse multiple HSPs for the same subject to the single best one.
+
+    The best HSP is the one with the highest bitscore; ties go to the lowest
+    e-value, then to the one seen first.  Ranking and reporting are per
+    subject, so a subject aligned by several HSPs must neither take several
+    ``top_k`` slots nor be reported with the values of a weaker HSP.
+    """
+    best: dict[str, HomologyHit] = {}
+    for hit in hits:
+        current = best.get(hit.subject_id)
+        if current is None or (-hit.bitscore, hit.evalue) < (-current.bitscore, current.evalue):
+            best[hit.subject_id] = hit
+    return list(best.values())
+
+
 def filter_hits_for_query(
     hits: list[HomologyHit],
     policy: FilterPolicy,
@@ -81,15 +103,17 @@ def filter_hits_for_query(
 
     Filtering steps:
     1. Apply threshold filters (evalue, pident, qcov, alnlen)
-    2. Apply tie-aware top_k ranking: keep the top K hits by bitscore,
-       plus any additional hits tied with the Kth-best bitscore
+    2. Keep one HSP per subject: the one with the highest bitscore among
+       those that passed the thresholds
+    3. Apply tie-aware top_k ranking: keep the top K subjects by bitscore,
+       plus any additional subjects tied with the Kth-best bitscore
 
     Args:
         hits: List of hits for a single query
         policy: The filter policy
 
     Returns:
-        FilterResult with accepted subject IDs
+        FilterResult with accepted subject IDs and their representative hits
     """
     if not hits:
         return FilterResult(query_id="", accepted_subjects=set(), total_hits=0)
@@ -104,16 +128,20 @@ def filter_hits_for_query(
     if not passing_hits:
         return result
 
-    # Step 2: Sort by bitscore descending, then by subject_id for determinism
+    # Step 2: One representative HSP per subject
+    passing_hits = _best_hit_per_subject(passing_hits)
+
+    # Step 3: Sort by bitscore descending, then by subject_id for determinism
     passing_hits.sort(key=lambda h: (-h.bitscore, h.subject_id))
 
-    # Step 3: Apply tie-aware top_k ranking filter
+    # Step 4: Apply tie-aware top_k ranking filter
     if policy.top_k is not None and len(passing_hits) > policy.top_k:
         # Find the bitscore of the Kth hit (0-indexed: position top_k - 1)
         kth_bitscore = passing_hits[policy.top_k - 1].bitscore
         # Keep all hits whose bitscore >= the Kth-best bitscore
         passing_hits = [h for h in passing_hits if h.bitscore >= kth_bitscore]
 
+    result.accepted_hits = passing_hits
     result.accepted_subjects = {h.subject_id for h in passing_hits}
     return result
 
@@ -146,8 +174,9 @@ def filter_all_hits_with_hits(
 ) -> dict[str, dict[str, HomologyHit]]:
     """Filter hits for all query proteins, returning accepted HomologyHit objects.
 
-    Like filter_all_hits but preserves the full HomologyHit (including evalue,
-    pident, bitscore) for each accepted (query, subject) pair.
+    Like filter_all_hits but preserves the HomologyHit (evalue, pident,
+    bitscore) that represented each accepted (query, subject) pair in the
+    ranking.  Queries with no accepted subject are omitted.
 
     Args:
         hits_by_query: Dictionary mapping query_id to list of hits
@@ -161,12 +190,8 @@ def filter_all_hits_with_hits(
 
     for query_id, hits in hits_by_query.items():
         filter_result = filter_hits_for_query(hits, policy)
-        if filter_result.accepted_subjects:
-            subject_to_hit: dict[str, HomologyHit] = {}
-            for h in hits:
-                if h.subject_id in filter_result.accepted_subjects:
-                    subject_to_hit[h.subject_id] = h
-            result[query_id] = subject_to_hit
+        if filter_result.accepted_hits:
+            result[query_id] = {h.subject_id: h for h in filter_result.accepted_hits}
 
     return result
 

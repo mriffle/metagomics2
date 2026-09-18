@@ -147,8 +147,9 @@ The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner
 - **Parse results** (`core/filtering.py: parse_blast_tabular`): Parse the tabular output into `HomologyHit` objects grouped by query protein.
 - **Filter hits** (`core/filtering.py: filter_all_hits`):
   1. **Threshold filters** (AND logic): `max_evalue`, `min_pident`, `min_qcov`, `min_alnlen`
-  2. **Tie-aware top_k ranking**: Sort by bitscore descending, keep top K, but include *all* hits tied at the Kth-best bitscore. This ensures annotation is never biased by arbitrary tie-breaking.
-- Result: `protein_to_subjects: dict[bg_protein_id, set[subject_id]]`
+  2. **One HSP per subject**: when a subject aligns with several HSPs, only the best passing one (highest bitscore, then lowest e-value) represents it. Ranking is over subjects, not HSPs, and the representative HSP is the one whose `evalue`/`pident` are reported in `peptide_mapping.parquet`. DIAMOND emits one HSP per pair by default, so this matters for `--max-hsps > 1` and for non-DIAMOND input.
+  3. **Tie-aware top_k ranking**: Sort by bitscore descending, keep top K, but include *all* subjects tied at the Kth-best bitscore. This ensures annotation is never biased by arbitrary tie-breaking.
+- Result: `protein_to_subject_hits: dict[bg_protein_id, dict[subject_id, HomologyHit]]` (`filter_all_hits_with_hits`, one call), from which `protein_to_subjects: dict[bg_protein_id, set[subject_id]]` is derived
 
 ### Stage 4b: Load Subject Annotations
 - **SQLite lookup** (`core/subject_lookup.py`): For all unique subject IDs from DIAMOND results, query the companion `.annotations.db` to get taxonomy IDs and GO terms.
@@ -384,7 +385,7 @@ This produces a non-redundant set of all GO terms that describe the peptide's fu
 
 ### 7.4 Tie-Aware Top-K Filtering (`core/filtering.py`)
 
-The top_k filter ranks hits by bitscore descending. At the boundary (Kth position), if multiple hits share the same bitscore, **all tied hits are retained**. Example: `top_k=1` with 5 hits all scoring 200.0 → all 5 kept. This prevents arbitrary bias from tie-breaking.
+The top_k filter first collapses the threshold-passing hits to one representative HSP per subject (highest bitscore, ties to the lowest e-value), so a subject with several HSPs takes a single rank slot and is reported with the values of its best HSP. It then ranks subjects by bitscore descending. At the boundary (Kth position), if multiple subjects share the same bitscore, **all tied subjects are retained**. Example: `top_k=1` with 5 subjects all scoring 200.0 → all 5 kept. This prevents arbitrary bias from tie-breaking.
 
 The guarantee only holds for hits DIAMOND actually reported. DIAMOND applies its own per-query cap (`--max-target-seqs`) first, and that cap is not tie-aware, so the pipeline passes a cap that is never below `top_k` (default 500) and warns when any query fills it (see Stage 4).
 

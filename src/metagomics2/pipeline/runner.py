@@ -39,7 +39,6 @@ from metagomics2.core.fasta import (
 from metagomics2.core.filtering import (
     FilterPolicy,
     HomologyHit,
-    filter_all_hits,
     filter_all_hits_with_hits,
 )
 from metagomics2.core.go import GODAG
@@ -650,14 +649,15 @@ class PipelineRunner:
 
         # Apply filter policy (pident, evalue thresholds, top_k ranking, etc.)
         self._update_progress("Filtering homology hits", progress_done=_PROGRESS_HOMOLOGY)
-        self.protein_to_subjects = filter_all_hits(
-            diamond_result.hits_by_query, self.config.filter_policy
-        )
         self.protein_to_subject_hits = filter_all_hits_with_hits(
             diamond_result.hits_by_query, self.config.filter_policy
         )
+        self.protein_to_subjects = {
+            query_id: set(subject_hits)
+            for query_id, subject_hits in self.protein_to_subject_hits.items()
+        }
 
-        n_with_hits = sum(1 for s in self.protein_to_subjects.values() if s)
+        n_with_hits = len(self.protein_to_subjects)
         logger.info(
             f"After filtering: {n_with_hits} background proteins "
             f"have at least one accepted subject hit"

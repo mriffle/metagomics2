@@ -6,6 +6,7 @@ from metagomics2.core.filtering import (
     FilterPolicy,
     HomologyHit,
     filter_all_hits,
+    filter_all_hits_with_hits,
     filter_hits_for_query,
     parse_blast_tabular,
     passes_thresholds,
@@ -227,6 +228,125 @@ class TestFilterHitsForQuery:
 
         # S2 filtered by evalue, then top 2 of remaining by bitscore
         assert result.accepted_subjects == {"S1", "S3"}
+
+    def test_accepted_hits_match_accepted_subjects(self):
+        hits = [
+            make_hit(subject_id="S1", bitscore=100),
+            make_hit(subject_id="S2", bitscore=90),
+            make_hit(subject_id="S3", bitscore=80),
+        ]
+        result = filter_hits_for_query(hits, FilterPolicy(top_k=2))
+
+        assert {h.subject_id for h in result.accepted_hits} == result.accepted_subjects
+        assert result.accepted_subjects == {"S1", "S2"}
+
+    def test_multiple_hsps_for_one_subject_take_one_rank_slot(self):
+        # S1 aligns with two HSPs.  Ranking is over subjects, so with top_k=3
+        # the three distinct subjects are kept; counting HSPs instead would
+        # fill the third slot with S1's weaker HSP and drop S3.
+        hits = [
+            make_hit(subject_id="S1", bitscore=100),
+            make_hit(subject_id="S1", bitscore=60),
+            make_hit(subject_id="S2", bitscore=100),
+            make_hit(subject_id="S3", bitscore=40),
+        ]
+        result = filter_hits_for_query(hits, FilterPolicy(top_k=3))
+
+        assert result.accepted_subjects == {"S1", "S2", "S3"}
+        assert len(result.accepted_hits) == 3
+
+    def test_duplicate_hsps_do_not_push_a_subject_below_the_cut(self):
+        # Without collapsing, S1's three HSPs occupy ranks 1-3 and S2 (rank 4)
+        # is dropped by top_k=3 even though only two distinct subjects exist.
+        hits = [
+            make_hit(subject_id="S1", bitscore=100),
+            make_hit(subject_id="S1", bitscore=95),
+            make_hit(subject_id="S1", bitscore=90),
+            make_hit(subject_id="S2", bitscore=50),
+        ]
+        result = filter_hits_for_query(hits, FilterPolicy(top_k=2))
+
+        assert result.accepted_subjects == {"S1", "S2"}
+
+    def test_representative_hit_is_best_passing_hsp(self):
+        hits = [
+            make_hit(subject_id="S1", evalue=1e-3, bitscore=30.0, pident=40.0),
+            make_hit(subject_id="S1", evalue=1e-50, bitscore=200.0, pident=95.0),
+            make_hit(subject_id="S1", evalue=1e-20, bitscore=120.0, pident=70.0),
+        ]
+        result = filter_hits_for_query(hits, FilterPolicy(max_evalue=1e-10))
+
+        assert len(result.accepted_hits) == 1
+        best = result.accepted_hits[0]
+        assert best.evalue == 1e-50
+        assert best.bitscore == 200.0
+        assert best.pident == 95.0
+
+    def test_representative_hit_tie_goes_to_lowest_evalue(self):
+        hits = [
+            make_hit(subject_id="S1", evalue=1e-20, bitscore=100.0, pident=80.0),
+            make_hit(subject_id="S1", evalue=1e-30, bitscore=100.0, pident=85.0),
+        ]
+        result = filter_hits_for_query(hits, FilterPolicy())
+
+        assert result.accepted_hits[0].evalue == 1e-30
+
+
+class TestFilterAllHitsWithHits:
+    """Tests for filter_all_hits_with_hits."""
+
+    def test_returns_hit_objects_for_accepted_pairs(self):
+        hits_by_query = {
+            "Q1": [
+                make_hit(query_id="Q1", subject_id="S1", bitscore=100, evalue=1e-40),
+                make_hit(query_id="Q1", subject_id="S2", bitscore=50, evalue=1e-8),
+            ],
+        }
+        result = filter_all_hits_with_hits(hits_by_query, FilterPolicy(top_k=1))
+
+        assert set(result) == {"Q1"}
+        assert set(result["Q1"]) == {"S1"}
+        assert result["Q1"]["S1"].evalue == 1e-40
+
+    def test_failing_hsp_never_overrides_the_accepted_one(self):
+        # Regression: the map used to be rebuilt from every raw hit, so a later
+        # HSP for the same subject that failed the thresholds replaced the
+        # accepted one and its evalue/pident were reported.
+        hits_by_query = {
+            "Q1": [
+                make_hit(query_id="Q1", subject_id="S1", evalue=1e-50, bitscore=200, pident=95),
+                make_hit(query_id="Q1", subject_id="S1", evalue=1e-3, bitscore=30, pident=40),
+            ],
+        }
+        result = filter_all_hits_with_hits(hits_by_query, FilterPolicy(max_evalue=1e-10))
+
+        assert result["Q1"]["S1"].evalue == 1e-50
+        assert result["Q1"]["S1"].pident == 95
+
+    def test_queries_without_accepted_hits_are_omitted(self):
+        hits_by_query = {
+            "Q1": [make_hit(query_id="Q1", subject_id="S1", evalue=1)],
+            "Q2": [make_hit(query_id="Q2", subject_id="S2", evalue=1e-20)],
+        }
+        result = filter_all_hits_with_hits(hits_by_query, FilterPolicy(max_evalue=1e-10))
+
+        assert set(result) == {"Q2"}
+
+    def test_agrees_with_filter_all_hits(self):
+        hits_by_query = {
+            "Q1": [
+                make_hit(query_id="Q1", subject_id="S1", bitscore=100),
+                make_hit(query_id="Q1", subject_id="S1", bitscore=90),
+                make_hit(query_id="Q1", subject_id="S2", bitscore=100),
+                make_hit(query_id="Q1", subject_id="S3", bitscore=10),
+            ],
+        }
+        policy = FilterPolicy(top_k=1)
+        subjects = filter_all_hits(hits_by_query, policy)
+        with_hits = filter_all_hits_with_hits(hits_by_query, policy)
+
+        assert subjects == {"Q1": {"S1", "S2"}}
+        assert {q: set(d) for q, d in with_hits.items()} == subjects
 
 
 class TestFilterAllHits:
