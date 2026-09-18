@@ -187,3 +187,9 @@ class TestSilentAnnotationWarning:
 
         assert annotations[0].is_annotated is True
         assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_runner_class_has_docstring():
+    """The class attributes must not precede the docstring, or Python drops it."""
+    assert PipelineRunner.__doc__ is not None
+    assert "Orchestrates" in PipelineRunner.__doc__

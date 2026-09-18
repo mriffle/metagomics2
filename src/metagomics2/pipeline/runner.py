@@ -190,12 +190,12 @@ ProgressCallback = Callable[[PipelineProgress], None]
 
 
 class PipelineRunner:
+    """Orchestrates the metagomics pipeline execution."""
+
     # Monotonic timestamp of the most recent stage change, for stage timing logs.
     _stage_started: float | None = None
     # The DIAMOND command line actually run, recorded in the manifest.
     diamond_command: str = ""
-
-    """Orchestrates the metagomics pipeline execution."""
 
     def __init__(
         self,
