@@ -258,7 +258,8 @@ def parse_peptide_list(
     if not file_path.exists():
         raise PeptideParsingError(f"File not found: {file_path}")
 
-    with open(file_path, newline="", encoding="utf-8") as f:
+    # utf-8-sig drops a leading byte-order mark (Excel "CSV UTF-8" exports)
+    with open(file_path, newline="", encoding="utf-8-sig") as f:
         return parse_peptide_list_from_handle(
             f,
             allowed_alphabet=allowed_alphabet,

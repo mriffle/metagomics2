@@ -288,6 +288,61 @@ class TestCreateJob:
         assert response.status_code == 400
         assert "empty" in response.json()["detail"].lower()
 
+    def test_create_job_accepts_fasta_with_utf8_bom(self, client, tmp_path: Path):
+        fasta_content = b"\xef\xbb\xbf>P1\nMPEPTIDEK\n"
+        peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+        response = client.post(
+            "/api/jobs",
+            files=[
+                (
+                    "fasta",
+                    ("bom.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
+            ],
+            data={"params": json.dumps({"db_choice": "test.dmnd"})},
+        )
+
+        assert response.status_code == 200, response.json()
+
+    def test_peptide_filename_with_path_is_reduced_to_base_name(
+        self, client, test_db, tmp_path: Path
+    ):
+        # Some clients send a full path in Content-Disposition; only the base
+        # name is kept, for the stored file and the database record alike
+        fasta_content = b">P1\nMPEPTIDEK\n"
+        peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+        response = client.post(
+            "/api/jobs",
+            files=[
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    (
+                        "C:\\Users\\me\\data/sample.tsv",
+                        io.BytesIO(peptide_content),
+                        "text/tab-separated-values",
+                    ),
+                ),
+            ],
+            data={"params": json.dumps({"db_choice": "test.dmnd"})},
+        )
+
+        assert response.status_code == 200, response.json()
+        job_id = response.json()["job_id"]
+        stored = tmp_path / "jobs" / job_id / "inputs" / "peptides" / "list_000_sample.tsv"
+        assert stored.exists()
+        job = test_db.get_job(job_id)
+        assert job.peptide_lists[0].filename == "sample.tsv"
+
     def test_create_job_rejects_header_only_fasta(self, client, tmp_path: Path):
         """A FASTA with a header but no sequence should be rejected."""
         bad_content = b">protein1\n"

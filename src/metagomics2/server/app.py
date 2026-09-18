@@ -269,7 +269,9 @@ async def create_job(
     if not fasta_header:
         raise HTTPException(status_code=400, detail="The uploaded FASTA file is empty.")
     try:
-        fasta_header_text = fasta_header.decode("utf-8", errors="replace")
+        # utf-8-sig drops a leading byte-order mark so a BOM-prefixed FASTA
+        # still starts with '>' (the pipeline parser does the same)
+        fasta_header_text = fasta_header.decode("utf-8-sig", errors="replace")
     except Exception:
         raise HTTPException(
             status_code=400,
@@ -304,6 +306,23 @@ async def create_job(
     return JobCreateResponse(job_id=job_id, status=JobStatus.QUEUED)
 
 
+def _safe_upload_name(filename: str | None, fallback: str) -> str:
+    """Reduce a client-supplied upload filename to a plain base name.
+
+    The name comes straight from the multipart Content-Disposition header and
+    may contain directory separators (some clients send full paths).  Only
+    the final component is kept, so the stored file always lands directly in
+    the peptides directory and the worker can rebuild the same path from the
+    name recorded in the database.
+    """
+    if not filename:
+        return fallback
+    base = filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not base or base in (".", ".."):
+        return fallback
+    return base
+
+
 async def _store_job_inputs(
     job_id: str, job_dir: Path, fasta: UploadFile, peptides: list[UploadFile]
 ) -> None:
@@ -335,7 +354,7 @@ async def _store_job_inputs(
     total_peptide_size = 0
     for i, peptide_file in enumerate(peptides):
         list_id = f"list_{i:03d}"
-        filename = peptide_file.filename or f"peptides_{i}.tsv"
+        filename = _safe_upload_name(peptide_file.filename, f"peptides_{i}.tsv")
         safe_filename = f"{list_id}_{filename}"
         peptide_path = peptides_dir / safe_filename
 

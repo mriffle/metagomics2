@@ -66,7 +66,9 @@ def parse_fasta(file_path: Path | str) -> list[FastaRecord]:
     if not file_path.exists():
         raise FastaParsingError(f"File not found: {file_path}")
 
-    with open(file_path, encoding="utf-8") as f:
+    # utf-8-sig drops a leading byte-order mark, which Windows editors add and
+    # which would otherwise make the first header fail the '>' check
+    with open(file_path, encoding="utf-8-sig") as f:
         return list(parse_fasta_from_handle(f))
 
 

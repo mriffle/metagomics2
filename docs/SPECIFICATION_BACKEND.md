@@ -484,11 +484,11 @@ Key settings consumed by the server:
 | GET | `/api/jobs/{job_id}/results/all_results.zip` | No | Download all results as ZIP. Built once on first request in a worker thread, written to a temporary file in the job directory and renamed into `results/` atomically, so a partial archive is never served and the archive never contains itself |
 
 **Job creation flow**:
-1. Validate FASTA content (first 8KB header check)
+1. Validate FASTA content (first 8KB header check; a leading UTF-8 byte-order mark is ignored here and by the pipeline's FASTA and peptide-list parsers, which open files as `utf-8-sig`)
 2. Validate `db_choice`: it must be non-empty and name a configured database (400 otherwise, so a job without a database is refused here rather than failing in the worker after parsing and matching)
 3. Create job record in SQLite
 4. Stream-save uploaded files to `<JOBS_DIR>/<job_id>/inputs/`. The stream is abandoned as soon as the FASTA, or the peptide files combined, passes `MAX_UPLOAD_MB` (413); at most one extra 1 MB chunk is ever written
-5. Register peptide lists in database
+5. Register peptide lists in database. The stored file is `inputs/peptides/<list_id>_<name>` where `<name>` is the client-supplied filename reduced to its final path component (`server/app.py: _safe_upload_name`; falls back to `peptides_<i>.tsv`), and the same `<name>` is recorded as the list's `filename` so the worker can rebuild the path
 6. Set job status to `QUEUED`. If anything fails between steps 3 and 6 (oversized upload, client disconnect, disk error) the job directory and the job row are removed, so no orphan `uploaded` job is left behind
 
 **Security**:

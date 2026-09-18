@@ -359,6 +359,26 @@ class TestParsePeptideListFile:
         assert peptides[1] == Peptide(sequence="ABC", quantity=5.0)
         assert peptides[2] == Peptide(sequence="NOMATCH", quantity=3.0)
 
+    def test_utf8_bom_is_ignored(self, tmp_path: Path):
+        # Excel "CSV UTF-8" exports start with a byte-order mark
+        path = tmp_path / "bom.csv"
+        path.write_bytes(b"\xef\xbb\xbfpeptide,quantity\nPEPTIDE,10\n")
+
+        peptides = parse_peptide_list(path)
+
+        assert peptides == [Peptide(sequence="PEPTIDE", quantity=10.0)]
+
+    def test_utf8_bom_without_header_is_ignored(self, tmp_path: Path):
+        path = tmp_path / "bom.tsv"
+        path.write_bytes(b"\xef\xbb\xbfPEPTIDE\t10\nABC\t5\n")
+
+        peptides = parse_peptide_list(path)
+
+        assert peptides == [
+            Peptide(sequence="PEPTIDE", quantity=10.0),
+            Peptide(sequence="ABC", quantity=5.0),
+        ]
+
     def test_file_not_found(self, tmp_path: Path):
         with pytest.raises(PeptideParsingError) as exc_info:
             parse_peptide_list(tmp_path / "nonexistent.tsv")

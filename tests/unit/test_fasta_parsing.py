@@ -138,6 +138,17 @@ class TestParseFastaFile:
             parse_fasta(tmp_path / "nonexistent.fasta")
         assert "not found" in str(exc_info.value).lower()
 
+    def test_utf8_bom_is_ignored(self, tmp_path: Path):
+        # Windows editors prepend a byte-order mark; it must not hide the '>'
+        path = tmp_path / "bom.fasta"
+        path.write_bytes(b"\xef\xbb\xbf>P1 desc\nMPEPTIDEK\n")
+
+        records = parse_fasta(path)
+
+        assert len(records) == 1
+        assert records[0].id == "P1"
+        assert records[0].sequence == "MPEPTIDEK"
+
 
 class TestComputeHash:
     """Tests for hash computation."""
