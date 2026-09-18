@@ -123,7 +123,9 @@ class TestCreateJob:
     def test_create_job_with_params(self, client, tmp_path: Path):
         fasta_content = b">P1\nMPEPTIDEK\n"
         peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
-        params = json.dumps({"search_tool": "diamond", "max_evalue": 1e-5})
+        params = json.dumps(
+            {"search_tool": "diamond", "max_evalue": 1e-5, "db_choice": "test.dmnd"}
+        )
 
         response = client.post(
             "/api/jobs",
@@ -141,6 +143,33 @@ class TestCreateJob:
         )
 
         assert response.status_code == 200
+
+    @pytest.mark.parametrize("params", ["{}", '{"db_choice": ""}'])
+    def test_create_job_without_db_choice_is_rejected(self, client, tmp_path: Path, params):
+        # Without a database the job would only fail in the worker, after
+        # parsing and matching; reject it at creation instead.
+        fasta_content = b">P1\nMPEPTIDEK\n"
+        peptide_content = b"peptide_sequence\tquantity\nPEPTIDE\t10\n"
+
+        response = client.post(
+            "/api/jobs",
+            files=[
+                (
+                    "fasta",
+                    ("background.fasta", io.BytesIO(fasta_content), "application/octet-stream"),
+                ),
+                (
+                    "peptides",
+                    ("peptides.tsv", io.BytesIO(peptide_content), "text/tab-separated-values"),
+                ),
+            ],
+            data={"params": params},
+        )
+
+        assert response.status_code == 400
+        assert "db_choice" in response.json()["detail"]
+        # Nothing was created
+        assert not any((tmp_path / "jobs").iterdir())
 
     def test_create_job_multiple_peptide_files(self, client, tmp_path: Path):
         fasta_content = b">P1\nMPEPTIDEK\n"
