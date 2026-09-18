@@ -183,6 +183,8 @@ Output directory: `<output_dir>/<list_id>/` (e.g., `results/list_000/`)
 | `peptide_mapping.parquet` | Parquet | One row per `(peptide, background_protein, annotated_protein)` triple. Columns: `peptide, peptide_lca_tax_ids (List[Int64]), peptide_go_terms (List[Utf8]), background_protein, annotated_protein, evalue, pident` |
 | `run_manifest.json` | JSON | Provenance: version, tool versions, input hashes (SHA256), parameters, reference data hashes, timestamp |
 
+Numeric CSV columns (`quantity`, every `ratio_*` and `fraction_*` column, and the coverage quantities) are written with Python's shortest round-trip representation (`core/reporting.py: format_number`), so each value reads back as exactly the double the pipeline computed. Small values therefore appear in exponent notation (`3e-11`) rather than being rounded to zero by a fixed number of decimal places; every consumer must parse them as floats (`parseFloat` in the frontend does). Integer columns (`tax_id`, `parent_tax_id`, `n_peptides`) are plain integers.
+
 ---
 
 ## 6. Key Data Structures

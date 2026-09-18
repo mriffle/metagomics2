@@ -41,6 +41,17 @@ class ManifestInfo:
     timestamp_utc: str = ""
 
 
+def format_number(value: float) -> str:
+    """Format a quantity or ratio for a CSV cell without losing precision.
+
+    Uses Python's shortest round-trip representation (``repr``), so every
+    value reads back as exactly the double that was computed: ``18.0``,
+    ``0.5``, ``3e-11``.  Fixed-point formatting with a set number of decimals
+    would silently round small normalized abundances to zero.
+    """
+    return repr(float(value))
+
+
 def write_taxonomy_nodes_csv(
     result: AggregationResult,
     taxonomy_tree: TaxonomyTree,
@@ -81,7 +92,7 @@ def write_taxonomy_nodes_csv(
             parent_tax_id = tax_node.parent_tax_id if tax_node else None
 
             ratio_annotated_str = (
-                f"{node.ratio_annotated:.10f}"
+                format_number(node.ratio_annotated)
                 if node.ratio_annotated is not None
                 else ""
             )
@@ -91,8 +102,8 @@ def write_taxonomy_nodes_csv(
                 name,
                 rank,
                 parent_tax_id if parent_tax_id is not None else "",
-                f"{node.quantity:.10f}",
-                f"{node.ratio_total:.10f}",
+                format_number(node.quantity),
+                format_number(node.ratio_total),
                 ratio_annotated_str,
                 node.n_peptides,
             ])
@@ -162,7 +173,7 @@ def write_go_terms_csv(
             parent_ids_str = parent_delimiter.join(sorted(parent_ids))
 
             ratio_annotated_str = (
-                f"{node.ratio_annotated:.10f}"
+                format_number(node.ratio_annotated)
                 if node.ratio_annotated is not None
                 else ""
             )
@@ -172,8 +183,8 @@ def write_go_terms_csv(
                 name,
                 namespace,
                 parent_ids_str,
-                f"{node.quantity:.10f}",
-                f"{node.ratio_total:.10f}",
+                format_number(node.quantity),
+                format_number(node.ratio_total),
                 ratio_annotated_str,
                 node.n_peptides,
             ])
@@ -203,10 +214,10 @@ def write_coverage_csv(
             "n_peptides_unannotated",
         ])
         writer.writerow([
-            f"{coverage.total_peptide_quantity:.10f}",
-            f"{coverage.annotated_peptide_quantity:.10f}",
-            f"{coverage.unannotated_peptide_quantity:.10f}",
-            f"{coverage.annotation_coverage_ratio:.10f}",
+            format_number(coverage.total_peptide_quantity),
+            format_number(coverage.annotated_peptide_quantity),
+            format_number(coverage.unannotated_peptide_quantity),
+            format_number(coverage.annotation_coverage_ratio),
             coverage.n_peptides_total,
             coverage.n_peptides_annotated,
             coverage.n_peptides_unannotated,
@@ -304,11 +315,11 @@ def write_go_taxonomy_combo_csv(
                 go_name,
                 go_namespace,
                 parent_go_ids_str,
-                f"{combo.quantity:.10f}",
-                f"{combo.fraction_of_taxon:.10f}",
-                f"{combo.fraction_of_go:.10f}",
-                f"{combo.ratio_total_taxon:.10f}",
-                f"{combo.ratio_total_go:.10f}",
+                format_number(combo.quantity),
+                format_number(combo.fraction_of_taxon),
+                format_number(combo.fraction_of_go),
+                format_number(combo.ratio_total_taxon),
+                format_number(combo.ratio_total_go),
                 combo.n_peptides,
             ])
 

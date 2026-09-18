@@ -16,6 +16,7 @@ from metagomics2.core.go import load_go_from_dict
 from metagomics2.core.reporting import (
     ManifestInfo,
     compute_file_hash,
+    format_number,
     write_coverage_csv,
     write_go_taxonomy_combo_csv,
     write_go_terms_csv,
@@ -384,6 +385,58 @@ class TestWriteCoverageCSV:
         assert float(row["total_peptide_quantity"]) == pytest.approx(18.0)
         assert float(row["annotated_peptide_quantity"]) == pytest.approx(10.0)
         assert int(row["n_peptides_total"]) == 3
+
+
+class TestNumberFormatting:
+    """Numeric CSV cells must round-trip exactly, however small the value."""
+
+    @pytest.mark.parametrize("value", [18.0, 0.5, 3e-11, 1.23456789e-7, 1.5e12, 0.1 + 0.2, 0.0])
+    def test_format_number_round_trips(self, value: float):
+        assert float(format_number(value)) == value
+
+    def test_format_number_keeps_tiny_values(self):
+        # Fixed-point with ten decimals used to print this as 0.0000000000
+        assert format_number(3e-11) != "0.0000000000"
+        assert float(format_number(3e-11)) == 3e-11
+
+    def test_taxonomy_csv_keeps_small_quantities(self, small_taxonomy: dict, tmp_path: Path):
+        tree = load_taxonomy_from_dict(small_taxonomy)
+        result = AggregationResult()
+        node = NodeAggregate(node_id=30)
+        node.quantity = 3e-11
+        node.n_peptides = 1
+        node.ratio_total = 1.23456789e-7
+        node.ratio_annotated = 2.5e-9
+        result.taxonomy_nodes[30] = node
+
+        output_path = tmp_path / "taxonomy_nodes.csv"
+        write_taxonomy_nodes_csv(result, tree, output_path)
+
+        with open(output_path) as f:
+            row = next(csv.DictReader(f))
+
+        assert float(row["quantity"]) == 3e-11
+        assert float(row["ratio_total"]) == 1.23456789e-7
+        assert float(row["ratio_annotated"]) == 2.5e-9
+
+    def test_coverage_csv_keeps_small_quantities(self, tmp_path: Path):
+        coverage = CoverageStats(
+            total_peptide_quantity=1e-9,
+            annotated_peptide_quantity=4e-10,
+            unannotated_peptide_quantity=6e-10,
+            n_peptides_total=2,
+            n_peptides_annotated=1,
+            n_peptides_unannotated=1,
+        )
+        output_path = tmp_path / "coverage.csv"
+        write_coverage_csv(coverage, output_path)
+
+        with open(output_path) as f:
+            row = next(csv.DictReader(f))
+
+        assert float(row["total_peptide_quantity"]) == 1e-9
+        assert float(row["annotated_peptide_quantity"]) == 4e-10
+        assert float(row["annotation_coverage_ratio"]) == pytest.approx(0.4)
 
 
 class TestWriteManifestJSON:
