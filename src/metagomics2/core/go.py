@@ -4,6 +4,42 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Relationship types that can appear as edges in a GO release: ``is_a`` plus
+# every ``relationship:`` predicate used by the ontology.  Anything else in a
+# user-supplied edge-type list is a typo and must be rejected, because an
+# unknown type silently matches no edges and quietly shrinks every closure.
+GO_EDGE_TYPES = frozenset({
+    "is_a",
+    "part_of",
+    "regulates",
+    "positively_regulates",
+    "negatively_regulates",
+    "has_part",
+    "occurs_in",
+    "happens_during",
+    "ends_during",
+})
+DEFAULT_GO_EDGE_TYPES = frozenset({"is_a", "part_of"})
+
+
+def parse_go_edge_types(raw: str) -> set[str]:
+    """Parse a comma-separated list of GO edge types.
+
+    Entries are stripped of whitespace and empty entries are ignored, so
+    ``"is_a, part_of"`` and ``"is_a,part_of,"`` both parse.  Unknown types
+    and an empty result raise ``ValueError`` with the allowed list.
+    """
+    types = {part.strip() for part in raw.split(",") if part.strip()}
+    allowed = ", ".join(sorted(GO_EDGE_TYPES))
+    if not types:
+        raise ValueError(f"No GO edge types given; allowed types are {allowed}")
+    unknown = sorted(types - GO_EDGE_TYPES)
+    if unknown:
+        raise ValueError(
+            f"Unknown GO edge type(s) {', '.join(unknown)}; allowed types are {allowed}"
+        )
+    return types
+
 
 @dataclass
 class GOTerm:

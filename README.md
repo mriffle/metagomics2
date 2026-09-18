@@ -484,7 +484,7 @@ The same options are available on the CLI as `--diamond-block-size`,
 
 | Parameter | Description |
 |-----------|-------------|
-| `--go-edge-types` | Edge types for closure (default: `is_a`) |
+| `--go-edge-types` | Comma-separated edge types for the GO closure (default: `is_a,part_of`). Allowed: `is_a`, `part_of`, `regulates`, `positively_regulates`, `negatively_regulates`, `has_part`, `occurs_in`, `happens_during`, `ends_during`; anything else is rejected |
 | `--go-exclude-self` | Exclude terms themselves from closure |
 
 ## Logging and Debugging

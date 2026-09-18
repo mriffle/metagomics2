@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from metagomics2.core.go import parse_go_edge_types
+
 ALLOWED_SEARCH_TOOLS = {"diamond"}
 
 
@@ -123,6 +125,12 @@ class JobParams(BaseModel):
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
             raise ValueError("Invalid email address")
         return v
+
+    @field_validator("go_edge_types")
+    @classmethod
+    def validate_go_edge_types(cls, v: str) -> str:
+        """Reject unknown edge types and store the canonical comma-joined form."""
+        return ",".join(sorted(parse_go_edge_types(v)))
 
 
 class JobCreate(BaseModel):

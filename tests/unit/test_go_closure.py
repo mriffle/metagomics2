@@ -1,7 +1,14 @@
 """Unit tests for GO DAG loading and closure computation."""
 
 
-from metagomics2.core.go import get_all_parent_ids, load_go_from_dict
+import pytest
+
+from metagomics2.core.go import (
+    GO_EDGE_TYPES,
+    get_all_parent_ids,
+    load_go_from_dict,
+    parse_go_edge_types,
+)
 
 
 class TestLoadGOFromDict:
@@ -214,3 +221,26 @@ class TestGetAllParentIds:
 
         parents = get_all_parent_ids(dag, "GO:9999999")
         assert parents == set()
+
+
+class TestParseGoEdgeTypes:
+    """User-supplied edge-type lists are normalised and validated."""
+
+    def test_default_string(self):
+        assert parse_go_edge_types("is_a,part_of") == {"is_a", "part_of"}
+
+    def test_whitespace_and_empty_entries_ignored(self):
+        assert parse_go_edge_types(" is_a , part_of ,") == {"is_a", "part_of"}
+
+    def test_all_known_types_accepted(self):
+        assert parse_go_edge_types(",".join(GO_EDGE_TYPES)) == set(GO_EDGE_TYPES)
+
+    @pytest.mark.parametrize("raw", ["is_a,partof", "is_a,part_of,regulate", "isa"])
+    def test_unknown_rejected(self, raw: str):
+        with pytest.raises(ValueError, match="Unknown GO edge type"):
+            parse_go_edge_types(raw)
+
+    @pytest.mark.parametrize("raw", ["", " , ", ","])
+    def test_empty_rejected(self, raw: str):
+        with pytest.raises(ValueError, match="No GO edge types"):
+            parse_go_edge_types(raw)

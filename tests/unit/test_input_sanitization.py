@@ -192,3 +192,22 @@ class TestSearchTool:
             JobParams(search_tool="diamond; rm -rf /")
 
 
+class TestGoEdgeTypes:
+    """Validation of go_edge_types."""
+
+    def test_default(self):
+        assert JobParams().go_edge_types == "is_a,part_of"
+
+    def test_spaces_normalised(self):
+        assert JobParams(go_edge_types=" part_of , is_a ").go_edge_types == "is_a,part_of"
+
+    def test_other_known_types_accepted(self):
+        assert JobParams(go_edge_types="is_a,regulates").go_edge_types == "is_a,regulates"
+
+    def test_unknown_rejected(self):
+        with pytest.raises(ValidationError):
+            JobParams(go_edge_types="is_a,partof")
+
+    def test_empty_rejected(self):
+        with pytest.raises(ValidationError):
+            JobParams(go_edge_types="")

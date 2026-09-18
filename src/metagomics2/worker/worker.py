@@ -9,6 +9,7 @@ from typing import Any
 from metagomics2 import __version__
 from metagomics2.config import get_settings
 from metagomics2.core.filtering import FilterPolicy
+from metagomics2.core.go import parse_go_edge_types
 from metagomics2.db.database import Database
 from metagomics2.logging_setup import (
     attach_file_handler,
@@ -284,7 +285,7 @@ class Worker:
             filter_policy=filter_policy,
             job_dir=job_dir,  # Enable reference snapshot creation
             work_dir=job_dir / "work",
-            go_edge_types=set(params.go_edge_types.split(",")),
+            go_edge_types=parse_go_edge_types(params.go_edge_types),
             go_include_self=params.go_include_self,
             diamond_block_size=_cfg.diamond_block_size,
             diamond_index_chunks=_cfg.diamond_index_chunks,

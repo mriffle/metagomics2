@@ -104,3 +104,25 @@ class TestCmdRun:
             assert cmd_run(args) == 1
         mock_run.assert_not_called()
         assert "--diamond-index-chunks" in capsys.readouterr().err
+
+
+class TestGoEdgeTypesOption:
+    def test_spaces_tolerated(self, tmp_path: Path):
+        args = create_parser().parse_args(
+            _base_args(tmp_path) + ["--go-edge-types", "is_a, part_of"]
+        )
+        result = MagicMock(success=True)
+        with patch("metagomics2.cli.run_pipeline", return_value=result) as mock_run:
+            assert cmd_run(args) == 0
+        assert mock_run.call_args[0][0].go_edge_types == {"is_a", "part_of"}
+
+    def test_unknown_type_rejected(self, tmp_path: Path, capsys):
+        args = create_parser().parse_args(
+            _base_args(tmp_path) + ["--go-edge-types", "is_a,partof"]
+        )
+        with patch("metagomics2.cli.run_pipeline") as mock_run:
+            assert cmd_run(args) == 1
+        mock_run.assert_not_called()
+        err = capsys.readouterr().err
+        assert "--go-edge-types" in err
+        assert "partof" in err

@@ -126,6 +126,18 @@ class TestWorkerBuildConfig:
         assert config.work_dir == jobs_dir / job_id / "work"
         assert len(config.peptide_list_paths) == 1
 
+    def test_go_edge_types_parsed_with_spaces(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = test_db.create_job(JobParams(go_edge_types="is_a, regulates"))
+        job_dir = jobs_dir / job_id
+        (job_dir / "inputs" / "peptides").mkdir(parents=True)
+        job = test_db.get_job(job_id)
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            config = worker_cls(test_db)._build_config(job_id, job)
+
+        assert config.go_edge_types == {"is_a", "regulates"}
+
     def test_missing_peptide_file_raises(self, test_db, jobs_dir, fixtures_dir):
         """A registered list whose file is gone must not be skipped silently."""
         worker_cls = _get_worker_class()

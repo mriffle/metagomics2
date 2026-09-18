@@ -434,7 +434,7 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 | `--params` | No | JSON file with filter params |
 | `--go` | No | Path to GO data (OBO/JSON) |
 | `--taxonomy` | No | Path to taxonomy data (dir/JSON) |
-| `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure |
+| `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure; validated against `core/go.py: GO_EDGE_TYPES` (whitespace tolerated, unknown types rejected) |
 | `--go-exclude-self` | No | Exclude terms themselves from closure |
 | `--mock-hits` | No | Mock hits JSON (testing) |
 | `--mock-annotations` | No | Mock annotations JSON (testing) |
@@ -534,7 +534,7 @@ The `regenerate_job_id()` method updates the job_id across all tables and rename
 ### 9.4 Job Models (`models/job.py`)
 
 Pydantic models with field validators:
-- `JobParams`: Validates `max_evalue > 0`, `min_pident ∈ [0,100]`, `min_qcov ∈ [0,100]`, `min_alnlen ≥ 1`, `top_k ≥ 1`, `db_choice` is a plain filename (no path traversal), `notification_email` matches basic email regex.
+- `JobParams`: Validates `max_evalue > 0`, `min_pident ∈ [0,100]`, `min_qcov ∈ [0,100]`, `min_alnlen ≥ 1`, `top_k ≥ 1`, `db_choice` is a plain filename (no path traversal), `notification_email` matches basic email regex, `go_edge_types` is a comma-separated subset of `GO_EDGE_TYPES` (normalised to sorted, comma-joined form).
 - `JobInfo`: Response model with nested `PeptideListInfo` objects.
 - `JobStatus`: Enum (`uploaded`, `queued`, `running`, `completed`, `failed`).
 
