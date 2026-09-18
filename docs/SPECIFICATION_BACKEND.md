@@ -501,7 +501,7 @@ The worker runs as a separate process (started by `docker-entrypoint.sh`). It us
 
 1. Poll SQLite for next `QUEUED` job (FIFO by `created_at`)
 2. Mark job as `RUNNING`
-3. Build `PipelineConfig` from job parameters
+3. Build `PipelineConfig` from job parameters. Every registered peptide list must still have its file under `inputs/peptides/`; a missing one fails the job (the runner numbers lists by position, so skipping one would shift the IDs of the rest)
 4. Run the pipeline with a progress callback that updates the database
 5. On success: update per-list status, mark job `COMPLETED`, send email notification
 6. On failure: mark job `FAILED`, log error, send email notification

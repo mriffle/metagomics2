@@ -228,19 +228,28 @@ class Worker:
         job_dir = JOBS_DIR / job_id
         params = job.params
 
-        # Get peptide list paths from database
+        # Get peptide list paths from database. The runner numbers lists by
+        # position, so every registered list must be present: silently skipping
+        # one would shift the list IDs of all the lists after it.
+        peptides_dir = job_dir / "inputs" / "peptides"
         peptide_paths = []
         for pl in job.peptide_lists:
             # The path is stored in the database, but we need to reconstruct it
-            peptide_path = job_dir / "inputs" / "peptides" / f"{pl.list_id}_{pl.filename}"
-            if peptide_path.exists():
-                peptide_paths.append(peptide_path)
-            else:
+            peptide_path = peptides_dir / f"{pl.list_id}_{pl.filename}"
+            if not peptide_path.exists():
                 # Try alternative path format
-                for f in (job_dir / "inputs" / "peptides").iterdir():
-                    if f.name.startswith(pl.list_id):
-                        peptide_paths.append(f)
-                        break
+                candidates = (
+                    sorted(f for f in peptides_dir.iterdir() if f.name.startswith(pl.list_id))
+                    if peptides_dir.is_dir()
+                    else []
+                )
+                if not candidates:
+                    raise FileNotFoundError(
+                        f"Peptide list {pl.list_id} ({pl.filename}) is missing from "
+                        f"{peptides_dir}; the job cannot be run"
+                    )
+                peptide_path = candidates[0]
+            peptide_paths.append(peptide_path)
 
         # Build filter policy
         filter_policy = FilterPolicy(

@@ -4,6 +4,7 @@ import importlib
 import json
 import logging
 import os
+import shutil
 import signal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -124,6 +125,27 @@ class TestWorkerBuildConfig:
         assert config.job_dir == jobs_dir / job_id
         assert config.work_dir == jobs_dir / job_id / "work"
         assert len(config.peptide_list_paths) == 1
+
+    def test_missing_peptide_file_raises(self, test_db, jobs_dir, fixtures_dir):
+        """A registered list whose file is gone must not be skipped silently."""
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job = test_db.get_job(job_id)
+        (jobs_dir / job_id / "inputs" / "peptides" / "list_000_small_peptides.tsv").unlink()
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            with pytest.raises(FileNotFoundError, match="list_000 \\(small_peptides.tsv\\)"):
+                worker_cls(test_db)._build_config(job_id, job)
+
+    def test_missing_peptides_dir_raises(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        job = test_db.get_job(job_id)
+        shutil.rmtree(jobs_dir / job_id / "inputs" / "peptides")
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir):
+            with pytest.raises(FileNotFoundError, match="list_000"):
+                worker_cls(test_db)._build_config(job_id, job)
 
     def test_config_includes_filter_policy(self, test_db, jobs_dir, fixtures_dir):
         params = JobParams(max_evalue=1e-5, min_pident=80.0, top_k=10)
@@ -251,6 +273,21 @@ class TestWorkerProcessJob:
         job = test_db.get_job(job_id)
         assert job.status == JobStatus.FAILED
         assert "Unexpected error" in job.error_message
+
+    def test_process_job_fails_when_peptide_file_missing(self, test_db, jobs_dir, fixtures_dir):
+        worker_cls = _get_worker_class()
+        job_id = create_job_with_files(test_db, jobs_dir, fixtures_dir)
+        (jobs_dir / job_id / "inputs" / "peptides" / "list_000_small_peptides.tsv").unlink()
+
+        with patch("metagomics2.worker.worker.JOBS_DIR", jobs_dir), \
+             patch("metagomics2.worker.worker.run_pipeline") as mock_pipeline:
+            worker_cls(test_db)._process_job(job_id)
+
+        mock_pipeline.assert_not_called()
+        job = test_db.get_job(job_id)
+        assert job.status == JobStatus.FAILED
+        assert "list_000" in job.error_message
+        assert any(e["event_type"] == "error" for e in test_db.get_events(job_id))
 
     def test_process_job_clears_current_job_id(self, test_db, jobs_dir, fixtures_dir):
         worker_cls = _get_worker_class()
