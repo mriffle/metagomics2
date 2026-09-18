@@ -6,6 +6,7 @@ import os
 import secrets
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -53,8 +54,20 @@ _WRITE_CHUNK_SIZE = 1024 * 1024
 # Allowed CORS origins from config
 _ALLOWED_ORIGINS = _cfg.allowed_origins
 
-# Admin session tokens (in-memory, cleared on restart)
-_admin_tokens: set[str] = set()
+# Admin session tokens (in-memory, cleared on restart): token -> expiry as a
+# time.monotonic() timestamp.  Tokens expire so a leaked one is not valid
+# forever, and the table is capped so repeated logins cannot grow it without
+# bound.
+_admin_tokens: dict[str, float] = {}
+_ADMIN_TOKEN_TTL_SECONDS = 12 * 60 * 60
+_ADMIN_TOKEN_LIMIT = 100
+
+
+def _prune_admin_tokens(now: float) -> None:
+    """Drop expired admin tokens."""
+    for token, expires_at in list(_admin_tokens.items()):
+        if expires_at <= now:
+            del _admin_tokens[token]
 
 # Initialize database
 db = Database(DB_PATH)
@@ -93,6 +106,7 @@ def require_admin(authorization: str = Header(default="")) -> str:
         if authorization.startswith("Bearer ")
         else authorization
     )
+    _prune_admin_tokens(time.monotonic())
     if not token or token not in _admin_tokens:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return token
@@ -105,8 +119,14 @@ async def admin_login(body: AdminAuthRequest) -> AdminAuthResponse:
         raise HTTPException(status_code=403, detail="Admin access is not configured")
     if not secrets.compare_digest(body.password, ADMIN_PASSWORD):
         raise HTTPException(status_code=401, detail="Invalid password")
+    now = time.monotonic()
+    _prune_admin_tokens(now)
+    # Evict the tokens closest to expiry if the table is full
+    while len(_admin_tokens) >= _ADMIN_TOKEN_LIMIT:
+        oldest = min(_admin_tokens, key=lambda t: _admin_tokens[t])
+        del _admin_tokens[oldest]
     token = secrets.token_urlsafe(32)
-    _admin_tokens.add(token)
+    _admin_tokens[token] = now + _ADMIN_TOKEN_TTL_SECONDS
     return AdminAuthResponse(token=token)
 
 

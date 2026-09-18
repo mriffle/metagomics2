@@ -488,7 +488,7 @@ Key settings consumed by the server:
 
 **Security**:
 - Job IDs are cryptographically random URL-safe tokens (128-bit entropy)
-- Admin auth uses `secrets.compare_digest` and session tokens stored in memory
+- Admin auth uses `secrets.compare_digest`; session tokens are stored in memory, expire after 12 hours, and the table holds at most 100 tokens (the ones closest to expiry are evicted first). The admin page already returns to the login form on a 401
 - File downloads are restricted to an allowlist of filenames (prevents path traversal)
 - The SPA catch-all route resolves the requested path and serves it only if the resolved file lies inside the frontend directory; `..` segments, percent-encoded dot segments and absolute paths fall back to `index.html`
 - Upload size limits enforced while streaming (FASTA alone, peptide files combined), and a failed upload rolls the job back

@@ -525,6 +525,35 @@ class TestAdminAuth:
         response = client.get("/api/admin/jobs", headers={"Authorization": "Bearer badtoken"})
         assert response.status_code == 401
 
+    def test_token_expires(self, client):
+        import metagomics2.server.app as app_module
+
+        token = client.post("/api/admin/auth", json={"password": "testpass"}).json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get("/api/admin/jobs", headers=headers).status_code == 200
+
+        later = app_module.time.monotonic() + app_module._ADMIN_TOKEN_TTL_SECONDS + 1
+        with patch("metagomics2.server.app.time.monotonic", return_value=later):
+            assert client.get("/api/admin/jobs", headers=headers).status_code == 401
+        # The expired token was dropped from the table
+        assert token not in app_module._admin_tokens
+
+    def test_token_table_is_capped(self, client):
+        import metagomics2.server.app as app_module
+
+        with patch("metagomics2.server.app._ADMIN_TOKEN_LIMIT", 3):
+            tokens = [
+                client.post("/api/admin/auth", json={"password": "testpass"}).json()["token"]
+                for _ in range(5)
+            ]
+        assert len(app_module._admin_tokens) == 3
+        for token in tokens[:2]:
+            headers = {"Authorization": f"Bearer {token}"}
+            assert client.get("/api/admin/jobs", headers=headers).status_code == 401
+        for token in tokens[2:]:
+            headers = {"Authorization": f"Bearer {token}"}
+            assert client.get("/api/admin/jobs", headers=headers).status_code == 200
+
 
 def _get_admin_token(client) -> str:
     """Helper to get a valid admin token."""
