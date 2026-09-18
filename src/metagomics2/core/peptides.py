@@ -65,7 +65,9 @@ def normalize_sequence(
        delta (``PEPT[+79.966]IDE``) or a name (``C[Carbamidomethyl]``,
        ``M(Oxidation (M))``, ``(UniMod:4)``).  A lowercase ``n`` at the start or
        ``c`` at the end that is attached to such a group is a terminal-
-       modification marker and is removed with it.
+       modification marker and is removed with it, provided the sequence
+       contains at least one uppercase letter; in an all-lowercase sequence
+       those letters are residues.
     3. Strip flanking residues: ``K.PEPTIDE.R`` or ``-.PEPTIDE.K`` becomes
        ``PEPTIDE``.
     4. Convert to uppercase and remove every remaining character that is not a
@@ -88,9 +90,13 @@ def normalize_sequence(
 
     stripped = sequence.strip()
 
-    # Terminal markers first: they are only meaningful next to a bracket group
-    stripped = _NTERM_MARKER_RE.sub(r"\1", stripped)
-    stripped = _CTERM_MARKER_RE.sub("", stripped)
+    # Terminal markers first: they are only meaningful next to a bracket group,
+    # and only in a sequence written in uppercase.  In an all-lowercase
+    # sequence a trailing ``c`` or leading ``n`` is indistinguishable from a
+    # residue, so it is kept (``peptidec[57]`` is PEPTIDEC).
+    if any(ch.isupper() for ch in stripped):
+        stripped = _NTERM_MARKER_RE.sub(r"\1", stripped)
+        stripped = _CTERM_MARKER_RE.sub("", stripped)
 
     # Remove bracketed groups from the inside out until none are left
     while True:

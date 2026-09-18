@@ -107,6 +107,20 @@ class TestNormalizeSequence:
         assert normalize_sequence("PEPTIDEc") == "PEPTIDEC"
         assert normalize_sequence("PEPTIDEC[+57]") == "PEPTIDEC"
 
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("peptidec[57]", "PEPTIDEC"),
+            ("peptidec(57)", "PEPTIDEC"),
+            ("n[42]peptide", "NPEPTIDE"),
+            ("k.peptidec[57].r", "PEPTIDEC"),
+        ],
+    )
+    def test_all_lowercase_sequence_keeps_terminal_residues(self, raw: str, expected: str):
+        # Terminal markers are only recognised next to uppercase residues; in
+        # an all-lowercase sequence a trailing c or leading n is a residue
+        assert normalize_sequence(raw) == expected
+
     def test_rejects_empty_after_stripping(self):
         with pytest.raises(PeptideParsingError) as exc_info:
             normalize_sequence("[+80]")
