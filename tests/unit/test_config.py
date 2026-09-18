@@ -236,6 +236,39 @@ class TestLoadSettings:
         assert settings.smtp.host == "smtp.example.com"
         assert settings.smtp.port == 465
         assert settings.smtp.enabled is True
+        assert settings.smtp.security == "starttls"  # default
+
+    @pytest.mark.parametrize("raw", ["ssl", "SSL", " none ", "starttls"])
+    def test_smtp_security_parsed(self, tmp_path: Path, raw: str):
+        config_dir = self._make_config_dir(
+            tmp_path,
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
+        )
+        env = {"METAGOMICS_DATA_DIR": str(tmp_path), "SMTP_SECURITY": raw}
+        with patch.dict(os.environ, env, clear=False):
+            settings = load_settings(config_dir=config_dir)
+        assert settings.smtp.security == raw.strip().lower()
+
+    def test_smtp_security_invalid_rejected(self, tmp_path: Path):
+        config_dir = self._make_config_dir(
+            tmp_path,
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
+        )
+        env = {"METAGOMICS_DATA_DIR": str(tmp_path), "SMTP_SECURITY": "tls"}
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(RuntimeError, match="SMTP_SECURITY"):
+                load_settings(config_dir=config_dir)
+
+    @pytest.mark.parametrize("bad", ["abc", "0", "70000", "2.5"])
+    def test_smtp_port_invalid_rejected(self, tmp_path: Path, bad: str):
+        config_dir = self._make_config_dir(
+            tmp_path,
+            databases=[{"name": "DB", "description": "d", "path": "x.dmnd", "annotations": "x.db"}],
+        )
+        env = {"METAGOMICS_DATA_DIR": str(tmp_path), "SMTP_PORT": bad}
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(RuntimeError, match="SMTP_PORT"):
+                load_settings(config_dir=config_dir)
 
     def test_derived_paths(self, tmp_path: Path):
         config_dir = self._make_config_dir(

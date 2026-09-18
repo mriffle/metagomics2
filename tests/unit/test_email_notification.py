@@ -73,6 +73,8 @@ class TestSendJobNotification:
         send_job_notification(job, SITE_URL, SMTP_CONFIG)
 
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587, timeout=30)
+        # Default mode upgrades the connection with STARTTLS before logging in
+        mock_server.starttls.assert_called_once()
         mock_server.send_message.assert_called_once()
 
         msg = mock_server.send_message.call_args[0][0]
@@ -187,3 +189,55 @@ class TestSendJobNotification:
         msg = mock_server.send_message.call_args[0][0]
         body = msg.get_content()
         assert "/job/" not in body
+
+
+class TestSmtpSecurityModes:
+    """The connection is opened and secured according to SmtpConfig.security."""
+
+    @staticmethod
+    def _server(mock_cls):
+        server = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=server)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        return server
+
+    @patch("metagomics2.notifications.email.smtplib.SMTP_SSL")
+    @patch("metagomics2.notifications.email.smtplib.SMTP")
+    def test_ssl_uses_implicit_tls_without_starttls(self, mock_smtp, mock_smtp_ssl):
+        server = self._server(mock_smtp_ssl)
+        config = SmtpConfig(host="smtp.example.com", port=465, username="u", password="p",
+                            from_address="noreply@example.com", security="ssl")
+
+        send_job_notification(_make_job(), SITE_URL, config)
+
+        mock_smtp_ssl.assert_called_once_with("smtp.example.com", 465, timeout=30)
+        mock_smtp.assert_not_called()
+        server.starttls.assert_not_called()
+        server.login.assert_called_once_with("u", "p")
+        server.send_message.assert_called_once()
+
+    @patch("metagomics2.notifications.email.smtplib.SMTP_SSL")
+    @patch("metagomics2.notifications.email.smtplib.SMTP")
+    def test_none_sends_in_the_clear(self, mock_smtp, mock_smtp_ssl):
+        server = self._server(mock_smtp)
+        config = SmtpConfig(host="relay.internal", port=25, from_address="noreply@example.com",
+                            security="none")
+
+        send_job_notification(_make_job(), SITE_URL, config)
+
+        mock_smtp.assert_called_once_with("relay.internal", 25, timeout=30)
+        mock_smtp_ssl.assert_not_called()
+        server.starttls.assert_not_called()
+        server.login.assert_not_called()
+        server.send_message.assert_called_once()
+
+    @patch("metagomics2.notifications.email.smtplib.SMTP")
+    def test_starttls_upgrades(self, mock_smtp):
+        server = self._server(mock_smtp)
+        config = SmtpConfig(host="smtp.example.com", port=587, from_address="x@example.com",
+                            security="starttls")
+
+        send_job_notification(_make_job(), SITE_URL, config)
+
+        server.starttls.assert_called_once()
+        server.send_message.assert_called_once()

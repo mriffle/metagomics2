@@ -39,6 +39,9 @@ class DatabaseEntry:
     annotations: str = ""
 
 
+SMTP_SECURITY_MODES = ("starttls", "ssl", "none")
+
+
 @dataclass(frozen=True)
 class SmtpSettings:
     """SMTP configuration for email notifications."""
@@ -48,6 +51,10 @@ class SmtpSettings:
     username: str = ""
     password: str = ""
     from_address: str = ""
+    # How the connection is secured: "starttls" (plain connect then upgrade,
+    # the usual choice for port 587), "ssl" (implicit TLS, port 465) or
+    # "none" (plain SMTP, e.g. an internal relay on port 25).
+    security: str = "starttls"
 
     @property
     def enabled(self) -> bool:
@@ -314,12 +321,28 @@ def load_settings(
     cleanup_on_failure = _parse_bool(os.environ.get("METAGOMICS_CLEANUP_ON_FAILURE", "true"))
 
     # --- SMTP ---
+    smtp_port = 587
+    raw_smtp_port = os.environ.get("SMTP_PORT", "").strip()
+    if raw_smtp_port:
+        try:
+            smtp_port = int(raw_smtp_port)
+            if not 1 <= smtp_port <= 65535:
+                raise ValueError
+        except ValueError:
+            errors.append(f"SMTP_PORT must be a port number (1-65535), got {raw_smtp_port!r}")
+    smtp_security = os.environ.get("SMTP_SECURITY", "").strip().lower() or "starttls"
+    if smtp_security not in SMTP_SECURITY_MODES:
+        errors.append(
+            f"SMTP_SECURITY must be one of {', '.join(SMTP_SECURITY_MODES)}, "
+            f"got {smtp_security!r}"
+        )
     smtp = SmtpSettings(
         host=os.environ.get("SMTP_HOST", ""),
-        port=int(os.environ.get("SMTP_PORT", "587")),
+        port=smtp_port,
         username=os.environ.get("SMTP_USERNAME", ""),
         password=os.environ.get("SMTP_PASSWORD", ""),
         from_address=os.environ.get("SMTP_FROM", ""),
+        security=smtp_security,
     )
 
     # --- Databases (from JSON config file) ---

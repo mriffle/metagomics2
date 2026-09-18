@@ -19,6 +19,8 @@ class SmtpConfig:
     username: str = ""
     password: str = ""
     from_address: str = ""
+    # "starttls" (connect, then upgrade), "ssl" (implicit TLS) or "none" (plain)
+    security: str = "starttls"
 
 
 def send_job_notification(
@@ -51,10 +53,11 @@ def send_job_notification(
         msg["To"] = recipient
         msg.set_content(body)
 
-        with smtplib.SMTP(smtp_config.host, smtp_config.port, timeout=30) as server:
+        with _connect(smtp_config) as server:
             server.ehlo()
-            server.starttls()
-            server.ehlo()
+            if smtp_config.security == "starttls":
+                server.starttls()
+                server.ehlo()
             if smtp_config.username:
                 server.login(smtp_config.username, smtp_config.password)
             server.send_message(msg)
@@ -65,6 +68,18 @@ def send_job_notification(
         logger.exception(
             f"Failed to send notification email to {recipient} for job {job.job_id}"
         )
+
+
+def _connect(smtp_config: SmtpConfig) -> smtplib.SMTP:
+    """Open the SMTP connection appropriate for the configured security mode.
+
+    ``ssl`` wraps the socket in TLS from the start (implicit TLS, port 465);
+    ``starttls`` and ``none`` connect in the clear, and only ``starttls``
+    upgrades afterwards.
+    """
+    if smtp_config.security == "ssl":
+        return smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, timeout=30)
+    return smtplib.SMTP(smtp_config.host, smtp_config.port, timeout=30)
 
 
 def _build_message(job: JobInfo, site_url: str) -> tuple[str, str]:

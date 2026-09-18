@@ -376,6 +376,7 @@ The `.env` file holds simple scalar settings. Key variables:
 | `METAGOMICS_DIAMOND_MAX_TARGET_SEQS` | `500` | DIAMOND `--max-target-seqs`; hits kept per query before filtering, `0` = unlimited |
 | `SMTP_HOST` | *(empty)* | SMTP server for email notifications (leave empty to disable) |
 | `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_SECURITY` | `starttls` | `starttls` (port 587), `ssl` (implicit TLS, port 465) or `none` (plain relay, port 25) |
 | `SMTP_USERNAME` | *(empty)* | SMTP username |
 | `SMTP_PASSWORD` | *(empty)* | SMTP password |
 | `SMTP_FROM` | *(empty)* | Sender address for notifications |

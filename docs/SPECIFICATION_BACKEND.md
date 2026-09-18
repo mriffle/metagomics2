@@ -540,7 +540,7 @@ Pydantic models with field validators:
 
 ### 9.5 Email Notifications (`notifications/email.py`)
 
-Sends plain-text email on job completion/failure via SMTP with STARTTLS. The `send_job_notification` function never raises — SMTP errors are logged and swallowed to prevent email failures from breaking the pipeline. Email body includes: status, uploaded filenames, parameters, and a link to view results.
+Sends plain-text email on job completion/failure via SMTP. `SMTP_SECURITY` selects the transport: `starttls` (connect, then upgrade; the default), `ssl` (`smtplib.SMTP_SSL`, implicit TLS on port 465) or `none` (plain SMTP for an internal relay). The `send_job_notification` function never raises — SMTP errors are logged and swallowed to prevent email failures from breaking the pipeline. Email body includes: status, uploaded filenames, parameters, and a link to view results.
 
 ---
 
@@ -909,7 +909,8 @@ If no `databases.json` file exists, the config loader falls back to the `METAGOM
 | `METAGOMICS_VERSION` | `0.1.0` | All | Runtime version (set by Docker build) |
 | `DIAMOND_VERSION` | *(set at build)* | Server | DIAMOND version string for config API |
 | `SMTP_HOST` | *(empty)* | Worker | SMTP server for notifications |
-| `SMTP_PORT` | `587` | Worker | SMTP port |
+| `SMTP_PORT` | `587` | Worker | SMTP port; validated as 1-65535 |
+| `SMTP_SECURITY` | `starttls` | Worker | `starttls`, `ssl` (implicit TLS) or `none` (plain); anything else is a startup error |
 | `SMTP_USERNAME` | *(empty)* | Worker | SMTP username |
 | `SMTP_PASSWORD` | *(empty)* | Worker | SMTP password |
 | `SMTP_FROM` | *(empty)* | Worker | Sender email address |

@@ -41,6 +41,7 @@ SMTP_CONFIG = SmtpConfig(
     username=_cfg.smtp.username,
     password=_cfg.smtp.password,
     from_address=_cfg.smtp.from_address,
+    security=_cfg.smtp.security,
 )
 SITE_URL = _cfg.site_url
 
