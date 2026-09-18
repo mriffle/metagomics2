@@ -106,6 +106,7 @@ metagomics2 run \
   - Term definitions
   - `is_a` relationships
   - `part_of` and other relationships
+  - `alt_id` secondary IDs, mapped to their primary term so annotations that still use a merged ID resolve
   - Obsolete term filtering
 
 ### NCBI Taxonomy Parser

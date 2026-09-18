@@ -57,6 +57,26 @@ class GODAG:
 
     terms: dict[str, GOTerm] = field(default_factory=dict)
     obsolete_terms: dict[str, GOTerm] = field(default_factory=dict)
+    # Secondary IDs (OBO ``alt_id``) mapped to the primary term that absorbed
+    # them.  Annotation files may still use the old ID after two terms merge.
+    alt_ids: dict[str, str] = field(default_factory=dict)
+
+    def resolve_term_id(self, term_id: str) -> str | None:
+        """Map a GO ID to the term it names today, or None if the DAG has no such term.
+
+        Returns ``term_id`` itself when it is a live term, the primary ID when
+        ``term_id`` is a secondary (alt) ID of a live term, ``term_id`` when
+        it is a known obsolete term (so it can still be reported as such), and
+        None otherwise.
+        """
+        if term_id in self.terms:
+            return term_id
+        primary = self.alt_ids.get(term_id)
+        if primary is not None and primary in self.terms:
+            return primary
+        if term_id in self.obsolete_terms:
+            return term_id
+        return None
 
     def get_closure(
         self,
@@ -76,6 +96,10 @@ class GODAG:
         """
         if edge_types is None:
             edge_types = {"is_a"}
+
+        # A secondary ID resolves to its primary term, which is what the closure
+        # (including the self term) is computed for.
+        term_id = self.alt_ids.get(term_id, term_id)
 
         closure: set[str] = set()
         if include_self:
@@ -143,7 +167,9 @@ def load_go_from_json(file_path: Path | str) -> GODAG:
         "edges": {
             "is_a": [["child", "parent"], ...],
             "part_of": [["child", "parent"], ...]
-        }
+        },
+        "alt_ids": {"GO:0019952": "GO:0000003", ...},      # optional: secondary -> primary
+        "obsolete_terms": {"GO:0000002": {"name": "...", "namespace": "..."}}  # optional
     }
 
     Args:
@@ -187,6 +213,10 @@ def load_go_from_dict(data: dict[str, Any]) -> GODAG:
                 if edge_type not in dag.terms[child_id].parents:
                     dag.terms[child_id].parents[edge_type] = set()
                 dag.terms[child_id].parents[edge_type].add(parent_id)
+
+    # Load secondary IDs
+    for alt_id, primary_id in data.get("alt_ids", {}).items():
+        dag.alt_ids[alt_id] = primary_id
 
     # Load obsolete terms
     for term_id, term_data in data.get("obsolete_terms", {}).items():

@@ -148,12 +148,23 @@ def annotate_peptide_go(
     if not implied_subjects:
         return set()
 
-    # Collect all direct GO terms from subjects
+    # Collect all direct GO terms from subjects, resolved to terms the DAG
+    # knows (secondary IDs map to their primary term; IDs the ontology has
+    # never heard of are dropped rather than becoming nameless nodes)
     all_direct_terms: set[str] = set()
     for subject_id in implied_subjects:
         annotation = subject_annotations.get(subject_id)
-        if annotation:
-            all_direct_terms |= annotation.go_terms
+        if annotation is None:
+            continue
+        for term_id in annotation.go_terms:
+            resolved = go_dag.resolve_term_id(term_id)
+            if resolved is None:
+                logger.debug(
+                    f"Subject {subject_id}: GO term {term_id} is not in the ontology "
+                    "(neither a term, a secondary ID, nor an obsolete term); ignored"
+                )
+                continue
+            all_direct_terms.add(resolved)
 
     if not all_direct_terms:
         return set()

@@ -290,3 +290,52 @@ namespace: cellular_component
         assert dag.terms["GO:0000001"].namespace == "biological_process"
         assert dag.terms["GO:0000002"].namespace == "molecular_function"
         assert dag.terms["GO:0000003"].namespace == "cellular_component"
+
+
+class TestAltIds:
+    """Secondary IDs (alt_id) map to the primary term."""
+
+    OBO = """[Term]
+id: GO:0000001
+name: root
+namespace: biological_process
+
+[Term]
+id: GO:0000002
+name: merged target
+namespace: biological_process
+alt_id: GO:0000010
+alt_id: GO:0000011
+is_a: GO:0000001
+
+[Term]
+id: GO:0000003
+name: gone
+namespace: biological_process
+alt_id: GO:0000012
+is_obsolete: true
+"""
+
+    def test_alt_ids_parsed_for_live_terms(self, tmp_path: Path):
+        from metagomics2.core.obo_parser import parse_obo_file
+
+        obo = tmp_path / "t.obo"
+        obo.write_text(self.OBO)
+
+        dag = parse_obo_file(obo)
+
+        assert dag.alt_ids == {"GO:0000010": "GO:0000002", "GO:0000011": "GO:0000002"}
+        assert "GO:0000010" not in dag.terms
+        assert dag.resolve_term_id("GO:0000010") == "GO:0000002"
+
+    def test_json_conversion_round_trips_alt_ids(self, tmp_path: Path):
+        from metagomics2.core.go import load_go_from_dict
+
+        obo = tmp_path / "t.obo"
+        obo.write_text(self.OBO)
+
+        data = convert_obo_to_json_dict(obo)
+        assert data["alt_ids"] == {"GO:0000010": "GO:0000002", "GO:0000011": "GO:0000002"}
+
+        dag = load_go_from_dict(data)
+        assert dag.get_closure("GO:0000011") == {"GO:0000002", "GO:0000001"}

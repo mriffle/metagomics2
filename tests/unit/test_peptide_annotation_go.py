@@ -198,3 +198,39 @@ class TestAnnotatePeptideGOWithFixtures:
         )
 
         assert result.go_terms == set()
+
+
+class TestGoIdResolution:
+    """Secondary GO IDs in annotations resolve; unknown IDs do not become nodes."""
+
+    def _annotate(self, go_dag, go_terms):
+        return annotate_peptide_go(
+            implied_subjects={"S1"},
+            subject_annotations={"S1": SubjectAnnotation(subject_id="S1", go_terms=set(go_terms))},
+            go_dag=go_dag,
+            edge_types={"is_a"},
+        )
+
+    def test_alt_id_receives_primary_closure(self, small_go: dict):
+        dag = load_go_from_dict({**small_go, "alt_ids": {"GO:0000099": "GO:0000004"}})
+
+        result = self._annotate(dag, ["GO:0000099"])
+
+        assert result == dag.get_closure("GO:0000004", {"is_a"})
+        assert "GO:0000099" not in result
+
+    def test_unknown_id_dropped(self, small_go: dict):
+        dag = load_go_from_dict(small_go)
+
+        assert self._annotate(dag, ["GO:1234567"]) == set()
+        assert self._annotate(dag, ["GO:1234567", "GO:0000004"]) == dag.get_closure(
+            "GO:0000004", {"is_a"}
+        )
+
+    def test_obsolete_id_kept_as_isolated_term(self, small_go: dict):
+        dag = load_go_from_dict({
+            **small_go,
+            "obsolete_terms": {"GO:0000097": {"name": "old", "namespace": "biological_process"}},
+        })
+
+        assert self._annotate(dag, ["GO:0000097"]) == {"GO:0000097"}

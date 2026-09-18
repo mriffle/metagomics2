@@ -129,13 +129,15 @@ class TestSilentAnnotationWarning:
 
     def _runner_with_subjects(self, tmp_path, subject_annotations):
         from metagomics2.core.annotation import SubjectAnnotation
-        from metagomics2.core.go import GODAG
+        from metagomics2.core.go import load_go_from_dict
         from metagomics2.core.peptides import Peptide
         from metagomics2.core.taxonomy import TaxonomyTree
 
         runner = _runner(tmp_path)
         runner.taxonomy_tree = TaxonomyTree()
-        runner.go_dag = GODAG()
+        runner.go_dag = load_go_from_dict(
+            {"terms": {"GO:0000001": {"name": "root", "namespace": "bp"}}, "edges": {}}
+        )
         runner.protein_to_subjects = {"B1": {"S1"}}
         runner.subject_annotations = {
             sid: SubjectAnnotation(subject_id=sid, **fields)

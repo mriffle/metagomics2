@@ -244,3 +244,33 @@ class TestParseGoEdgeTypes:
     def test_empty_rejected(self, raw: str):
         with pytest.raises(ValueError, match="No GO edge types"):
             parse_go_edge_types(raw)
+
+
+class TestResolveTermId:
+    def _dag(self, small_go: dict):
+        data = {
+            **small_go,
+            "alt_ids": {"GO:0000099": "GO:0000004", "GO:0000098": "GO:0000404"},
+            "obsolete_terms": {"GO:0000097": {"name": "old", "namespace": "biological_process"}},
+        }
+        return load_go_from_dict(data)
+
+    def test_live_term(self, small_go: dict):
+        assert self._dag(small_go).resolve_term_id("GO:0000004") == "GO:0000004"
+
+    def test_alt_id_maps_to_primary(self, small_go: dict):
+        assert self._dag(small_go).resolve_term_id("GO:0000099") == "GO:0000004"
+
+    def test_alt_id_to_unknown_primary_is_none(self, small_go: dict):
+        assert self._dag(small_go).resolve_term_id("GO:0000098") is None
+
+    def test_obsolete_term_resolves_to_itself(self, small_go: dict):
+        assert self._dag(small_go).resolve_term_id("GO:0000097") == "GO:0000097"
+
+    def test_unknown_is_none(self, small_go: dict):
+        assert self._dag(small_go).resolve_term_id("GO:1234567") is None
+
+    def test_closure_through_alt_id_uses_primary(self, small_go: dict):
+        dag = self._dag(small_go)
+        assert dag.get_closure("GO:0000099") == dag.get_closure("GO:0000004")
+        assert "GO:0000099" not in dag.get_closure("GO:0000099")

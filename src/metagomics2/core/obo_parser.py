@@ -158,6 +158,12 @@ def _process_term_stanza(stanza: dict[str, list[str]], dag: GODAG) -> None:
                     term.parents[rel_type] = set()
                 term.parents[rel_type].add(parent_id)
 
+    # alt_id: secondary IDs merged into this term
+    for alt_value in stanza.get("alt_id", []):
+        alt_id = alt_value.split()[0] if alt_value.split() else ""
+        if alt_id:
+            dag.alt_ids[alt_id] = term_id
+
     dag.terms[term_id] = term
 
 
@@ -197,6 +203,10 @@ def convert_obo_to_json_dict(obo_path: Path | str) -> dict[str, Any]:
         for edge_type, parent_ids in term.parents.items():
             for parent_id in parent_ids:
                 result["edges"][edge_type].append([term_id, parent_id])
+
+    # Add secondary IDs
+    if dag.alt_ids:
+        result["alt_ids"] = dict(dag.alt_ids)
 
     # Add obsolete terms
     if dag.obsolete_terms:
