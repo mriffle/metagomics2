@@ -126,12 +126,12 @@ tests/
 The pipeline is the heart of Metagomics 2. It is orchestrated by `PipelineRunner` in `pipeline/runner.py` and consists of these stages:
 
 ### Stage 0: Initialize
-- **Load background FASTA** (`core/fasta.py`): Parse the user-provided FASTA file into a `dict[protein_id, sequence]`.
-- **Load reference data** (`core/reference_loader.py`): Load GO DAG (from `.obo` or `.json`) and NCBI taxonomy tree (from dump directory or `.json`). In web mode, creates a per-job snapshot of bundled reference data for provenance.
+- **Load background FASTA** (`core/fasta.py`): Parse the user-provided FASTA file into a `dict[protein_id, sequence]`. The ID is the header text up to the first space. A repeated ID is a `FastaParsingError` that fails the run: keeping one record would silently drop every peptide that occurs only in the others, and renaming would change the IDs DIAMOND and the peptide mapping report.
+- **Load reference data** (`core/reference_loader.py`): Load GO DAG (from `.obo` or `.json`) and NCBI taxonomy tree (from dump directory or `.json`). In web mode, creates a per-job snapshot of bundled reference data for provenance. Both are required: if either source is missing the runner raises `ReferenceDataError` (naming the path and, for the CLI, the `--go`/`--taxonomy` flag to pass) rather than continuing, because with an empty tree or DAG every peptide is "unannotated" and the run would otherwise report success with empty results.
 - **Load mock data** (testing only): If `--mock-hits` and `--mock-annotations` are provided, loads pre-computed mappings instead of running DIAMOND.
 
 ### Stage 1: Parse Peptide Lists
-- **Parse** each peptide list file (`core/peptides.py`): CSV/TSV with two columns (sequence, quantity). Auto-detects delimiter and header. Normalizes sequences, in this order: (1) remove every bracketed group `[...]`, `(...)`, `{...}` including nested ones, whether it holds a mass delta (`PEPT[+79.966]IDE`) or a modification name (`C[Carbamidomethyl]`, `M(Oxidation (M))`, `(UniMod:4)`), together with a lowercase `n`/`c` terminal-modification marker attached to it (`n[42.0106]PEPTIDE`); (2) strip flanking residues written as `K.PEPTIDE.R` or `-.PEPTIDE.K`; (3) uppercase and drop every remaining non-letter (`_PEPTIDE_`, `PEP*TIDE`). Named modifications must be removed as whole groups, not character by character: deleting only non-letters would turn `C[Carbamidomethyl]PEPTIDE` into `CCARBAMIDOMETHYLPEPTIDE`, which passes the alphabet check and silently never matches. Validates against amino acid alphabet. Rejects a row whose raw sequence repeats an earlier row verbatim, and merges rows whose different raw forms normalize to the same sequence by summing quantities.
+- **Parse** each peptide list file (`core/peptides.py`): CSV/TSV with two columns (sequence, quantity), read positionally; header names are not interpreted. Auto-detects delimiter and header. A data row with a non-empty value beyond the second column is rejected (trailing empty cells from spreadsheet exports are allowed), because it usually means a quantity with a thousands separator was split into two columns and reading only the second would silently record the wrong number. Normalizes sequences, in this order: (1) remove every bracketed group `[...]`, `(...)`, `{...}` including nested ones, whether it holds a mass delta (`PEPT[+79.966]IDE`) or a modification name (`C[Carbamidomethyl]`, `M(Oxidation (M))`, `(UniMod:4)`), together with a lowercase `n`/`c` terminal-modification marker attached to it (`n[42.0106]PEPTIDE`); (2) strip flanking residues written as `K.PEPTIDE.R` or `-.PEPTIDE.K`; (3) uppercase and drop every remaining non-letter (`_PEPTIDE_`, `PEP*TIDE`). Named modifications must be removed as whole groups, not character by character: deleting only non-letters would turn `C[Carbamidomethyl]PEPTIDE` into `CCARBAMIDOMETHYLPEPTIDE`, which passes the alphabet check and silently never matches. Validates against amino acid alphabet. Rejects a row whose raw sequence repeats an earlier row verbatim, and merges rows whose different raw forms normalize to the same sequence by summing quantities.
 
 ### Stage 2: Match Peptides to Background Proteome
 - **Aho-Corasick matching** (`core/matching.py`): All peptide sequences from all lists are combined into a single automaton. A single pass over every background protein sequence finds all exact substring matches. Results in `peptide_to_proteins: dict[peptide_seq, set[protein_id]]`.
@@ -434,7 +434,7 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 | `--params` | No | JSON file with filter params |
 | `--go` | No | Path to GO data (OBO/JSON) |
 | `--taxonomy` | No | Path to taxonomy data (dir/JSON) |
-| `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure; validated against `core/go.py: GO_EDGE_TYPES` (whitespace tolerated, unknown types rejected) |
+| `--go-edge-types` | No (default: is_a,part_of) | Comma-separated edge types for GO closure; validated against `core/go.py: GO_EDGE_TYPES` (whitespace tolerated, unknown types rejected). `is_a` and `part_of` are the relations the GO Consortium propagates annotations over; `regulates`, `positively_regulates`, `negatively_regulates`, `occurs_in`, `happens_during` and `ends_during` are accepted as explicit opt-ins for exploratory use. `has_part` is not accepted: it is the inverse of `part_of`, so following it upward would propagate an annotation from a whole to its parts |
 | `--go-exclude-self` | No | Exclude terms themselves from closure |
 | `--mock-hits` | No | Mock hits JSON (testing) |
 | `--mock-annotations` | No | Mock annotations JSON (testing) |
@@ -480,7 +480,7 @@ Key settings consumed by the server:
 
 **Job creation flow**:
 1. Validate FASTA content (first 8KB header check)
-2. Validate `db_choice` against configured databases
+2. Validate `db_choice`: it must be non-empty and name a configured database (400 otherwise, so a job without a database is refused here rather than failing in the worker after parsing and matching)
 3. Create job record in SQLite
 4. Stream-save uploaded files to `<JOBS_DIR>/<job_id>/inputs/`. The stream is abandoned as soon as the FASTA, or the peptide files combined, passes `MAX_UPLOAD_MB` (413); at most one extra 1 MB chunk is ever written
 5. Register peptide lists in database
