@@ -349,6 +349,45 @@ class TestFilterAllHitsWithHits:
         assert {q: set(d) for q, d in with_hits.items()} == subjects
 
 
+class TestFilterPolicyValidate:
+    """FilterPolicy.validate rejects values outside their meaningful range."""
+
+    def test_all_none_is_valid(self):
+        FilterPolicy().validate()
+
+    def test_typical_policy_is_valid(self):
+        FilterPolicy(max_evalue=1e-5, min_pident=50, min_qcov=80, min_alnlen=20, top_k=5).validate()
+
+    def test_boundaries_are_valid(self):
+        FilterPolicy(min_pident=0, min_qcov=100, min_alnlen=1, top_k=1).validate()
+
+    @pytest.mark.parametrize(
+        ("kwargs", "field_name"),
+        [
+            ({"top_k": 0}, "top_k"),
+            ({"top_k": -1}, "top_k"),
+            ({"min_alnlen": 0}, "min_alnlen"),
+            ({"max_evalue": 0.0}, "max_evalue"),
+            ({"max_evalue": -1.0}, "max_evalue"),
+            ({"max_evalue": float("inf")}, "max_evalue"),
+            ({"max_evalue": float("nan")}, "max_evalue"),
+            ({"min_pident": -0.1}, "min_pident"),
+            ({"min_pident": 100.1}, "min_pident"),
+            ({"min_qcov": 101}, "min_qcov"),
+            ({"min_qcov": float("nan")}, "min_qcov"),
+        ],
+    )
+    def test_rejects_out_of_range(self, kwargs: dict, field_name: str):
+        with pytest.raises(ValueError, match=field_name):
+            FilterPolicy(**kwargs).validate()
+
+    def test_reports_every_problem(self):
+        with pytest.raises(ValueError) as exc_info:
+            FilterPolicy(top_k=0, min_alnlen=0).validate()
+        assert "top_k" in str(exc_info.value)
+        assert "min_alnlen" in str(exc_info.value)
+
+
 class TestFilterAllHits:
     """Tests for filtering hits across all queries."""
 

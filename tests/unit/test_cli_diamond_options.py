@@ -126,3 +126,39 @@ class TestGoEdgeTypesOption:
         err = capsys.readouterr().err
         assert "--go-edge-types" in err
         assert "partof" in err
+
+
+class TestFilterPolicyValidation:
+    """Filter values from flags or a --params file are validated before the run."""
+
+    def test_rejects_zero_top_k(self, tmp_path: Path, capsys):
+        args = create_parser().parse_args(_base_args(tmp_path) + ["--top-k", "0"])
+        with patch("metagomics2.cli.run_pipeline") as mock_run:
+            assert cmd_run(args) == 1
+        mock_run.assert_not_called()
+        assert "top_k" in capsys.readouterr().err
+
+    def test_rejects_negative_top_k(self, tmp_path: Path, capsys):
+        args = create_parser().parse_args(_base_args(tmp_path) + ["--top-k", "-1"])
+        with patch("metagomics2.cli.run_pipeline") as mock_run:
+            assert cmd_run(args) == 1
+        mock_run.assert_not_called()
+        assert "top_k" in capsys.readouterr().err
+
+    def test_rejects_bad_values_from_params_file(self, tmp_path: Path, capsys):
+        params = tmp_path / "params.json"
+        params.write_text('{"top_k": 0, "min_pident": 150}')
+        args = create_parser().parse_args(_base_args(tmp_path) + ["--params", str(params)])
+        with patch("metagomics2.cli.run_pipeline") as mock_run:
+            assert cmd_run(args) == 1
+        mock_run.assert_not_called()
+        err = capsys.readouterr().err
+        assert "top_k" in err
+        assert "min_pident" in err
+
+    def test_valid_top_k_accepted(self, tmp_path: Path):
+        args = create_parser().parse_args(_base_args(tmp_path) + ["--top-k", "1"])
+        result = MagicMock(success=True)
+        with patch("metagomics2.cli.run_pipeline", return_value=result) as mock_run:
+            assert cmd_run(args) == 0
+        assert mock_run.call_args[0][0].filter_policy.top_k == 1

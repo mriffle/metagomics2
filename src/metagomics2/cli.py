@@ -72,8 +72,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     output_dir = Path(args.outdir)
 
-    # Parse filter policy
+    # Parse and validate filter policy (covers both flags and --params files)
     filter_policy = parse_filter_params(args)
+    try:
+        filter_policy.validate()
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
     # Validate database paths (required unless in mock mode)
     db_path = None

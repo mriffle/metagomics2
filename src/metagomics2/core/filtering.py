@@ -1,4 +1,5 @@
 """Homology hit filtering based on user-configurable policies."""
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -36,6 +37,29 @@ class FilterPolicy:
             "min_alnlen": self.min_alnlen,
             "top_k": self.top_k,
         }
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` if any threshold is outside its meaningful range.
+
+        These are the same rules the web API enforces in ``JobParams``; the
+        CLI and the pipeline runner call this so a policy from the command
+        line or a ``--params`` file cannot silently do something other than
+        what it says (``top_k=0`` would keep every hit, ``top_k=-1`` would
+        drop only the weakest).  ``None`` always means "not applied".
+        """
+        problems: list[str] = []
+        if self.max_evalue is not None:
+            if not math.isfinite(self.max_evalue) or self.max_evalue <= 0:
+                problems.append(f"max_evalue must be a finite number > 0, got {self.max_evalue}")
+        for name, value in (("min_pident", self.min_pident), ("min_qcov", self.min_qcov)):
+            if value is not None and (not math.isfinite(value) or not 0 <= value <= 100):
+                problems.append(f"{name} must be between 0 and 100, got {value}")
+        if self.min_alnlen is not None and self.min_alnlen < 1:
+            problems.append(f"min_alnlen must be at least 1, got {self.min_alnlen}")
+        if self.top_k is not None and self.top_k < 1:
+            problems.append(f"top_k must be at least 1, got {self.top_k}")
+        if problems:
+            raise ValueError("Invalid filter policy: " + "; ".join(problems))
 
 
 @dataclass

@@ -444,6 +444,8 @@ Entry point: `metagomics2` (defined in `pyproject.toml` `[project.scripts]`).
 
 \* Required unless `--mock-hits` / `--mock-annotations` are used for testing.
 
+Filter values, whether given as flags or in a `--params` file, are validated by `FilterPolicy.validate()` (`core/filtering.py`) with the same rules as the web API's `JobParams`: `max_evalue` finite and > 0, `min_pident` and `min_qcov` in [0, 100], `min_alnlen ≥ 1`, `top_k ≥ 1`. An invalid value is an error before the pipeline starts; `PipelineRunner._initialize` runs the same check so no front end can hand the pipeline a policy that silently means something else (`top_k=0` would otherwise keep every hit).
+
 ---
 
 ## 9. Web Backend

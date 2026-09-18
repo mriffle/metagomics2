@@ -375,6 +375,10 @@ class PipelineRunner:
 
     def _initialize(self) -> None:
         """Stage 0: Initialize job - prepare directories, load reference data."""
+        # A nonsensical filter policy must fail the run, not quietly change
+        # what the filters do.  Front ends validate earlier for a nicer error.
+        self.config.filter_policy.validate()
+
         # Create output directory structure
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
