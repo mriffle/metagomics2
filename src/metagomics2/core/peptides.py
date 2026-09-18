@@ -138,7 +138,10 @@ def parse_quantity(value: str) -> float:
     try:
         quantity = float(value)
     except ValueError:
-        raise PeptideParsingError(f"Invalid quantity value: '{value}'")
+        hint = ""
+        if "," in value:
+            hint = " (remove thousands separators or use '.' as the decimal point)"
+        raise PeptideParsingError(f"Invalid quantity value: '{value}'{hint}")
 
     if quantity < 0:
         raise PeptideParsingError(f"Negative quantity not allowed: {quantity}")
@@ -173,6 +176,37 @@ def _is_numeric(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# Tokens spreadsheets and statistics tools write for a missing number.  In the
+# quantity cell of the first row they mean "this is a data row with a bad
+# value", not "this is a column name".
+_MISSING_VALUE_TOKENS = frozenset({"NA", "N/A", "#N/A", "NULL", "NONE"})
+
+# Characters used to group digits in a written number (``1,000``, ``1 000``,
+# ``1_000``); also the comma of a European decimal (``1,5``).
+_DIGIT_GROUPING_RE = re.compile(r"[,_\s]")
+
+
+def _looks_like_header_cell(value: str) -> bool:
+    """Decide whether the quantity cell of the first row is a column name.
+
+    A plain number is data.  So is anything that is a number once digit
+    grouping characters are removed (``1,000``), and so is a missing-value
+    token (``NA``): both are data rows whose quantity is unusable, and they
+    must be reported as such rather than silently dropped as a "header".
+    Everything else (``count``, ``Intensity 01``) is a header.
+    """
+    cell = value.strip().strip("\"'")
+    if not cell:
+        return True
+    if _is_numeric(cell):
+        return False
+    if cell.upper() in _MISSING_VALUE_TOKENS:
+        return False
+    if _is_numeric(_DIGIT_GROUPING_RE.sub("", cell)):
+        return False
+    return True
 
 
 def _check_no_extra_values(row: list[str], line_num: int) -> None:
@@ -267,7 +301,7 @@ def parse_peptide_list_from_handle(
     qty_idx = 1
 
     # Auto-detect header: if second column is numeric, first row is data
-    has_header = len(first_row) > 1 and not _is_numeric(first_row[qty_idx])
+    has_header = len(first_row) > 1 and _looks_like_header_cell(first_row[qty_idx])
 
     peptides = []
     seen_raw: dict[str, int] = {}  # raw sequence -> first line number

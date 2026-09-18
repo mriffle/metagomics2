@@ -289,6 +289,31 @@ class TestExtraColumns:
         peptides = parse_peptide_list_from_handle(io.StringIO(content))
         assert peptides == [Peptide(sequence="PEPTIDE", quantity=10.0)]
 
+    @pytest.mark.parametrize("quantity", ["1,000", "1 000", "1,5", '"1,000"'])
+    def test_first_row_with_grouped_digits_is_data_not_header(self, quantity: str):
+        # A number-like quantity that does not parse is a bad data row and must
+        # be reported, not silently dropped as a column name
+        content = f"PEPTIDEK\t{quantity}\nAAAAK\t5\n"
+        with pytest.raises(PeptideParsingError, match="Line 1"):
+            parse_peptide_list_from_handle(io.StringIO(content))
+
+    def test_first_row_with_thousands_separator_error_mentions_separators(self):
+        content = "PEPTIDEK\t1,000\nAAAAK\t5\n"
+        with pytest.raises(PeptideParsingError, match="thousands separators"):
+            parse_peptide_list_from_handle(io.StringIO(content))
+
+    @pytest.mark.parametrize("token", ["NA", "na", "N/A", "#N/A", "NULL", "None"])
+    def test_first_row_with_missing_value_token_is_data_not_header(self, token: str):
+        content = f"PEPTIDEK\t{token}\nAAAAK\t5\n"
+        with pytest.raises(PeptideParsingError, match="Line 1"):
+            parse_peptide_list_from_handle(io.StringIO(content))
+
+    @pytest.mark.parametrize("header", ["Sample 1", "Intensity 01", "LFQ intensity S1", "count"])
+    def test_header_names_containing_digits_are_still_headers(self, header: str):
+        content = f"peptide\t{header}\nPEPTIDE\t10\n"
+        peptides = parse_peptide_list_from_handle(io.StringIO(content))
+        assert peptides == [Peptide(sequence="PEPTIDE", quantity=10.0)]
+
 
 class TestParsePeptideListCSV:
     """Tests for parsing CSV peptide lists."""
